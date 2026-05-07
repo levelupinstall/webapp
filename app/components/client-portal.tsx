@@ -1,0 +1,623 @@
+"use client";
+
+import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
+
+type PortalView = "saved-projects" | "invoices" | "profile" | "bookings";
+
+type PortalUser = {
+  id: string;
+  username: string;
+  email: string;
+  fullName: string;
+  serviceAddress: string;
+  avatarDataUrl: string;
+  carpenterUploads: {
+    id: string;
+    type: "image" | "video";
+    url: string;
+    caption: string;
+    uploadedAt: string;
+  }[];
+  spacePhotos: {
+    id: string;
+    type: "image" | "video";
+    url: string;
+    caption: string;
+    uploadedAt: string;
+  }[];
+  ideas: { id: string; title: string; notes: string; createdAt: string }[];
+  invoices: {
+    id: string;
+    projectName: string;
+    amountCents: number;
+    status: "paid" | "due";
+    issuedAt: string;
+    billingKind?: "call_out" | "balance";
+    lineItemsSummary?: string;
+  }[];
+  projectStatus: { phase: string; updatedAt: string; details: string };
+};
+
+type ClientPortalProps = {
+  initialMode?: "login" | "register";
+  selectedView?: PortalView;
+  onAuthChange?: (user: PortalUser | null) => void;
+};
+
+export default function ClientPortal({
+  initialMode = "login",
+  selectedView = "saved-projects",
+  onAuthChange,
+}: ClientPortalProps) {
+  const [mode, setMode] = useState<"login" | "register">(initialMode);
+  const [user, setUser] = useState<PortalUser | null>(null);
+  const [username, setUsername] = useState("");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [ideaTitle, setIdeaTitle] = useState("");
+  const [ideaNotes, setIdeaNotes] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [profileError, setProfileError] = useState<string | null>(null);
+  const [profileMessage, setProfileMessage] = useState<string | null>(null);
+  const [profileLoading, setProfileLoading] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [profileName, setProfileName] = useState("");
+  const [profileServiceAddress, setProfileServiceAddress] = useState("");
+  const [profileAvatar, setProfileAvatar] = useState("");
+  const [invoiceCheckoutBusyId, setInvoiceCheckoutBusyId] = useState<string | null>(null);
+  const savedProjectsTrackRef = useRef(false);
+  const spacePhotosTrackRef = useRef(false);
+
+  const loadMe = useCallback(async () => {
+    const response = await fetch("/api/portal/me");
+    if (!response.ok) {
+      setUser(null);
+      onAuthChange?.(null);
+      return;
+    }
+    const data = (await response.json()) as { user: PortalUser };
+    setUser(data.user);
+    onAuthChange?.(data.user);
+    setProfileName(data.user.fullName || "");
+    setProfileServiceAddress(data.user.serviceAddress || "");
+    setProfileAvatar(data.user.avatarDataUrl || "");
+  }, [onAuthChange]);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      void loadMe();
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [loadMe]);
+
+  useEffect(() => {
+    savedProjectsTrackRef.current = false;
+    spacePhotosTrackRef.current = false;
+  }, [selectedView, user?.id]);
+
+  useEffect(() => {
+    if (!user || selectedView !== "saved-projects") return;
+    if (savedProjectsTrackRef.current) return;
+    savedProjectsTrackRef.current = true;
+    void fetch("/api/portal/track", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ kind: "saved_projects_section" }),
+    }).catch(() => {});
+  }, [user?.id, selectedView]);
+
+  useEffect(() => {
+    if (!user || selectedView !== "saved-projects") return;
+    if (!(user.spacePhotos?.length > 0)) return;
+    if (spacePhotosTrackRef.current) return;
+    spacePhotosTrackRef.current = true;
+    void fetch("/api/portal/track", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ kind: "space_photos_section" }),
+    }).catch(() => {});
+  }, [user?.id, selectedView, user?.spacePhotos?.length]);
+
+  async function handleAuth(event: FormEvent) {
+    event.preventDefault();
+    setError(null);
+    setLoading(true);
+    try {
+      const endpoint = mode === "login" ? "/api/portal/login" : "/api/portal/register";
+      const payload =
+        mode === "login"
+          ? { username, password }
+          : { username, password, email };
+
+      const response = await fetch(endpoint, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      const data = (await response.json()) as { error?: string };
+      if (!response.ok) throw new Error(data.error || "Authentication failed.");
+      await loadMe();
+      setPassword("");
+    } catch (authError) {
+      setError(authError instanceof Error ? authError.message : "Auth failed.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function handleLogout() {
+    await fetch("/api/portal/logout", { method: "POST" });
+    setUser(null);
+    onAuthChange?.(null);
+  }
+
+  async function handleSpacePhotoUpload(fileList: FileList | null) {
+    if (!fileList?.length) return;
+    setError(null);
+    try {
+      for (const file of Array.from(fileList)) {
+        const isVideo = file.type.startsWith("video/");
+        const isImage = file.type.startsWith("image/");
+        if (!isVideo && !isImage) continue;
+        if (file.size > 12 * 1024 * 1024) {
+          setError(`"${file.name}" is too large (max 12 MB per file).`);
+          return;
+        }
+        const dataUrl = await new Promise<string>((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => resolve(String(reader.result || ""));
+          reader.onerror = () => reject(new Error("Could not read file."));
+          reader.readAsDataURL(file);
+        });
+        const response = await fetch("/api/portal/space-photos", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            type: isVideo ? "video" : "image",
+            url: dataUrl,
+            caption: file.name,
+          }),
+        });
+        const data = (await response.json()) as { error?: string };
+        if (!response.ok) throw new Error(data.error || "Upload failed.");
+      }
+      await loadMe();
+    } catch (uploadErr) {
+      setError(uploadErr instanceof Error ? uploadErr.message : "Could not upload.");
+    }
+  }
+
+  async function handleAddIdea(event: FormEvent) {
+    event.preventDefault();
+    setError(null);
+    try {
+      const response = await fetch("/api/portal/ideas", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ title: ideaTitle, notes: ideaNotes }),
+      });
+      const data = (await response.json()) as { error?: string };
+      if (!response.ok) throw new Error(data.error || "Could not save idea.");
+      setIdeaTitle("");
+      setIdeaNotes("");
+      await loadMe();
+    } catch (ideaError) {
+      setError(ideaError instanceof Error ? ideaError.message : "Could not save.");
+    }
+  }
+
+  async function handleProfileImageChange(fileList: FileList | null) {
+    if (!fileList || fileList.length === 0) return;
+    const file = fileList[0];
+    if (!file.type.startsWith("image/")) {
+      setProfileError("Please upload an image file.");
+      return;
+    }
+
+    const dataUrl = await new Promise<string>((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(String(reader.result || ""));
+      reader.onerror = () => reject(new Error("Could not read selected image."));
+      reader.readAsDataURL(file);
+    });
+
+    setProfileAvatar(dataUrl);
+    setProfileError(null);
+  }
+
+  async function handleSaveProfile(event: FormEvent) {
+    event.preventDefault();
+    setProfileError(null);
+    setProfileMessage(null);
+    setProfileLoading(true);
+
+    try {
+      const response = await fetch("/api/portal/profile", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          fullName: profileName,
+          serviceAddress: profileServiceAddress,
+          avatarDataUrl: profileAvatar,
+        }),
+      });
+      const data = (await response.json()) as { error?: string };
+      if (!response.ok) {
+        throw new Error(data.error || "Could not update profile.");
+      }
+      setProfileMessage("Profile updated successfully.");
+      await loadMe();
+    } catch (profileErr) {
+      setProfileError(
+        profileErr instanceof Error
+          ? profileErr.message
+          : "Could not update profile.",
+      );
+    } finally {
+      setProfileLoading(false);
+    }
+  }
+
+  if (!user) {
+    return (
+      <section className="rounded-3xl border border-[#dac6fb] bg-white p-6 shadow-[0_10px_30px_-20px_rgba(91,33,182,0.55)] sm:p-8">
+        <h2 className="text-2xl font-semibold text-[#2d1546] sm:text-3xl">
+          Client Account Portal
+        </h2>
+        <p className="mt-3 text-[#55337b]">
+          Create an account to save project ideas, view project status, and download invoices.
+        </p>
+        <div className="mt-4 flex gap-2">
+          <button
+            type="button"
+            onClick={() => setMode("login")}
+            className={`rounded-full px-4 py-2 text-sm font-semibold ${
+              mode === "login" ? "bg-[#6e3eb2] text-white" : "border border-[#6e3eb2] text-[#5b3292]"
+            }`}
+          >
+            Login
+          </button>
+          <button
+            type="button"
+            onClick={() => setMode("register")}
+            className={`rounded-full px-4 py-2 text-sm font-semibold ${
+              mode === "register"
+                ? "bg-[#6e3eb2] text-white"
+                : "border border-[#6e3eb2] text-[#5b3292]"
+            }`}
+          >
+            Create Account
+          </button>
+        </div>
+        <form className="mt-5 space-y-3" onSubmit={handleAuth}>
+          <input
+            required
+            value={username}
+            onChange={(event) => setUsername(event.target.value)}
+            placeholder="Username"
+            className="w-full rounded-xl border border-[#dcbef9] bg-white px-3 py-2 text-sm text-[#32174f]"
+          />
+          {mode === "register" ? (
+            <input
+              required
+              type="email"
+              value={email}
+              onChange={(event) => setEmail(event.target.value)}
+              placeholder="Email"
+              className="w-full rounded-xl border border-[#dcbef9] bg-white px-3 py-2 text-sm text-[#32174f]"
+            />
+          ) : null}
+          <input
+            required
+            type="password"
+            value={password}
+            onChange={(event) => setPassword(event.target.value)}
+            placeholder="Password (min 8 characters)"
+            className="w-full rounded-xl border border-[#dcbef9] bg-white px-3 py-2 text-sm text-[#32174f]"
+          />
+          {error ? <p className="text-sm text-[#a2175d]">{error}</p> : null}
+          <button
+            type="submit"
+            disabled={loading}
+            className="rounded-full bg-[#6e3eb2] px-5 py-2 text-sm font-semibold text-white"
+          >
+            {loading ? "Please wait..." : mode === "login" ? "Login" : "Create Account"}
+          </button>
+        </form>
+      </section>
+    );
+  }
+
+  const displayName = user.fullName?.trim() || user.username;
+
+  return (
+    <section className="rounded-3xl border border-[#dac6fb] bg-white p-6 shadow-[0_10px_30px_-20px_rgba(91,33,182,0.55)] sm:p-8">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h2 className="text-2xl font-semibold text-[#2d1546] sm:text-3xl">
+            Welcome, {displayName}
+          </h2>
+          <p className="text-[#55337b]">{user.email}</p>
+        </div>
+        <button
+          type="button"
+          onClick={handleLogout}
+          className="rounded-full border border-[#6e3eb2] px-4 py-2 text-sm font-semibold text-[#5b3292]"
+        >
+          Logout
+        </button>
+      </div>
+
+      {selectedView === "saved-projects" ? (
+        <div className="mt-6 rounded-2xl border border-[#e8d9ff] p-4">
+          <h3 className="font-semibold text-[#2f1748]">Saved Ideas</h3>
+          <form className="mt-3 space-y-2" onSubmit={handleAddIdea}>
+            <input
+              required
+              value={ideaTitle}
+              onChange={(event) => setIdeaTitle(event.target.value)}
+              placeholder="Idea title"
+              className="w-full rounded-xl border border-[#dcbef9] px-3 py-2 text-sm"
+            />
+            <textarea
+              required
+              value={ideaNotes}
+              onChange={(event) => setIdeaNotes(event.target.value)}
+              rows={3}
+              placeholder="Idea details..."
+              className="w-full rounded-xl border border-[#dcbef9] px-3 py-2 text-sm"
+            />
+            <button
+              type="submit"
+              className="rounded-full bg-[#6e3eb2] px-4 py-2 text-sm font-semibold text-white"
+            >
+              Save Idea
+            </button>
+          </form>
+          <div className="mt-4 space-y-2">
+            {user.ideas.length === 0 ? (
+              <p className="text-sm text-[#6a4a8f]">No saved ideas yet.</p>
+            ) : (
+              user.ideas.map((idea) => (
+                <div key={idea.id} className="rounded-xl border border-[#eddfff] p-3">
+                  <p className="font-semibold text-[#2f1748]">{idea.title}</p>
+                  <p className="text-sm text-[#4d2e70]">{idea.notes}</p>
+                </div>
+              ))
+            )}
+          </div>
+
+          <div className="mt-8 border-t border-[#e8d9ff] pt-6">
+            <h4 className="font-semibold text-[#2f1748]">Photos & videos of your space</h4>
+            <p className="mt-1 text-sm text-[#55337b]">
+              Upload current room photos or short clips so your carpenter sees real conditions and can
+              match expectations before arriving.
+            </p>
+            <label className="mt-3 block cursor-pointer rounded-xl border border-[#dcc6fb] bg-[#faf6ff] px-3 py-2 text-sm">
+              <span className="font-semibold text-[#31184a]">Add images or video</span>
+              <input
+                type="file"
+                accept="image/*,video/*"
+                multiple
+                className="mt-2 block w-full text-xs text-[#4a2a69] file:mr-3 file:rounded-full file:border-0 file:bg-[#ede0ff] file:px-3 file:py-2 file:font-semibold file:text-[#4a2381]"
+                onChange={(event) => void handleSpacePhotoUpload(event.target.files)}
+              />
+            </label>
+            <div className="mt-4 grid gap-3 sm:grid-cols-2">
+              {(user.spacePhotos ?? []).length ? (
+                (user.spacePhotos ?? []).map((photo) => (
+                  <div key={photo.id} className="overflow-hidden rounded-xl border border-[#eddfff]">
+                    {photo.type === "image" ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img
+                        src={photo.url}
+                        alt={photo.caption}
+                        className="h-44 w-full object-cover"
+                      />
+                    ) : (
+                      <video controls className="h-44 w-full object-cover" src={photo.url} />
+                    )}
+                    <p className="border-t border-[#f0e8ff] px-2 py-1 text-xs text-[#4d2e70]">
+                      {photo.caption}
+                    </p>
+                  </div>
+                ))
+              ) : (
+                <p className="text-sm text-[#6a4a8f]">No uploads yet.</p>
+              )}
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {selectedView === "invoices" ? (
+        <div className="mt-6 rounded-2xl border border-[#e8d9ff] p-4">
+          <h3 className="font-semibold text-[#2f1748]">Invoices</h3>
+          <p className="mt-1 text-sm text-[#6a4a8f]">
+            Pay open balance invoices securely with Stripe. After payment, status updates to paid
+            automatically.
+          </p>
+          <div className="mt-3 space-y-2">
+            {user.invoices.map((invoice) => (
+              <div
+                key={invoice.id}
+                className="flex flex-col gap-3 rounded-xl border border-[#eddfff] p-3 sm:flex-row sm:items-center sm:justify-between"
+              >
+                <div className="min-w-0 flex-1">
+                  <p className="font-semibold text-[#2f1748]">{invoice.projectName}</p>
+                  <p className="text-sm text-[#4d2e70]">
+                    ${(invoice.amountCents / 100).toFixed(2)} CAD ·{" "}
+                    <span className={invoice.status === "due" ? "font-semibold text-[#b45309]" : ""}>
+                      {invoice.status === "due" ? "Payment due" : "Paid"}
+                    </span>
+                  </p>
+                  {invoice.lineItemsSummary?.trim() ? (
+                    <p className="mt-2 whitespace-pre-wrap text-xs leading-relaxed text-[#6a4a8f]">
+                      {invoice.lineItemsSummary}
+                    </p>
+                  ) : null}
+                </div>
+                <div className="flex shrink-0 flex-wrap gap-2">
+                  {invoice.status === "due" ? (
+                    <button
+                      type="button"
+                      disabled={invoiceCheckoutBusyId === invoice.id}
+                      onClick={() => {
+                        void (async () => {
+                          setError(null);
+                          setInvoiceCheckoutBusyId(invoice.id);
+                          try {
+                            const response = await fetch(
+                              `/api/portal/invoices/${encodeURIComponent(invoice.id)}/checkout`,
+                              { method: "POST" },
+                            );
+                            const data = (await response.json()) as { error?: string; url?: string };
+                            if (!response.ok) {
+                              throw new Error(data.error || "Could not start checkout.");
+                            }
+                            if (data.url) window.location.href = data.url;
+                          } catch (checkoutErr) {
+                            setError(
+                              checkoutErr instanceof Error
+                                ? checkoutErr.message
+                                : "Checkout failed.",
+                            );
+                          } finally {
+                            setInvoiceCheckoutBusyId(null);
+                          }
+                        })();
+                      }}
+                      className="rounded-full bg-[#6e3eb2] px-4 py-2 text-xs font-semibold text-white disabled:opacity-60 sm:text-sm"
+                    >
+                      {invoiceCheckoutBusyId === invoice.id ? "Opening…" : "Pay with Stripe"}
+                    </button>
+                  ) : null}
+                  <a
+                    href={`/api/portal/invoices/${invoice.id}/download`}
+                    className="inline-flex items-center justify-center rounded-full border border-[#6e3eb2] px-4 py-2 text-xs font-semibold text-[#5b3292] sm:text-sm"
+                  >
+                    Download PDF
+                  </a>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      ) : null}
+
+      {selectedView === "profile" ? (
+        <div className="mt-6 rounded-2xl border border-[#e8d9ff] p-4">
+          <h3 className="font-semibold text-[#2f1748]">Profile</h3>
+          <p className="mt-1 text-sm text-[#4d2e70]">
+            Update your display picture, full name, and service address.
+          </p>
+          <form className="mt-4 space-y-3" onSubmit={handleSaveProfile}>
+            <div className="flex items-center gap-4">
+              <div className="h-16 w-16 overflow-hidden rounded-full border border-[#dcc6fb] bg-[#f5efff]">
+                {profileAvatar ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    src={profileAvatar}
+                    alt="Profile avatar"
+                    className="h-full w-full object-cover"
+                  />
+                ) : (
+                  <div className="flex h-full w-full items-center justify-center text-xs font-semibold text-[#6e3eb2]">
+                    No Photo
+                  </div>
+                )}
+              </div>
+              <input
+                type="file"
+                accept="image/*"
+                onChange={(event) =>
+                  void handleProfileImageChange(event.target.files)
+                }
+                className="block w-full text-sm text-[#4a2a69] file:mr-3 file:rounded-full file:border-0 file:bg-[#ede0ff] file:px-3 file:py-2 file:font-semibold file:text-[#4a2381]"
+              />
+            </div>
+            <input
+              required
+              value={profileName}
+              onChange={(event) => setProfileName(event.target.value)}
+              placeholder="Full Name"
+              className="w-full rounded-xl border border-[#dcbef9] px-3 py-2 text-sm text-[#32174f]"
+            />
+            <input
+              required
+              value={profileServiceAddress}
+              onChange={(event) => setProfileServiceAddress(event.target.value)}
+              placeholder="Service Address"
+              className="w-full rounded-xl border border-[#dcbef9] px-3 py-2 text-sm text-[#32174f]"
+            />
+            {profileError ? (
+              <p className="text-sm text-[#a2175d]">{profileError}</p>
+            ) : null}
+            {profileMessage ? (
+              <p className="text-sm text-[#2f7a32]">{profileMessage}</p>
+            ) : null}
+            <button
+              type="submit"
+              disabled={profileLoading}
+              className="rounded-full bg-[#6e3eb2] px-4 py-2 text-sm font-semibold text-white disabled:opacity-60"
+            >
+              {profileLoading ? "Saving..." : "Save Profile"}
+            </button>
+          </form>
+        </div>
+      ) : null}
+
+      {selectedView === "bookings" ? (
+        <div className="mt-6 rounded-2xl border border-[#e8d9ff] p-4">
+          <h3 className="font-semibold text-[#2f1748]">Bookings</h3>
+          <div className="mt-3 rounded-2xl border border-[#e8d9ff] bg-[#faf6ff] p-4">
+            <h4 className="font-semibold text-[#2f1748]">Project Status</h4>
+            <p className="mt-1 text-sm text-[#4d2e70]">
+              {user.projectStatus.phase} - {user.projectStatus.details}
+            </p>
+            <p className="text-xs text-[#6a4a8f]">
+              Updated: {new Date(user.projectStatus.updatedAt).toLocaleString()}
+            </p>
+          </div>
+
+          <div className="mt-4">
+            <h4 className="font-semibold text-[#2f1748]">
+              Carpenter Uploads (Photos/Videos)
+            </h4>
+            {user.carpenterUploads.length === 0 ? (
+              <p className="mt-2 text-sm text-[#6a4a8f]">
+                No uploads yet. Your carpenter will add progress media here.
+              </p>
+            ) : (
+              <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                {user.carpenterUploads.map((upload) => (
+                  <div
+                    key={upload.id}
+                    className="rounded-xl border border-[#eddfff] p-3"
+                  >
+                    {upload.type === "image" ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img
+                        src={upload.url}
+                        alt={upload.caption}
+                        className="h-40 w-full rounded-lg object-cover"
+                      />
+                    ) : (
+                      <video
+                        controls
+                        className="h-40 w-full rounded-lg object-cover"
+                        src={upload.url}
+                      />
+                    )}
+                    <p className="mt-2 text-sm text-[#4d2e70]">{upload.caption}</p>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      ) : null}
+    </section>
+  );
+}
+
