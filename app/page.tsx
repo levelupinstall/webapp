@@ -2,7 +2,7 @@
 
 import Image from "next/image";
 import { useSearchParams } from "next/navigation";
-import { useEffect, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
 import ClientPortal from "./components/client-portal";
 import FloatingAgentChat from "./components/floating-agent-chat";
 import ProjectPlannerAssistant from "./components/project-planner-assistant";
@@ -16,7 +16,7 @@ type AuthUser = {
   fullName: string;
 };
 
-export default function Home() {
+function HomeContent() {
   const [activeSection, setActiveSection] = useState<SectionKey>("overview");
   const [portalMode, setPortalMode] = useState<"login" | "register">("login");
   const [accountView, setAccountView] = useState<AccountMenuView>("saved-projects");
@@ -853,5 +853,13 @@ export default function Home() {
         }}
       />
     </main>
+  );
+}
+
+export default function Home() {
+  return (
+    <Suspense fallback={null}>
+      <HomeContent />
+    </Suspense>
   );
 }

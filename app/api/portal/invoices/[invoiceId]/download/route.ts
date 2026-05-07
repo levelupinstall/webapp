@@ -68,8 +68,10 @@ export async function GET(
   });
 
   const pdfBytes = await pdfDoc.save();
+  const pdfArrayBuffer = new ArrayBuffer(pdfBytes.length);
+  new Uint8Array(pdfArrayBuffer).set(pdfBytes);
 
-  return new NextResponse(pdfBytes, {
+  return new NextResponse(pdfArrayBuffer, {
     headers: {
       "Content-Type": "application/pdf",
       "Content-Disposition": `attachment; filename="invoice-${invoice.id}.pdf"`,

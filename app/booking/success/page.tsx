@@ -1,9 +1,9 @@
 import Link from "next/link";
-import Stripe from "stripe";
 import {
   addPaidInvoiceByEmail,
   addPaidInvoiceByUserId,
 } from "@/lib/client-portal-store";
+import { createStripeServer } from "@/lib/stripe-server";
 import { upsertWorkRequestFromPaidBooking } from "@/lib/work-requests-store";
 
 type SuccessProps = {
@@ -30,7 +30,7 @@ export default async function BookingSuccessPage({ searchParams }: SuccessProps)
     );
   }
 
-  const stripe = new Stripe(stripeSecretKey, { apiVersion: "2025-04-30.basil" });
+  const stripe = createStripeServer(stripeSecretKey);
   const checkoutSession = await stripe.checkout.sessions.retrieve(sessionId);
 
   const paid = checkoutSession.payment_status === "paid";
