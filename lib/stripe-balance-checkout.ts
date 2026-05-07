@@ -1,11 +1,8 @@
 import Stripe from "stripe";
-
-export const STRIPE_CHECKOUT_API_VERSION = "2025-04-30.basil";
+import { getStripeServerFromEnv } from "@/lib/stripe-server";
 
 export function getStripeServer(): Stripe | null {
-  const key = process.env.STRIPE_SECRET_KEY?.trim();
-  if (!key) return null;
-  return new Stripe(key, { apiVersion: STRIPE_CHECKOUT_API_VERSION });
+  return getStripeServerFromEnv();
 }
 
 export async function createBalanceCheckoutSession(params: {

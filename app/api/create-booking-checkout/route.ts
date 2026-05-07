@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
-import Stripe from "stripe";
 import { getSessionFromCookie } from "@/lib/client-portal-auth";
+import { createStripeServer } from "@/lib/stripe-server";
 
 type BookingRequest = {
   fullName: string;
@@ -55,9 +55,7 @@ export async function POST(request: Request) {
       );
     }
 
-    const stripe = new Stripe(stripeSecretKey, {
-      apiVersion: "2025-04-30.basil",
-    });
+    const stripe = createStripeServer(stripeSecretKey);
     const portalSession = await getSessionFromCookie();
 
     const origin = request.headers.get("origin") || "http://localhost:3000";

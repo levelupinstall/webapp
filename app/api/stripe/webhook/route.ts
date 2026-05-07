@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import Stripe from "stripe";
 import { finalizeBalanceCheckoutSession } from "@/lib/finalize-balance-checkout";
-import { STRIPE_CHECKOUT_API_VERSION } from "@/lib/stripe-balance-checkout";
+import { createStripeServer } from "@/lib/stripe-server";
 
 export async function POST(request: Request) {
   const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET?.trim();
@@ -10,7 +10,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Webhook not configured." }, { status: 503 });
   }
 
-  const stripe = new Stripe(stripeKey, { apiVersion: STRIPE_CHECKOUT_API_VERSION });
+  const stripe = createStripeServer(stripeKey);
   const signature = request.headers.get("stripe-signature");
   if (!signature) {
     return NextResponse.json({ error: "Missing Stripe-Signature header." }, { status: 400 });
