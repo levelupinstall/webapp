@@ -1,6 +1,8 @@
-import { promises as fs } from "fs";
-import path from "path";
 import { randomUUID } from "crypto";
+import type { CarpenterAccount as CarpenterAccountRow } from "@prisma/client";
+import { Prisma } from "@prisma/client";
+
+import { prisma } from "@/lib/prisma";
 import type { CarpenterCalendarDay } from "./carpenter-calendar-types";
 
 export type ClientProfile = {
@@ -78,24 +80,16 @@ export type CarpenterJob = {
   receipts: Receipt[];
   messages: JobMessage[];
   payments: Payment[];
-  /** Linked client portal account when assigned from CRM */
   clientPortalUserId?: string;
   estimatedHours?: number;
   actualHours?: number;
   materialCostCents?: number;
-  /** Clock in/out with GPS per visit */
   workSessions?: WorkSession[];
-  /** Complications documented on site */
   issueReports?: JobIssueReport[];
-  /** Tools to bring for this job (from CRM / booking prep) */
   toolsNeeded: string[];
-  /** Materials to have on hand or order before the visit */
   materialsNeeded: string[];
-  /** Pick up vs already at jobsite (from CRM) */
   materialsFulfillment?: MaterialsFulfillment;
-  /** Supplier stops, bay numbers, what homeowner staged, etc. */
   materialPrepNotes: string;
-  /** Set when admin assigns an upcoming job — carpenter clears after confirming availability */
   availabilityReview?: AvailabilityReview;
 };
 
@@ -106,14 +100,11 @@ type CarpenterUser = {
   fullName: string;
   email: string;
   phone: string;
-  /** ICE — who we call if the carpenter is injured or unreachable on site */
   emergencyContactName: string;
   emergencyContactRelationship: string;
   emergencyContactPhone: string;
   emergencyContactAlternatePhone: string;
-  /** Trade capabilities, specialties, experience */
   skillsSummary: string;
-  /** Major tools / gear they bring (owned or typical kit) */
   toolsInventory: string;
   hasLiabilityInsurance: boolean;
   liabilityInsuranceDetails: string;
@@ -127,13 +118,6 @@ type CarpenterUser = {
   profilePictureDataUrl: string;
   jobs: CarpenterJob[];
 };
-
-type CarpenterData = {
-  carpenters: CarpenterUser[];
-};
-
-const DATA_DIR = path.join(process.cwd(), "data");
-const DATA_FILE = path.join(DATA_DIR, "carpenter-app.json");
 
 /** Who supplies / stages materials before work begins */
 export type MaterialsFulfillment = "pickup" | "on_site" | "mixed";
@@ -189,16 +173,6 @@ export function normalizeJobItemList(input: unknown): string[] {
   return [];
 }
 
-async function ensureDataFile() {
-  await fs.mkdir(DATA_DIR, { recursive: true });
-  try {
-    await fs.access(DATA_FILE);
-  } catch {
-    const defaultData: CarpenterData = { carpenters: [] };
-    await fs.writeFile(DATA_FILE, JSON.stringify(defaultData, null, 2), "utf8");
-  }
-}
-
 function hydrateJob(job: CarpenterJob): CarpenterJob {
   const media = (job.media ?? []).map((m) => ({
     ...m,
@@ -246,23 +220,71 @@ function hydrateCarpenter(raw: CarpenterUser): CarpenterUser {
   };
 }
 
-async function readData() {
-  await ensureDataFile();
-  const raw = await fs.readFile(DATA_FILE, "utf8");
-  const parsed = JSON.parse(raw) as CarpenterData;
-  parsed.carpenters = parsed.carpenters.map(hydrateCarpenter);
-  return parsed;
+function rowToCarpenterUser(row: CarpenterAccountRow): CarpenterUser {
+  const jobsRaw = row.jobs;
+  const jobsArray = Array.isArray(jobsRaw) ? (jobsRaw as unknown as CarpenterJob[]) : [];
+  return hydrateCarpenter({
+    id: row.id,
+    username: row.username,
+    passwordHash: row.passwordHash,
+    fullName: row.fullName,
+    email: row.email,
+    phone: row.phone,
+    emergencyContactName: row.emergencyContactName,
+    emergencyContactRelationship: row.emergencyContactRelationship,
+    emergencyContactPhone: row.emergencyContactPhone,
+    emergencyContactAlternatePhone: row.emergencyContactAlternatePhone,
+    skillsSummary: row.skillsSummary,
+    toolsInventory: row.toolsInventory,
+    hasLiabilityInsurance: row.hasLiabilityInsurance,
+    liabilityInsuranceDetails: row.liabilityInsuranceDetails,
+    hasWsib: row.hasWsib,
+    wsibDetails: row.wsibDetails,
+    availabilityNotes: row.availabilityNotes,
+    availabilityCalendar: row.availabilityCalendar as unknown as CarpenterCalendarDay[],
+    googleCalendarConnected: row.googleCalendarConnected,
+    googleCalendarEmail: row.googleCalendarEmail,
+    googleCalendarRefreshToken: row.googleCalendarRefreshToken,
+    profilePictureDataUrl: row.profilePictureDataUrl,
+    jobs: jobsArray,
+  });
 }
 
-async function writeData(data: CarpenterData) {
-  await fs.writeFile(DATA_FILE, JSON.stringify(data, null, 2), "utf8");
+async function persistCarpenterAccount(user: CarpenterUser) {
+  await prisma.carpenterAccount.update({
+    where: { id: user.id },
+    data: {
+      username: user.username,
+      passwordHash: user.passwordHash,
+      fullName: user.fullName,
+      email: user.email,
+      phone: user.phone,
+      emergencyContactName: user.emergencyContactName,
+      emergencyContactRelationship: user.emergencyContactRelationship,
+      emergencyContactPhone: user.emergencyContactPhone,
+      emergencyContactAlternatePhone: user.emergencyContactAlternatePhone,
+      skillsSummary: user.skillsSummary,
+      toolsInventory: user.toolsInventory,
+      hasLiabilityInsurance: user.hasLiabilityInsurance,
+      liabilityInsuranceDetails: user.liabilityInsuranceDetails,
+      hasWsib: user.hasWsib,
+      wsibDetails: user.wsibDetails,
+      availabilityNotes: user.availabilityNotes,
+      availabilityCalendar: user.availabilityCalendar as unknown as Prisma.InputJsonValue,
+      googleCalendarConnected: user.googleCalendarConnected,
+      googleCalendarEmail: user.googleCalendarEmail,
+      googleCalendarRefreshToken: user.googleCalendarRefreshToken,
+      profilePictureDataUrl: user.profilePictureDataUrl,
+      jobs: user.jobs as unknown as Prisma.InputJsonValue,
+    },
+  });
 }
 
 export async function findCarpenterByUsername(username: string) {
-  const data = await readData();
-  return data.carpenters.find(
-    (item) => item.username.toLowerCase() === username.toLowerCase(),
-  );
+  const row = await prisma.carpenterAccount.findFirst({
+    where: { username: { equals: username, mode: "insensitive" } },
+  });
+  return row ? rowToCarpenterUser(row) : undefined;
 }
 
 export async function createCarpenterUser(params: {
@@ -284,10 +306,9 @@ export async function createCarpenterUser(params: {
   availabilityNotes?: string;
   profilePictureDataUrl: string;
 }) {
-  const data = await readData();
-  const exists = data.carpenters.find(
-    (item) => item.username.toLowerCase() === params.username.toLowerCase(),
-  );
+  const exists = await prisma.carpenterAccount.findFirst({
+    where: { username: { equals: params.username, mode: "insensitive" } },
+  });
   if (exists) throw new Error("Username already exists.");
 
   const now = new Date().toISOString();
@@ -351,40 +372,51 @@ export async function createCarpenterUser(params: {
       "Pick up sheet goods and shaker door blank at supplier — account Level Up. Face-frame lumber is already in the client garage (south wall).",
   };
 
-  const user: CarpenterUser = {
-    id: randomUUID(),
-    username: params.username,
-    passwordHash: params.passwordHash,
-    fullName: params.fullName,
-    email: params.email,
-    phone: params.phone,
-    emergencyContactName: params.emergencyContactName,
-    emergencyContactRelationship: params.emergencyContactRelationship,
-    emergencyContactPhone: params.emergencyContactPhone,
-    emergencyContactAlternatePhone: params.emergencyContactAlternatePhone,
-    skillsSummary: params.skillsSummary,
-    toolsInventory: params.toolsInventory,
-    hasLiabilityInsurance: params.hasLiabilityInsurance,
-    liabilityInsuranceDetails: params.liabilityInsuranceDetails,
-    hasWsib: params.hasWsib,
-    wsibDetails: params.wsibDetails,
-    availabilityNotes: params.availabilityNotes ?? "",
-    availabilityCalendar: [],
-    googleCalendarConnected: false,
-    googleCalendarEmail: "",
-    googleCalendarRefreshToken: "",
-    profilePictureDataUrl: params.profilePictureDataUrl,
-    jobs: [sampleJob],
-  };
-  data.carpenters.push(user);
-  await writeData(data);
-  return user;
+  const jobsPayload = [hydrateJob(sampleJob)];
+
+  try {
+    const row = await prisma.carpenterAccount.create({
+      data: {
+        username: params.username,
+        passwordHash: params.passwordHash,
+        fullName: params.fullName,
+        email: params.email,
+        phone: params.phone,
+        emergencyContactName: params.emergencyContactName,
+        emergencyContactRelationship: params.emergencyContactRelationship,
+        emergencyContactPhone: params.emergencyContactPhone,
+        emergencyContactAlternatePhone: params.emergencyContactAlternatePhone,
+        skillsSummary: params.skillsSummary,
+        toolsInventory: params.toolsInventory,
+        hasLiabilityInsurance: params.hasLiabilityInsurance,
+        liabilityInsuranceDetails: params.liabilityInsuranceDetails,
+        hasWsib: params.hasWsib,
+        wsibDetails: params.wsibDetails,
+        availabilityNotes: params.availabilityNotes ?? "",
+        availabilityCalendar: [],
+        googleCalendarConnected: false,
+        googleCalendarEmail: "",
+        googleCalendarRefreshToken: "",
+        profilePictureDataUrl: params.profilePictureDataUrl,
+        jobs: jobsPayload as unknown as Prisma.InputJsonValue,
+      },
+    });
+    return rowToCarpenterUser(row);
+  } catch (error) {
+    if (
+      error instanceof Prisma.PrismaClientKnownRequestError &&
+      error.code === "P2002"
+    ) {
+      throw new Error("Username already exists.");
+    }
+    throw error;
+  }
 }
 
 export async function getCarpenterDashboard(carpenterId: string) {
-  const data = await readData();
-  const user = data.carpenters.find((item) => item.id === carpenterId);
-  if (!user) throw new Error("Carpenter not found.");
+  const row = await prisma.carpenterAccount.findUnique({ where: { id: carpenterId } });
+  if (!row) throw new Error("Carpenter not found.");
+  const user = rowToCarpenterUser(row);
   return {
     id: user.id,
     username: user.username,
@@ -424,9 +456,9 @@ export async function updateCarpenterProfile(
     toolsInventory: string;
   },
 ) {
-  const data = await readData();
-  const user = data.carpenters.find((item) => item.id === carpenterId);
-  if (!user) throw new Error("Carpenter not found.");
+  const row = await prisma.carpenterAccount.findUnique({ where: { id: carpenterId } });
+  if (!row) throw new Error("Carpenter not found.");
+  const user = rowToCarpenterUser(row);
   user.fullName = profile.fullName;
   user.phone = profile.phone;
   user.profilePictureDataUrl = profile.profilePictureDataUrl;
@@ -436,7 +468,7 @@ export async function updateCarpenterProfile(
   user.emergencyContactAlternatePhone = profile.emergencyContactAlternatePhone;
   user.skillsSummary = profile.skillsSummary;
   user.toolsInventory = profile.toolsInventory;
-  await writeData(data);
+  await persistCarpenterAccount(user);
   return getCarpenterDashboard(carpenterId);
 }
 
@@ -445,14 +477,14 @@ export async function updateCarpenterAvailability(
   availabilityNotes: string,
   availabilityCalendar?: unknown,
 ) {
-  const data = await readData();
-  const user = data.carpenters.find((item) => item.id === carpenterId);
-  if (!user) throw new Error("Carpenter not found.");
+  const row = await prisma.carpenterAccount.findUnique({ where: { id: carpenterId } });
+  if (!row) throw new Error("Carpenter not found.");
+  const user = rowToCarpenterUser(row);
   user.availabilityNotes = availabilityNotes;
   if (availabilityCalendar !== undefined) {
     user.availabilityCalendar = parseAvailabilityCalendar(availabilityCalendar);
   }
-  await writeData(data);
+  await persistCarpenterAccount(user);
   return getCarpenterDashboard(carpenterId);
 }
 
@@ -461,13 +493,15 @@ export async function connectCarpenterGoogleCalendar(params: {
   email: string;
   refreshToken: string;
 }) {
-  const data = await readData();
-  const user = data.carpenters.find((item) => item.id === params.carpenterId);
-  if (!user) throw new Error("Carpenter not found.");
+  const row = await prisma.carpenterAccount.findUnique({
+    where: { id: params.carpenterId },
+  });
+  if (!row) throw new Error("Carpenter not found.");
+  const user = rowToCarpenterUser(row);
   user.googleCalendarConnected = true;
   user.googleCalendarEmail = params.email;
   user.googleCalendarRefreshToken = params.refreshToken;
-  await writeData(data);
+  await persistCarpenterAccount(user);
   return getCarpenterDashboard(params.carpenterId);
 }
 
@@ -482,9 +516,9 @@ export async function addJobUpdate(
     receipt?: { title: string; amountCents: number; imageDataUrl: string };
   },
 ) {
-  const data = await readData();
-  const user = data.carpenters.find((item) => item.id === carpenterId);
-  if (!user) throw new Error("Carpenter not found.");
+  const row = await prisma.carpenterAccount.findUnique({ where: { id: carpenterId } });
+  if (!row) throw new Error("Carpenter not found.");
+  const user = rowToCarpenterUser(row);
   const job = user.jobs.find((item) => item.id === params.jobId);
   if (!job) throw new Error("Job not found.");
 
@@ -521,7 +555,7 @@ export async function addJobUpdate(
     });
   }
 
-  await writeData(data);
+  await persistCarpenterAccount(user);
   return job;
 }
 
@@ -530,9 +564,9 @@ export async function clockJobIn(
   jobId: string,
   geo: { lat: number; lng: number; accuracyM?: number },
 ) {
-  const data = await readData();
-  const user = data.carpenters.find((item) => item.id === carpenterId);
-  if (!user) throw new Error("Carpenter not found.");
+  const row = await prisma.carpenterAccount.findUnique({ where: { id: carpenterId } });
+  if (!row) throw new Error("Carpenter not found.");
+  const user = rowToCarpenterUser(row);
   const job = user.jobs.find((item) => item.id === jobId);
   if (!job) throw new Error("Job not found.");
   if (job.status !== "active") throw new Error("Clock in is only available on active jobs.");
@@ -546,7 +580,7 @@ export async function clockJobIn(
     clockIn: { at: new Date().toISOString(), lat: geo.lat, lng: geo.lng, accuracyM: geo.accuracyM },
   });
   job.workSessions = sessions;
-  await writeData(data);
+  await persistCarpenterAccount(user);
   return job;
 }
 
@@ -555,9 +589,9 @@ export async function clockJobOut(
   jobId: string,
   geo: { lat: number; lng: number; accuracyM?: number },
 ) {
-  const data = await readData();
-  const user = data.carpenters.find((item) => item.id === carpenterId);
-  if (!user) throw new Error("Carpenter not found.");
+  const row = await prisma.carpenterAccount.findUnique({ where: { id: carpenterId } });
+  if (!row) throw new Error("Carpenter not found.");
+  const user = rowToCarpenterUser(row);
   const job = user.jobs.find((item) => item.id === jobId);
   if (!job) throw new Error("Job not found.");
   if (job.status !== "active") throw new Error("Clock out is only available on active jobs.");
@@ -571,7 +605,7 @@ export async function clockJobOut(
     clockOut: { at: new Date().toISOString(), lat: geo.lat, lng: geo.lng, accuracyM: geo.accuracyM },
   };
   job.workSessions = sessions;
-  await writeData(data);
+  await persistCarpenterAccount(user);
   return job;
 }
 
@@ -585,9 +619,9 @@ export async function addJobSiteMedia(
     phase: JobMediaPhase;
   },
 ) {
-  const data = await readData();
-  const user = data.carpenters.find((item) => item.id === carpenterId);
-  if (!user) throw new Error("Carpenter not found.");
+  const row = await prisma.carpenterAccount.findUnique({ where: { id: carpenterId } });
+  if (!row) throw new Error("Carpenter not found.");
+  const user = rowToCarpenterUser(row);
   const job = user.jobs.find((item) => item.id === jobId);
   if (!job) throw new Error("Job not found.");
   if (!params.url.trim()) throw new Error("Media URL is required.");
@@ -602,7 +636,7 @@ export async function addJobSiteMedia(
     phase,
   });
 
-  await writeData(data);
+  await persistCarpenterAccount(user);
   return job;
 }
 
@@ -611,9 +645,9 @@ export async function addJobIssueReport(
   jobId: string,
   params: { notes: string; photos: { url: string; caption?: string }[] },
 ) {
-  const data = await readData();
-  const user = data.carpenters.find((item) => item.id === carpenterId);
-  if (!user) throw new Error("Carpenter not found.");
+  const row = await prisma.carpenterAccount.findUnique({ where: { id: carpenterId } });
+  if (!row) throw new Error("Carpenter not found.");
+  const user = rowToCarpenterUser(row);
   const job = user.jobs.find((item) => item.id === jobId);
   if (!job) throw new Error("Job not found.");
 
@@ -641,40 +675,43 @@ export async function addJobIssueReport(
   });
   job.issueReports = reports;
 
-  await writeData(data);
+  await persistCarpenterAccount(user);
   return job;
 }
 
 export async function getCarpenterJob(carpenterId: string, jobId: string) {
-  const data = await readData();
-  const user = data.carpenters.find((item) => item.id === carpenterId);
-  if (!user) throw new Error("Carpenter not found.");
+  const row = await prisma.carpenterAccount.findUnique({ where: { id: carpenterId } });
+  if (!row) throw new Error("Carpenter not found.");
+  const user = rowToCarpenterUser(row);
   const job = user.jobs.find((item) => item.id === jobId);
   if (!job) throw new Error("Job not found.");
   return job;
 }
 
 export async function listCarpentersForAdmin() {
-  const data = await readData();
-  return data.carpenters.map((c) => ({
-    id: c.id,
-    username: c.username,
-    fullName: c.fullName,
-    email: c.email,
-    phone: c.phone,
-    emergencyContactName: c.emergencyContactName || "",
-    emergencyContactRelationship: c.emergencyContactRelationship || "",
-    emergencyContactPhone: c.emergencyContactPhone || "",
-    emergencyContactAlternatePhone: c.emergencyContactAlternatePhone || "",
-    skillsSummary: c.skillsSummary || "",
-    toolsInventory: c.toolsInventory || "",
-    availabilityNotes: c.availabilityNotes || "",
-    googleCalendarConnected: Boolean(c.googleCalendarConnected),
-    googleCalendarEmail: c.googleCalendarEmail || "",
-    activeJobCount: c.jobs.filter((j) => j.status === "active").length,
-    upcomingJobCount: c.jobs.filter((j) => j.status === "upcoming").length,
-    jobs: c.jobs,
-  }));
+  const rows = await prisma.carpenterAccount.findMany({ orderBy: { createdAt: "desc" } });
+  return rows.map((row) => {
+    const c = rowToCarpenterUser(row);
+    return {
+      id: c.id,
+      username: c.username,
+      fullName: c.fullName,
+      email: c.email,
+      phone: c.phone,
+      emergencyContactName: c.emergencyContactName || "",
+      emergencyContactRelationship: c.emergencyContactRelationship || "",
+      emergencyContactPhone: c.emergencyContactPhone || "",
+      emergencyContactAlternatePhone: c.emergencyContactAlternatePhone || "",
+      skillsSummary: c.skillsSummary || "",
+      toolsInventory: c.toolsInventory || "",
+      availabilityNotes: c.availabilityNotes || "",
+      googleCalendarConnected: Boolean(c.googleCalendarConnected),
+      googleCalendarEmail: c.googleCalendarEmail || "",
+      activeJobCount: c.jobs.filter((j) => j.status === "active").length,
+      upcomingJobCount: c.jobs.filter((j) => j.status === "upcoming").length,
+      jobs: c.jobs,
+    };
+  });
 }
 
 export async function adminAssignJob(params: {
@@ -693,9 +730,11 @@ export async function adminAssignJob(params: {
   materialPrepNotes?: string;
   availabilityReview?: unknown;
 }) {
-  const data = await readData();
-  const carpenter = data.carpenters.find((item) => item.id === params.carpenterId);
-  if (!carpenter) throw new Error("Carpenter not found.");
+  const row = await prisma.carpenterAccount.findUnique({
+    where: { id: params.carpenterId },
+  });
+  if (!row) throw new Error("Carpenter not found.");
+  const carpenter = rowToCarpenterUser(row);
 
   const fulfillment = parseMaterialsFulfillment(params.materialsFulfillment);
   const status = params.status || "active";
@@ -727,8 +766,8 @@ export async function adminAssignJob(params: {
         }
       : {}),
   };
-  carpenter.jobs.unshift(job);
-  await writeData(data);
+  carpenter.jobs.unshift(hydrateJob(job));
+  await persistCarpenterAccount(carpenter);
   return job;
 }
 
@@ -743,9 +782,9 @@ export async function getCompletedJobSummaryForSocial(
   carpenterUsername: string;
   carpenterFullName: string;
 } | null> {
-  const data = await readData();
-  const carpenter = data.carpenters.find((item) => item.id === carpenterId);
-  if (!carpenter) return null;
+  const row = await prisma.carpenterAccount.findUnique({ where: { id: carpenterId } });
+  if (!row) return null;
+  const carpenter = rowToCarpenterUser(row);
   const job = carpenter.jobs.find((item) => item.id === jobId);
   if (!job || job.status !== "completed") return null;
   return {
@@ -770,9 +809,11 @@ export async function adminUpdateJob(params: {
   materialPrepNotes?: string;
   availabilityReview?: unknown;
 }) {
-  const data = await readData();
-  const carpenter = data.carpenters.find((item) => item.id === params.carpenterId);
-  if (!carpenter) throw new Error("Carpenter not found.");
+  const row = await prisma.carpenterAccount.findUnique({
+    where: { id: params.carpenterId },
+  });
+  if (!row) throw new Error("Carpenter not found.");
+  const carpenter = rowToCarpenterUser(row);
   const job = carpenter.jobs.find((item) => item.id === params.jobId);
   if (!job) throw new Error("Job not found.");
 
@@ -815,7 +856,7 @@ export async function adminUpdateJob(params: {
     job.availabilityReview = "pending";
   }
 
-  await writeData(data);
+  await persistCarpenterAccount(carpenter);
   return job;
 }
 
@@ -844,4 +885,3 @@ export async function getPayoutSummary(carpenterId: string) {
     nextExpectedPayment: scheduled[0]?.expectedAt || null,
   };
 }
-

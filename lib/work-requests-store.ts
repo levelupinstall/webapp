@@ -1,6 +1,7 @@
-import { promises as fs } from "fs";
-import path from "path";
-import { randomUUID } from "crypto";
+import type { AdminWorkRequest } from "@prisma/client";
+import { Prisma } from "@prisma/client";
+
+import { prisma } from "@/lib/prisma";
 
 export type WorkRequestJobPlan = {
   materials: string[];
@@ -28,33 +29,26 @@ export type WorkRequest = {
   jobPlan?: WorkRequestJobPlan;
 };
 
-type WorkRequestsData = {
-  requests: WorkRequest[];
-};
-
-const DATA_DIR = path.join(process.cwd(), "data");
-const DATA_FILE = path.join(DATA_DIR, "work-requests.json");
-
-async function ensureFile() {
-  await fs.mkdir(DATA_DIR, { recursive: true });
-  try {
-    await fs.access(DATA_FILE);
-  } catch {
-    const empty: WorkRequestsData = { requests: [] };
-    await fs.writeFile(DATA_FILE, JSON.stringify(empty, null, 2), "utf8");
-  }
-}
-
-async function readData(): Promise<WorkRequestsData> {
-  await ensureFile();
-  const raw = await fs.readFile(DATA_FILE, "utf8");
-  const parsed = JSON.parse(raw) as WorkRequestsData;
-  if (!Array.isArray(parsed.requests)) parsed.requests = [];
-  return parsed;
-}
-
-async function writeData(data: WorkRequestsData) {
-  await fs.writeFile(DATA_FILE, JSON.stringify(data, null, 2), "utf8");
+function rowToWorkRequest(row: AdminWorkRequest): WorkRequest {
+  return {
+    id: row.id,
+    createdAt: row.createdAt.toISOString(),
+    status: row.status as WorkRequest["status"],
+    source: row.source as WorkRequest["source"],
+    fullName: row.fullName,
+    email: row.email,
+    phone: row.phone,
+    projectAddress: row.projectAddress,
+    preferredDate: row.preferredDate,
+    projectDetails: row.projectDetails,
+    signatureName: row.signatureName,
+    stripeSessionId: row.stripeSessionId,
+    paidAmountCents: row.paidAmountCents,
+    portalUserId: row.portalUserId,
+    jobPlan: row.jobPlan
+      ? (row.jobPlan as unknown as WorkRequestJobPlan)
+      : undefined,
+  };
 }
 
 export async function upsertWorkRequestFromPaidBooking(params: {
@@ -69,70 +63,75 @@ export async function upsertWorkRequestFromPaidBooking(params: {
   signatureName: string;
   portalUserId: string;
 }) {
-  const data = await readData();
-  const existing = data.requests.find((r) => r.stripeSessionId === params.stripeSessionId);
+  const existing = await prisma.adminWorkRequest.findUnique({
+    where: { stripeSessionId: params.stripeSessionId },
+  });
+
   if (existing) {
-    existing.paidAmountCents = params.paidAmountCents;
-    existing.fullName = params.fullName;
-    existing.email = params.email;
-    existing.phone = params.phone;
-    existing.projectAddress = params.projectAddress;
-    existing.preferredDate = params.preferredDate;
-    existing.projectDetails = params.projectDetails;
-    existing.signatureName = params.signatureName;
-    existing.portalUserId = params.portalUserId;
-    await writeData(data);
-    return existing;
+    const updated = await prisma.adminWorkRequest.update({
+      where: { stripeSessionId: params.stripeSessionId },
+      data: {
+        paidAmountCents: params.paidAmountCents,
+        fullName: params.fullName,
+        email: params.email,
+        phone: params.phone,
+        projectAddress: params.projectAddress,
+        preferredDate: params.preferredDate,
+        projectDetails: params.projectDetails,
+        signatureName: params.signatureName,
+        portalUserId: params.portalUserId,
+      },
+    });
+    return rowToWorkRequest(updated);
   }
 
-  const now = new Date().toISOString();
-  const req: WorkRequest = {
-    id: randomUUID(),
-    createdAt: now,
-    status: "new",
-    source: "booking",
-    fullName: params.fullName,
-    email: params.email,
-    phone: params.phone,
-    projectAddress: params.projectAddress,
-    preferredDate: params.preferredDate,
-    projectDetails: params.projectDetails,
-    signatureName: params.signatureName,
-    stripeSessionId: params.stripeSessionId,
-    paidAmountCents: params.paidAmountCents,
-    portalUserId: params.portalUserId,
-  };
-  data.requests.unshift(req);
-  await writeData(data);
-  return req;
+  const created = await prisma.adminWorkRequest.create({
+    data: {
+      status: "new",
+      source: "booking",
+      fullName: params.fullName,
+      email: params.email,
+      phone: params.phone,
+      projectAddress: params.projectAddress,
+      preferredDate: params.preferredDate,
+      projectDetails: params.projectDetails,
+      signatureName: params.signatureName,
+      stripeSessionId: params.stripeSessionId,
+      paidAmountCents: params.paidAmountCents,
+      portalUserId: params.portalUserId,
+    },
+  });
+  return rowToWorkRequest(created);
 }
 
 export async function listWorkRequestsForAdmin(): Promise<WorkRequest[]> {
-  const data = await readData();
-  return [...data.requests].sort(
-    (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
-  );
+  const rows = await prisma.adminWorkRequest.findMany({
+    orderBy: { createdAt: "desc" },
+  });
+  return rows.map(rowToWorkRequest);
 }
 
 export async function getWorkRequestById(id: string): Promise<WorkRequest | null> {
-  const data = await readData();
-  return data.requests.find((r) => r.id === id) || null;
+  const row = await prisma.adminWorkRequest.findUnique({ where: { id } });
+  return row ? rowToWorkRequest(row) : null;
 }
 
 export async function updateWorkRequestJobPlan(id: string, plan: WorkRequestJobPlan) {
-  const data = await readData();
-  const req = data.requests.find((r) => r.id === id);
-  if (!req) throw new Error("Work request not found.");
-  req.jobPlan = plan;
-  await writeData(data);
-  return req;
+  const exists = await prisma.adminWorkRequest.findUnique({ where: { id } });
+  if (!exists) throw new Error("Work request not found.");
+  const updated = await prisma.adminWorkRequest.update({
+    where: { id },
+    data: { jobPlan: plan as unknown as Prisma.InputJsonValue },
+  });
+  return rowToWorkRequest(updated);
 }
 
 export async function updateWorkRequestStatus(id: string, status: WorkRequest["status"]) {
-  const data = await readData();
-  const req = data.requests.find((r) => r.id === id);
-  if (!req) throw new Error("Work request not found.");
-  req.status = status;
-  await writeData(data);
-  return req;
+  const exists = await prisma.adminWorkRequest.findUnique({ where: { id } });
+  if (!exists) throw new Error("Work request not found.");
+  const updated = await prisma.adminWorkRequest.update({
+    where: { id },
+    data: { status },
+  });
+  return rowToWorkRequest(updated);
 }

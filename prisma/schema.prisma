@@ -38,3 +38,59 @@ model PortalUser {
 
   @@map("portal_users")
 }
+
+/// Carpenter accounts — jobs stored as JSON array (legacy carpenter-app.json shape).
+model CarpenterAccount {
+  id                             String   @id @default(uuid())
+  username                       String
+  passwordHash                   String   @map("password_hash")
+  fullName                       String   @map("full_name")
+  email                          String   @default("")
+  phone                          String   @default("")
+  emergencyContactName           String   @default("") @map("emergency_contact_name")
+  emergencyContactRelationship   String   @default("") @map("emergency_contact_relationship")
+  emergencyContactPhone          String   @default("") @map("emergency_contact_phone")
+  emergencyContactAlternatePhone String   @default("") @map("emergency_contact_alternate_phone")
+  skillsSummary                  String   @default("") @map("skills_summary") @db.Text
+  toolsInventory                 String   @default("") @map("tools_inventory") @db.Text
+  hasLiabilityInsurance          Boolean  @default(false) @map("has_liability_insurance")
+  liabilityInsuranceDetails      String   @default("") @map("liability_insurance_details") @db.Text
+  hasWsib                        Boolean  @default(false) @map("has_wsib")
+  wsibDetails                    String   @default("") @map("wsib_details") @db.Text
+  availabilityNotes              String   @default("") @map("availability_notes") @db.Text
+  availabilityCalendar           Json     @default("[]") @map("availability_calendar")
+  googleCalendarConnected        Boolean  @default(false) @map("google_calendar_connected")
+  googleCalendarEmail            String   @default("") @map("google_calendar_email")
+  googleCalendarRefreshToken     String   @default("") @map("google_calendar_refresh_token") @db.Text
+  profilePictureDataUrl          String   @default("") @map("profile_picture_data_url") @db.Text
+
+  jobs Json @default("[]")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("carpenter_users")
+}
+
+/// Paid booking work requests for admin CRM (legacy work-requests.json rows).
+model AdminWorkRequest {
+  id               String   @id @default(uuid())
+  createdAt        DateTime @default(now()) @map("created_at")
+  updatedAt        DateTime @updatedAt @map("updated_at")
+  status           String
+  source           String   @default("booking")
+  fullName         String   @map("full_name")
+  email            String
+  phone            String
+  projectAddress   String   @map("project_address") @db.Text
+  preferredDate    String   @map("preferred_date") @db.Text
+  projectDetails   String   @map("project_details") @db.Text
+  signatureName    String   @map("signature_name")
+  stripeSessionId  String   @unique @map("stripe_session_id")
+  paidAmountCents  Int      @map("paid_amount_cents")
+  portalUserId     String   @map("portal_user_id")
+  jobPlan          Json?    @map("job_plan")
+
+  @@map("work_requests")
+}
+
