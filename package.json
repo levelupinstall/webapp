@@ -4,11 +4,15 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "build": "next build",
+    "build": "prisma migrate deploy && prisma generate && next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "postinstall": "prisma generate",
+    "db:migrate": "prisma migrate deploy",
+    "db:push": "prisma db push"
   },
   "dependencies": {
+    "@prisma/client": "5.22.0",
     "bcryptjs": "^3.0.3",
     "googleapis": "^171.4.0",
     "jsonwebtoken": "^9.0.3",
@@ -19,6 +23,7 @@
     "stripe": "^22.1.0"
   },
   "devDependencies": {
+    "prisma": "5.22.0",
     "@tailwindcss/postcss": "^4",
     "@types/jsonwebtoken": "^9.0.10",
     "@types/node": "^20",

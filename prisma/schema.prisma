@@ -1,0 +1,40 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+/// Client portal accounts — JSON columns mirror legacy client-portal.json shape.
+model PortalUser {
+  id                         String    @id @default(uuid())
+  username                   String
+  email                      String    @unique
+  passwordHash               String    @map("password_hash")
+  phone                      String    @default("")
+  verificationChannel        String?   @map("verification_channel")
+  signupVerificationPending  Boolean   @default(false) @map("signup_verification_pending")
+  signupVerificationCodeHash String    @default("") @map("signup_verification_code_hash")
+  signupVerificationExpiresAt DateTime? @map("signup_verification_expires_at")
+  accountVerifiedAt          DateTime? @map("account_verified_at")
+  fullName                   String    @default("") @map("full_name")
+  serviceAddress             String    @default("") @map("service_address") @db.Text
+  avatarDataUrl              String    @default("") @map("avatar_data_url") @db.Text
+  lastLoginAt                DateTime? @map("last_login_at")
+
+  ideas             Json @default("[]")
+  invoices          Json @default("[]")
+  projectStatus     Json @default("{}") @map("project_status")
+  carpenterUploads  Json @default("[]") @map("carpenter_uploads")
+  spacePhotos       Json @default("[]") @map("space_photos")
+  aiPlannerActivity Json @default("[]") @map("ai_planner_activity")
+  portalAnalytics   Json @default("{}") @map("portal_analytics")
+  communicationLog  Json @default("[]") @map("communication_log")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("portal_users")
+}

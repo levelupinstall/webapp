@@ -1,7 +1,9 @@
-import { promises as fs } from "fs";
-import path from "path";
+import type { PortalUser as PortalUserRow } from "@prisma/client";
+import { Prisma } from "@prisma/client";
 import { randomInt, randomUUID } from "crypto";
 import bcrypt from "bcryptjs";
+
+import { prisma } from "@/lib/prisma";
 
 export type Idea = {
   id: string;
@@ -18,11 +20,8 @@ export type Invoice = {
   issuedAt: string;
   stripeSessionId?: string;
   receiptEmail?: string;
-  /** Call-out vs labour/material balance — drives Stripe Checkout metadata */
   billingKind?: "call_out" | "balance";
-  /** Latest open Checkout session id while invoice is due (refreshed if expired) */
   pendingStripeSessionId?: string;
-  /** Scope / pricing lines shown on PDF and in portal */
   lineItemsSummary?: string;
 };
 
@@ -49,13 +48,11 @@ export type AiPlannerActivity = {
   imageCount: number;
 };
 
-/** Logged when clients open key portal sections (approximates “views”). */
 export type PortalAnalytics = {
   savedProjectsSectionOpens: number;
   spacePhotosSectionOpens: number;
 };
 
-/** Admin-logged outbound messages (email/SMS/app); automation can append later. */
 export type ClientCommunicationEntry = {
   id: string;
   channel: "email" | "sms" | "app_notice";
@@ -70,9 +67,7 @@ type UserRecord = {
   username: string;
   passwordHash: string;
   email: string;
-  /** Mobile number for SMS verification (E.164 when set) */
   phone: string;
-  /** Which channel the member chose for signup verification */
   verificationChannel?: "email" | "sms";
   signupVerificationPending: boolean;
   signupVerificationCodeHash: string;
@@ -85,31 +80,86 @@ type UserRecord = {
   invoices: Invoice[];
   projectStatus: ProjectStatus;
   carpenterUploads: CarpenterUpload[];
-  /** Photos/videos of the space the client uploads for the crew */
   spacePhotos: CarpenterUpload[];
   aiPlannerActivity: AiPlannerActivity[];
-  /** Successful portal password login (ISO); not updated on every page load */
   lastLoginAt?: string;
   portalAnalytics: PortalAnalytics;
   communicationLog: ClientCommunicationEntry[];
 };
 
-type PortalData = {
-  users: UserRecord[];
-};
+function parseIdeas(value: Prisma.JsonValue): Idea[] {
+  return Array.isArray(value) ? (value as unknown as Idea[]) : [];
+}
 
-const DATA_DIR = path.join(process.cwd(), "data");
-const DATA_FILE = path.join(DATA_DIR, "client-portal.json");
+function parseInvoices(value: Prisma.JsonValue): Invoice[] {
+  return Array.isArray(value) ? (value as unknown as Invoice[]) : [];
+}
 
-const defaultData: PortalData = { users: [] };
+function parseUploads(value: Prisma.JsonValue): CarpenterUpload[] {
+  return Array.isArray(value) ? (value as unknown as CarpenterUpload[]) : [];
+}
 
-async function ensureDataFile() {
-  await fs.mkdir(DATA_DIR, { recursive: true });
-  try {
-    await fs.access(DATA_FILE);
-  } catch {
-    await fs.writeFile(DATA_FILE, JSON.stringify(defaultData, null, 2), "utf8");
+function parseAiActivity(value: Prisma.JsonValue): AiPlannerActivity[] {
+  return Array.isArray(value) ? (value as unknown as AiPlannerActivity[]) : [];
+}
+
+function parseCommunicationLog(value: Prisma.JsonValue): ClientCommunicationEntry[] {
+  return Array.isArray(value) ? (value as unknown as ClientCommunicationEntry[]) : [];
+}
+
+function parseProjectStatus(value: Prisma.JsonValue): ProjectStatus {
+  if (value && typeof value === "object" && !Array.isArray(value)) {
+    const o = value as Record<string, unknown>;
+    return {
+      phase: String(o.phase ?? "Planning"),
+      updatedAt: String(o.updatedAt ?? new Date().toISOString()),
+      details: String(o.details ?? ""),
+    };
   }
+  const now = new Date().toISOString();
+  return {
+    phase: "Planning",
+    updatedAt: now,
+    details: "Account created. Awaiting project details and booking confirmation.",
+  };
+}
+
+function parsePortalAnalytics(value: Prisma.JsonValue): PortalAnalytics {
+  if (value && typeof value === "object" && !Array.isArray(value)) {
+    const o = value as Record<string, unknown>;
+    return {
+      savedProjectsSectionOpens: Number(o.savedProjectsSectionOpens ?? 0),
+      spacePhotosSectionOpens: Number(o.spacePhotosSectionOpens ?? 0),
+    };
+  }
+  return { savedProjectsSectionOpens: 0, spacePhotosSectionOpens: 0 };
+}
+
+function rowToUserRecord(row: PortalUserRow): UserRecord {
+  return hydrateUser({
+    id: row.id,
+    username: row.username,
+    passwordHash: row.passwordHash,
+    email: row.email,
+    phone: row.phone ?? "",
+    verificationChannel: row.verificationChannel as UserRecord["verificationChannel"],
+    signupVerificationPending: row.signupVerificationPending,
+    signupVerificationCodeHash: row.signupVerificationCodeHash ?? "",
+    signupVerificationExpiresAt: row.signupVerificationExpiresAt?.toISOString() ?? "",
+    accountVerifiedAt: row.accountVerifiedAt?.toISOString(),
+    fullName: row.fullName,
+    serviceAddress: row.serviceAddress,
+    avatarDataUrl: row.avatarDataUrl,
+    ideas: parseIdeas(row.ideas),
+    invoices: parseInvoices(row.invoices),
+    projectStatus: parseProjectStatus(row.projectStatus),
+    carpenterUploads: parseUploads(row.carpenterUploads),
+    spacePhotos: parseUploads(row.spacePhotos),
+    aiPlannerActivity: parseAiActivity(row.aiPlannerActivity),
+    lastLoginAt: row.lastLoginAt?.toISOString(),
+    portalAnalytics: parsePortalAnalytics(row.portalAnalytics),
+    communicationLog: parseCommunicationLog(row.communicationLog),
+  });
 }
 
 function hydrateUser(user: UserRecord): UserRecord {
@@ -131,23 +181,31 @@ function hydrateUser(user: UserRecord): UserRecord {
   };
 }
 
-async function readData(): Promise<PortalData> {
-  await ensureDataFile();
-  const raw = await fs.readFile(DATA_FILE, "utf8");
-  const parsed = JSON.parse(raw) as PortalData;
-  parsed.users = parsed.users.map(hydrateUser);
-  return parsed;
-}
-
-async function writeData(data: PortalData) {
-  await fs.writeFile(DATA_FILE, JSON.stringify(data, null, 2), "utf8");
+async function persistJsonSnapshots(
+  userId: string,
+  snapshot: Pick<
+    Prisma.PortalUserUpdateInput,
+    | "ideas"
+    | "invoices"
+    | "projectStatus"
+    | "carpenterUploads"
+    | "spacePhotos"
+    | "aiPlannerActivity"
+    | "portalAnalytics"
+    | "communicationLog"
+  >,
+) {
+  await prisma.portalUser.update({
+    where: { id: userId },
+    data: snapshot,
+  });
 }
 
 export async function findUserByUsername(username: string) {
-  const data = await readData();
-  return data.users.find(
-    (user) => user.username.toLowerCase() === username.toLowerCase(),
-  );
+  const row = await prisma.portalUser.findFirst({
+    where: { username: { equals: username, mode: "insensitive" } },
+  });
+  return row ? rowToUserRecord(row) : undefined;
 }
 
 export async function createUser(params: {
@@ -157,100 +215,131 @@ export async function createUser(params: {
   phone: string;
   verificationChannel: "email" | "sms";
 }): Promise<{ user: UserRecord; verificationCode: string }> {
-  const data = await readData();
-  const existing = data.users.find(
-    (user) => user.username.toLowerCase() === params.username.toLowerCase(),
-  );
-  if (existing) {
+  const existingUsername = await prisma.portalUser.findFirst({
+    where: { username: { equals: params.username, mode: "insensitive" } },
+  });
+  if (existingUsername) {
     throw new Error("Username already exists.");
+  }
+
+  const existingEmail = await prisma.portalUser.findUnique({
+    where: { email: params.email.toLowerCase() },
+  });
+  if (existingEmail) {
+    throw new Error("Email already registered.");
   }
 
   const verificationCode = String(randomInt(100000, 1000000));
   const signupVerificationCodeHash = await bcrypt.hash(verificationCode, 10);
-  const signupVerificationExpiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
+  const signupVerificationExpiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
 
   const now = new Date().toISOString();
-  const newUser: UserRecord = {
-    id: randomUUID(),
-    username: params.username,
-    email: params.email,
-    passwordHash: params.passwordHash,
-    phone: params.phone.trim(),
-    verificationChannel: params.verificationChannel,
-    signupVerificationPending: true,
-    signupVerificationCodeHash,
-    signupVerificationExpiresAt,
-    fullName: "",
-    serviceAddress: "",
-    avatarDataUrl: "",
-    ideas: [],
-    invoices: [],
-    projectStatus: {
-      phase: "Planning",
-      updatedAt: now,
-      details: "Account created. Awaiting project details and booking confirmation.",
-    },
-    carpenterUploads: [],
-    spacePhotos: [],
-    aiPlannerActivity: [],
-    lastLoginAt: undefined,
-    portalAnalytics: {
-      savedProjectsSectionOpens: 0,
-      spacePhotosSectionOpens: 0,
-    },
-    communicationLog: [],
+  const projectStatusPayload = {
+    phase: "Planning",
+    updatedAt: now,
+    details: "Account created. Awaiting project details and booking confirmation.",
+  };
+  const portalAnalyticsPayload = {
+    savedProjectsSectionOpens: 0,
+    spacePhotosSectionOpens: 0,
   };
 
-  data.users.push(newUser);
-  await writeData(data);
-  return { user: newUser, verificationCode };
+  try {
+    const row = await prisma.portalUser.create({
+      data: {
+        username: params.username,
+        email: params.email.toLowerCase(),
+        passwordHash: params.passwordHash,
+        phone: params.phone.trim(),
+        verificationChannel: params.verificationChannel,
+        signupVerificationPending: true,
+        signupVerificationCodeHash,
+        signupVerificationExpiresAt,
+        fullName: "",
+        serviceAddress: "",
+        avatarDataUrl: "",
+        ideas: [],
+        invoices: [],
+        projectStatus: projectStatusPayload,
+        carpenterUploads: [],
+        spacePhotos: [],
+        aiPlannerActivity: [],
+        portalAnalytics: portalAnalyticsPayload,
+        communicationLog: [],
+      },
+    });
+    return { user: rowToUserRecord(row), verificationCode };
+  } catch (error) {
+    if (
+      error instanceof Prisma.PrismaClientKnownRequestError &&
+      error.code === "P2002"
+    ) {
+      const targets = error.meta?.target as string[] | undefined;
+      if (targets?.some((t) => String(t).toLowerCase().includes("email"))) {
+        throw new Error("Email already registered.");
+      }
+      throw new Error("Username already exists.");
+    }
+    throw error;
+  }
 }
 
 export async function completePortalSignupVerification(params: {
   userId: string;
   code: string;
 }): Promise<boolean> {
-  const data = await readData();
-  const user = data.users.find((item) => item.id === params.userId);
-  if (!user?.signupVerificationPending) return false;
-  if (!user.signupVerificationCodeHash) return false;
-  const expires = user.signupVerificationExpiresAt
-    ? new Date(user.signupVerificationExpiresAt)
-    : null;
+  const row = await prisma.portalUser.findUnique({ where: { id: params.userId } });
+  if (!row?.signupVerificationPending) return false;
+  if (!row.signupVerificationCodeHash) return false;
+  const expires = row.signupVerificationExpiresAt;
   if (!expires || expires.getTime() < Date.now()) return false;
 
-  const ok = await bcrypt.compare(params.code.trim(), user.signupVerificationCodeHash);
+  const ok = await bcrypt.compare(params.code.trim(), row.signupVerificationCodeHash);
   if (!ok) return false;
 
-  user.signupVerificationPending = false;
-  user.signupVerificationCodeHash = "";
-  user.signupVerificationExpiresAt = "";
-  user.accountVerifiedAt = new Date().toISOString();
-  await writeData(data);
+  await prisma.portalUser.update({
+    where: { id: params.userId },
+    data: {
+      signupVerificationPending: false,
+      signupVerificationCodeHash: "",
+      signupVerificationExpiresAt: null,
+      accountVerifiedAt: new Date(),
+    },
+  });
   return true;
 }
 
-/** Returns a new plain verification code, or null if the user is not awaiting verification. */
-export async function regeneratePortalSignupVerificationCode(userId: string): Promise<string | null> {
-  const data = await readData();
-  const user = data.users.find((item) => item.id === userId);
-  if (!user?.signupVerificationPending) return null;
+export async function regeneratePortalSignupVerificationCode(
+  userId: string,
+): Promise<string | null> {
+  const row = await prisma.portalUser.findUnique({ where: { id: userId } });
+  if (!row?.signupVerificationPending) return null;
 
   const verificationCode = String(randomInt(100000, 1000000));
-  user.signupVerificationCodeHash = await bcrypt.hash(verificationCode, 10);
-  user.signupVerificationExpiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
-  await writeData(data);
+  const hash = await bcrypt.hash(verificationCode, 10);
+  await prisma.portalUser.update({
+    where: { id: userId },
+    data: {
+      signupVerificationCodeHash: hash,
+      signupVerificationExpiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
+    },
+  });
   return verificationCode;
 }
 
-/** Removes a portal user by id (e.g. rollback failed signup delivery). */
 export async function deletePortalUserById(userId: string): Promise<boolean> {
-  const data = await readData();
-  const before = data.users.length;
-  data.users = data.users.filter((item) => item.id !== userId);
-  if (data.users.length === before) return false;
-  await writeData(data);
-  return true;
+  try {
+    await prisma.portalUser.delete({ where: { id: userId } });
+    return true;
+  } catch (error) {
+    if (
+      error instanceof Prisma.PrismaClientKnownRequestError &&
+      error.code === "P2025"
+    ) {
+      return false;
+    }
+    throw error;
+  }
 }
 
 export async function addPaidInvoiceByEmail(params: {
@@ -259,11 +348,15 @@ export async function addPaidInvoiceByEmail(params: {
   amountCents: number;
   stripeSessionId: string;
 }) {
-  const data = await readData();
-  const user = data.users.find((item) => item.email.toLowerCase() === params.email.toLowerCase());
-  if (!user) return null;
+  const row = await prisma.portalUser.findUnique({
+    where: { email: params.email.toLowerCase() },
+  });
+  if (!row) return null;
 
-  const existing = user.invoices.find((invoice) => invoice.stripeSessionId === params.stripeSessionId);
+  const user = rowToUserRecord(row);
+  const existing = user.invoices.find(
+    (invoice) => invoice.stripeSessionId === params.stripeSessionId,
+  );
   if (existing) return existing;
 
   const invoice: Invoice = {
@@ -277,7 +370,9 @@ export async function addPaidInvoiceByEmail(params: {
     billingKind: "call_out",
   };
   user.invoices.unshift(invoice);
-  await writeData(data);
+  await persistJsonSnapshots(row.id, {
+    invoices: user.invoices as unknown as Prisma.InputJsonValue,
+  });
   return invoice;
 }
 
@@ -288,11 +383,13 @@ export async function addPaidInvoiceByUserId(params: {
   amountCents: number;
   stripeSessionId: string;
 }) {
-  const data = await readData();
-  const user = data.users.find((item) => item.id === params.userId);
-  if (!user) return null;
+  const row = await prisma.portalUser.findUnique({ where: { id: params.userId } });
+  if (!row) return null;
 
-  const existing = user.invoices.find((invoice) => invoice.stripeSessionId === params.stripeSessionId);
+  const user = rowToUserRecord(row);
+  const existing = user.invoices.find(
+    (invoice) => invoice.stripeSessionId === params.stripeSessionId,
+  );
   if (existing) return existing;
 
   const invoice: Invoice = {
@@ -306,11 +403,12 @@ export async function addPaidInvoiceByUserId(params: {
     billingKind: "call_out",
   };
   user.invoices.unshift(invoice);
-  await writeData(data);
+  await persistJsonSnapshots(row.id, {
+    invoices: user.invoices as unknown as Prisma.InputJsonValue,
+  });
   return invoice;
 }
 
-/** Phase 2: labour/materials/strike balance — client pays via portal Stripe Checkout */
 export async function createDueBalanceInvoice(params: {
   portalUserId: string;
   projectName: string;
@@ -320,10 +418,10 @@ export async function createDueBalanceInvoice(params: {
   if (!Number.isFinite(params.amountCents) || params.amountCents < 1) {
     throw new Error("amountCents must be a positive integer.");
   }
-  const data = await readData();
-  const user = data.users.find((item) => item.id === params.portalUserId);
-  if (!user) throw new Error("Portal user not found.");
+  const row = await prisma.portalUser.findUnique({ where: { id: params.portalUserId } });
+  if (!row) throw new Error("Portal user not found.");
 
+  const user = rowToUserRecord(row);
   const invoice: Invoice = {
     id: randomUUID(),
     projectName: params.projectName.trim() || "Project balance",
@@ -334,7 +432,9 @@ export async function createDueBalanceInvoice(params: {
     lineItemsSummary: params.lineItemsSummary?.trim() || undefined,
   };
   user.invoices.unshift(invoice);
-  await writeData(data);
+  await persistJsonSnapshots(row.id, {
+    invoices: user.invoices as unknown as Prisma.InputJsonValue,
+  });
   return invoice;
 }
 
@@ -343,9 +443,9 @@ export async function setBalanceInvoicePendingSession(
   invoiceId: string,
   stripeSessionId: string | undefined,
 ) {
-  const data = await readData();
-  const user = data.users.find((item) => item.id === portalUserId);
-  if (!user) throw new Error("Portal user not found.");
+  const row = await prisma.portalUser.findUnique({ where: { id: portalUserId } });
+  if (!row) throw new Error("Portal user not found.");
+  const user = rowToUserRecord(row);
   const inv = user.invoices.find((item) => item.id === invoiceId);
   if (!inv) throw new Error("Invoice not found.");
   if (inv.status !== "due") throw new Error("Invoice is not payable.");
@@ -354,20 +454,21 @@ export async function setBalanceInvoicePendingSession(
   } else {
     inv.pendingStripeSessionId = stripeSessionId;
   }
-  await writeData(data);
+  await persistJsonSnapshots(row.id, {
+    invoices: user.invoices as unknown as Prisma.InputJsonValue,
+  });
   return inv;
 }
 
-/** Idempotent: marks balance invoice paid from Stripe Checkout completion */
 export async function markBalanceInvoicePaid(params: {
   portalUserId: string;
   invoiceId: string;
   stripeSessionId: string;
   paidAmountCents: number;
 }): Promise<Invoice | null> {
-  const data = await readData();
-  const user = data.users.find((item) => item.id === params.portalUserId);
-  if (!user) return null;
+  const row = await prisma.portalUser.findUnique({ where: { id: params.portalUserId } });
+  if (!row) return null;
+  const user = rowToUserRecord(row);
   const inv = user.invoices.find((item) => item.id === params.invoiceId);
   if (!inv) return null;
   if (inv.status === "paid") return inv;
@@ -386,15 +487,17 @@ export async function markBalanceInvoicePaid(params: {
   inv.status = "paid";
   inv.stripeSessionId = params.stripeSessionId;
   delete inv.pendingStripeSessionId;
-  await writeData(data);
+  await persistJsonSnapshots(row.id, {
+    invoices: user.invoices as unknown as Prisma.InputJsonValue,
+  });
   return inv;
 }
 
 export async function addIdeaForUser(userId: string, params: Omit<Idea, "id" | "createdAt">) {
-  const data = await readData();
-  const user = data.users.find((item) => item.id === userId);
-  if (!user) throw new Error("User not found.");
+  const row = await prisma.portalUser.findUnique({ where: { id: userId } });
+  if (!row) throw new Error("User not found.");
 
+  const user = rowToUserRecord(row);
   const idea: Idea = {
     id: randomUUID(),
     title: params.title,
@@ -402,7 +505,9 @@ export async function addIdeaForUser(userId: string, params: Omit<Idea, "id" | "
     createdAt: new Date().toISOString(),
   };
   user.ideas.unshift(idea);
-  await writeData(data);
+  await persistJsonSnapshots(row.id, {
+    ideas: user.ideas as unknown as Prisma.InputJsonValue,
+  });
   return idea;
 }
 
@@ -410,10 +515,10 @@ export async function addClientSpacePhoto(
   userId: string,
   params: { type: "image" | "video"; url: string; caption: string },
 ) {
-  const data = await readData();
-  const user = data.users.find((item) => item.id === userId);
-  if (!user) throw new Error("User not found.");
+  const row = await prisma.portalUser.findUnique({ where: { id: userId } });
+  if (!row) throw new Error("User not found.");
 
+  const user = rowToUserRecord(row);
   const upload: CarpenterUpload = {
     id: randomUUID(),
     type: params.type,
@@ -423,31 +528,34 @@ export async function addClientSpacePhoto(
   };
   user.spacePhotos = user.spacePhotos ?? [];
   user.spacePhotos.unshift(upload);
-  await writeData(data);
+  await persistJsonSnapshots(row.id, {
+    spacePhotos: user.spacePhotos as unknown as Prisma.InputJsonValue,
+  });
   return upload;
 }
 
 export async function recordPortalLogin(userId: string) {
-  const data = await readData();
-  const user = data.users.find((item) => item.id === userId);
-  if (!user) return;
-  user.lastLoginAt = new Date().toISOString();
-  await writeData(data);
+  await prisma.portalUser.updateMany({
+    where: { id: userId },
+    data: { lastLoginAt: new Date() },
+  });
 }
 
 export async function incrementPortalAnalytics(
   userId: string,
   kind: keyof Pick<PortalAnalytics, "savedProjectsSectionOpens" | "spacePhotosSectionOpens">,
 ) {
-  const data = await readData();
-  const user = data.users.find((item) => item.id === userId);
-  if (!user) return;
+  const row = await prisma.portalUser.findUnique({ where: { id: userId } });
+  if (!row) return;
+  const user = rowToUserRecord(row);
   user.portalAnalytics = user.portalAnalytics ?? {
     savedProjectsSectionOpens: 0,
     spacePhotosSectionOpens: 0,
   };
   user.portalAnalytics[kind] = (user.portalAnalytics[kind] ?? 0) + 1;
-  await writeData(data);
+  await persistJsonSnapshots(row.id, {
+    portalAnalytics: user.portalAnalytics as unknown as Prisma.InputJsonValue,
+  });
 }
 
 export async function appendPortalCommunication(params: {
@@ -457,10 +565,10 @@ export async function appendPortalCommunication(params: {
   detail?: string;
   recordedBy?: string;
 }) {
-  const data = await readData();
-  const user = data.users.find((item) => item.id === params.portalUserId);
-  if (!user) throw new Error("Portal user not found.");
+  const row = await prisma.portalUser.findUnique({ where: { id: params.portalUserId } });
+  if (!row) throw new Error("Portal user not found.");
 
+  const user = rowToUserRecord(row);
   const entry: ClientCommunicationEntry = {
     id: randomUUID(),
     channel: params.channel,
@@ -471,14 +579,16 @@ export async function appendPortalCommunication(params: {
   };
   user.communicationLog = user.communicationLog ?? [];
   user.communicationLog.unshift(entry);
-  await writeData(data);
+  await persistJsonSnapshots(row.id, {
+    communicationLog: user.communicationLog as unknown as Prisma.InputJsonValue,
+  });
   return entry;
 }
 
 export async function getUserPortalData(userId: string) {
-  const data = await readData();
-  const user = data.users.find((item) => item.id === userId);
-  if (!user) throw new Error("User not found.");
+  const row = await prisma.portalUser.findUnique({ where: { id: userId } });
+  if (!row) throw new Error("User not found.");
+  const user = rowToUserRecord(row);
   return {
     id: user.id,
     username: user.username,
@@ -499,57 +609,75 @@ export async function appendAiPlannerActivity(
   userId: string,
   entry: Omit<AiPlannerActivity, "id" | "createdAt">,
 ) {
-  const data = await readData();
-  const user = data.users.find((item) => item.id === userId);
-  if (!user) return null;
+  const row = await prisma.portalUser.findUnique({ where: { id: userId } });
+  if (!row) return null;
 
+  const user = rowToUserRecord(row);
   const activity: AiPlannerActivity = {
     id: randomUUID(),
     createdAt: new Date().toISOString(),
     ...entry,
   };
   user.aiPlannerActivity.unshift(activity);
-  await writeData(data);
+  await persistJsonSnapshots(row.id, {
+    aiPlannerActivity: user.aiPlannerActivity as unknown as Prisma.InputJsonValue,
+  });
   return activity;
 }
 
 export async function listPortalUsersForAdmin() {
-  const data = await readData();
-  return data.users.map((user) => ({
-    id: user.id,
-    username: user.username,
-    email: user.email,
-    phone: user.phone ?? "",
-    fullName: user.fullName,
-    serviceAddress: user.serviceAddress,
-    avatarDataUrl: user.avatarDataUrl,
-    ideas: user.ideas,
-    invoices: user.invoices,
-    projectStatus: user.projectStatus,
-    carpenterUploads: user.carpenterUploads || [],
-    spacePhotos: user.spacePhotos || [],
-    aiPlannerActivity: user.aiPlannerActivity || [],
-    lastLoginAt: user.lastLoginAt ?? null,
-    portalAnalytics: user.portalAnalytics ?? {
-      savedProjectsSectionOpens: 0,
-      spacePhotosSectionOpens: 0,
-    },
-    communicationLog: user.communicationLog ?? [],
-  }));
+  const rows = await prisma.portalUser.findMany({ orderBy: { createdAt: "desc" } });
+  return rows.map((row) => {
+    const user = rowToUserRecord(row);
+    return {
+      id: user.id,
+      username: user.username,
+      email: user.email,
+      phone: user.phone ?? "",
+      fullName: user.fullName,
+      serviceAddress: user.serviceAddress,
+      avatarDataUrl: user.avatarDataUrl,
+      ideas: user.ideas,
+      invoices: user.invoices,
+      projectStatus: user.projectStatus,
+      carpenterUploads: user.carpenterUploads || [],
+      spacePhotos: user.spacePhotos || [],
+      aiPlannerActivity: user.aiPlannerActivity || [],
+      lastLoginAt: user.lastLoginAt ?? null,
+      portalAnalytics: user.portalAnalytics ?? {
+        savedProjectsSectionOpens: 0,
+        spacePhotosSectionOpens: 0,
+      },
+      communicationLog: user.communicationLog ?? [],
+    };
+  });
 }
 
 export async function updateUserProfile(
   userId: string,
   profile: { fullName: string; serviceAddress: string; avatarDataUrl: string },
 ) {
-  const data = await readData();
-  const user = data.users.find((item) => item.id === userId);
-  if (!user) throw new Error("User not found.");
+  let updated: PortalUserRow;
+  try {
+    updated = await prisma.portalUser.update({
+      where: { id: userId },
+      data: {
+        fullName: profile.fullName,
+        serviceAddress: profile.serviceAddress,
+        avatarDataUrl: profile.avatarDataUrl,
+      },
+    });
+  } catch (error) {
+    if (
+      error instanceof Prisma.PrismaClientKnownRequestError &&
+      error.code === "P2025"
+    ) {
+      throw new Error("User not found.");
+    }
+    throw error;
+  }
 
-  user.fullName = profile.fullName;
-  user.serviceAddress = profile.serviceAddress;
-  user.avatarDataUrl = profile.avatarDataUrl;
-  await writeData(data);
+  const user = rowToUserRecord(updated);
 
   return {
     id: user.id,
@@ -568,9 +696,9 @@ export async function updateUserProfile(
 }
 
 export async function getPortalUserById(userId: string) {
-  const data = await readData();
-  const user = data.users.find((item) => item.id === userId);
-  if (!user) return null;
+  const row = await prisma.portalUser.findUnique({ where: { id: userId } });
+  if (!row) return null;
+  const user = rowToUserRecord(row);
   return {
     id: user.id,
     username: user.username,
@@ -581,4 +709,3 @@ export async function getPortalUserById(userId: string) {
     avatarDataUrl: user.avatarDataUrl,
   };
 }
-
