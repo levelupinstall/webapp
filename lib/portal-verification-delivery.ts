@@ -1,4 +1,13 @@
+import { sendEmailWithServiceAccount } from "@/lib/gmail-service-account";
+
 export type PortalVerificationChannel = "email" | "sms";
+
+function gmailSignupEmailConfigured(): boolean {
+  return Boolean(
+    process.env.GMAIL_SERVICE_ACCOUNT_KEY?.trim() &&
+      process.env.GMAIL_IMPERSONATED_USER?.trim(),
+  );
+}
 
 export function normalizePhoneE164(raw: string): string | null {
   const trimmed = raw.trim();
@@ -15,7 +24,7 @@ export function normalizePhoneE164(raw: string): string | null {
 
 export function portalVerificationConfigured(channel: PortalVerificationChannel): boolean {
   if (channel === "email") {
-    return Boolean(process.env.RESEND_API_KEY?.trim() && process.env.RESEND_FROM_EMAIL?.trim());
+    return gmailSignupEmailConfigured();
   }
   return Boolean(
     process.env.TWILIO_ACCOUNT_SID?.trim() &&
@@ -67,35 +76,33 @@ async function sendSignupEmail(
   subject: string,
   text: string,
 ): Promise<{ sent: boolean; error?: string }> {
-  const key = process.env.RESEND_API_KEY?.trim();
-  const from = process.env.RESEND_FROM_EMAIL?.trim();
-  if (!key || !from) {
+  if (!gmailSignupEmailConfigured()) {
     if (process.env.NODE_ENV !== "production") {
-      console.info(`[portal-verify] Email (RESEND not configured) → ${to}\n${text}`);
+      console.info(`[portal-verify] Email (Gmail not configured) → ${to}\n${text}`);
       return { sent: true };
     }
-    return { sent: false, error: "Email delivery is not configured (RESEND_API_KEY / RESEND_FROM_EMAIL)." };
+    return {
+      sent: false,
+      error:
+        "Email delivery is not configured (GMAIL_SERVICE_ACCOUNT_KEY / GMAIL_IMPERSONATED_USER).",
+    };
   }
 
-  const res = await fetch("https://api.resend.com/emails", {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${key}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      from,
-      to: [to],
+  try {
+    const impersonatedUser = process.env.GMAIL_IMPERSONATED_USER!.trim();
+    await sendEmailWithServiceAccount({
+      to,
       subject,
       text,
-    }),
-  });
-
-  if (!res.ok) {
-    const errBody = await res.text();
-    return { sent: false, error: errBody || `Resend HTTP ${res.status}` };
+      impersonatedUser,
+      fromName: "Level Up Install",
+    });
+    return { sent: true };
+  } catch (error) {
+    const message =
+      error instanceof Error ? error.message : "Failed to send verification email.";
+    return { sent: false, error: message };
   }
-  return { sent: true };
 }
 
 async function sendSignupSms(

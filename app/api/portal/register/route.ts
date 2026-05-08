@@ -69,7 +69,7 @@ export async function POST(request: Request) {
         {
           error:
             verificationChannel === "email"
-              ? "Email verification is not configured on this server (RESEND_API_KEY / RESEND_FROM_EMAIL)."
+              ? "Email verification is not configured on this server (GMAIL_SERVICE_ACCOUNT_KEY + GMAIL_IMPERSONATED_USER)."
               : "Text verification is not configured on this server (Twilio env vars).",
         },
         { status: 503 },
