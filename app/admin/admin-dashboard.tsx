@@ -18,6 +18,7 @@ type AiPlannerActivity = {
   replyPreview: string;
   intakeSummary: string;
   imageCount: number;
+  conceptImages?: Array<{ mimeType: string; dataUrl: string }>;
 };
 
 type PortalClient = {
@@ -2008,6 +2009,24 @@ export default function AdminDashboard() {
                               <p className="mt-2 text-zinc-400">
                                 <span className="text-zinc-500">Reply:</span> {row.replyPreview}
                               </p>
+                              {row.conceptImages && row.conceptImages.length > 0 ? (
+                                <div className="mt-3">
+                                  <p className="text-xs font-medium uppercase tracking-wide text-zinc-500">
+                                    AI concept visuals (this turn)
+                                  </p>
+                                  <div className="mt-2 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+                                    {row.conceptImages.map((img, idx) => (
+                                      // eslint-disable-next-line @next/next/no-img-element -- admin CRM data URLs from planner archive
+                                      <img
+                                        key={`${row.id}-viz-${idx}`}
+                                        src={img.dataUrl}
+                                        alt={`Concept ${idx + 1}`}
+                                        className="max-h-52 w-full rounded-lg border border-zinc-700 bg-black/20 object-contain"
+                                      />
+                                    ))}
+                                  </div>
+                                </div>
+                              ) : null}
                               <pre className="mt-2 whitespace-pre-wrap text-xs text-zinc-600">
                                 {row.intakeSummary}
                               </pre>

@@ -48,6 +48,8 @@ export type AiPlannerActivity = {
   replyPreview: string;
   intakeSummary: string;
   imageCount: number;
+  /** Concept visuals the planner attached this turn (for admin CRM). */
+  conceptImages?: Array<{ mimeType: string; dataUrl: string }>;
 };
 
 export type WorkProposalStatus =
@@ -153,7 +155,38 @@ function parseUploads(value: Prisma.JsonValue): CarpenterUpload[] {
 }
 
 function parseAiActivity(value: Prisma.JsonValue): AiPlannerActivity[] {
-  return Array.isArray(value) ? (value as unknown as AiPlannerActivity[]) : [];
+  if (!Array.isArray(value)) return [];
+  const list = value as unknown as Record<string, unknown>[];
+  const out: AiPlannerActivity[] = [];
+  for (const row of list) {
+    if (!row || typeof row !== "object") continue;
+    const id = String(row.id ?? "").trim();
+    if (!id) continue;
+
+    let conceptImages: AiPlannerActivity["conceptImages"];
+    const raw = row.conceptImages;
+    if (Array.isArray(raw)) {
+      const imgs = raw
+        .filter((x): x is Record<string, unknown> => !!x && typeof x === "object")
+        .map((x) => ({
+          mimeType: String(x.mimeType ?? "image/png"),
+          dataUrl: String(x.dataUrl ?? ""),
+        }))
+        .filter((x) => x.dataUrl.startsWith("data:") && x.dataUrl.length < 2_000_000);
+      if (imgs.length) conceptImages = imgs;
+    }
+
+    out.push({
+      id,
+      createdAt: String(row.createdAt ?? new Date().toISOString()),
+      promptPreview: String(row.promptPreview ?? ""),
+      replyPreview: String(row.replyPreview ?? ""),
+      intakeSummary: String(row.intakeSummary ?? ""),
+      imageCount: Math.max(0, Math.floor(Number(row.imageCount ?? 0)) || 0),
+      ...(conceptImages?.length ? { conceptImages } : {}),
+    });
+  }
+  return out;
 }
 
 function parseCommunicationLog(value: Prisma.JsonValue): ClientCommunicationEntry[] {

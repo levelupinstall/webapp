@@ -30,6 +30,27 @@ function isPlannerImageUpload(file: File): boolean {
 /** User messages shorter than this skip generic blank-room sketch generation (avoids noisy renders). */
 const MIN_USER_CHARS_FOR_GENERIC_SKETCH = 40;
 
+/** Persist AI-generated concept images for admin CRM (bounded size). */
+function conceptImagesForAdminCrm(
+  responseImages: { mimeType: string; data: string }[],
+): Array<{ mimeType: string; dataUrl: string }> {
+  const MAX_IMAGES = 3;
+  const MAX_PER_DATA_URL = 480_000;
+  const MAX_COMBINED = 1_200_000;
+
+  const out: Array<{ mimeType: string; dataUrl: string }> = [];
+  let combined = 0;
+  for (const img of responseImages.slice(0, MAX_IMAGES)) {
+    const mime = (img.mimeType || "image/png").trim() || "image/png";
+    const dataUrl = `data:${mime};base64,${img.data}`;
+    if (dataUrl.length > MAX_PER_DATA_URL) continue;
+    if (combined + dataUrl.length > MAX_COMBINED && out.length > 0) break;
+    out.push({ mimeType: mime, dataUrl });
+    combined += dataUrl.length;
+  }
+  return out;
+}
+
 export const maxDuration = 120;
 
 function buildPlannerSystemInstruction(params: {
@@ -369,6 +390,7 @@ export async function POST(request: Request) {
     const portalSession = await getSessionFromCookie();
     if (portalSession?.userId) {
       try {
+        const conceptImages = conceptImagesForAdminCrm(responseImages);
         await appendAiPlannerActivity(portalSession.userId, {
           promptPreview: lastUserText.slice(0, 280) || "(photo)",
           replyPreview: cleanReply.slice(0, 480),
@@ -377,6 +399,7 @@ export async function POST(request: Request) {
             imageFiles.length +
             sketchReferenceFiles.length +
             responseImages.length,
+          ...(conceptImages.length ? { conceptImages } : {}),
         });
       } catch {
         /* Activity logging must not break planner responses */
