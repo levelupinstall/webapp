@@ -25,6 +25,16 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Invalid credentials." }, { status: 401 });
   }
 
+  if (user.signupVerificationPending) {
+    return NextResponse.json(
+      {
+        error:
+          "Please confirm your email first. Check your inbox for the welcome message with a confirmation link.",
+      },
+      { status: 403 },
+    );
+  }
+
   await setSessionCookie({ userId: user.id, username: user.username });
   await recordPortalLogin(user.id);
   return NextResponse.json({

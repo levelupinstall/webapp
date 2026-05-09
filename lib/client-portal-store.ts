@@ -214,7 +214,7 @@ export async function createUser(params: {
   passwordHash: string;
   phone: string;
   verificationChannel: "email" | "sms";
-}): Promise<{ user: UserRecord; verificationCode: string }> {
+}): Promise<{ user: UserRecord; verificationCode: string | null }> {
   const existingUsername = await prisma.portalUser.findFirst({
     where: { username: { equals: params.username, mode: "insensitive" } },
   });
@@ -229,9 +229,14 @@ export async function createUser(params: {
     throw new Error("Email already registered.");
   }
 
-  const verificationCode = String(randomInt(100000, 1000000));
-  const signupVerificationCodeHash = await bcrypt.hash(verificationCode, 10);
   const signupVerificationExpiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
+  let verificationCode: string | null = null;
+  let signupVerificationCodeHash = "";
+
+  if (params.verificationChannel === "sms") {
+    verificationCode = String(randomInt(100000, 1000000));
+    signupVerificationCodeHash = await bcrypt.hash(verificationCode, 10);
+  }
 
   const now = new Date().toISOString();
   const projectStatusPayload = {
@@ -284,6 +289,27 @@ export async function createUser(params: {
   }
 }
 
+export async function completePortalSignupVerificationFromMagicLink(
+  userId: string,
+): Promise<{ ok: true; username: string } | { ok: false }> {
+  const row = await prisma.portalUser.findUnique({ where: { id: userId } });
+  if (!row?.signupVerificationPending) return { ok: false };
+  if ((row.verificationChannel ?? "email") !== "email") return { ok: false };
+  const expires = row.signupVerificationExpiresAt;
+  if (!expires || expires.getTime() < Date.now()) return { ok: false };
+
+  await prisma.portalUser.update({
+    where: { id: userId },
+    data: {
+      signupVerificationPending: false,
+      signupVerificationCodeHash: "",
+      signupVerificationExpiresAt: null,
+      accountVerifiedAt: new Date(),
+    },
+  });
+  return { ok: true, username: row.username };
+}
+
 export async function completePortalSignupVerification(params: {
   userId: string;
   code: string;
@@ -315,13 +341,26 @@ export async function regeneratePortalSignupVerificationCode(
   const row = await prisma.portalUser.findUnique({ where: { id: userId } });
   if (!row?.signupVerificationPending) return null;
 
+  const expires = new Date(Date.now() + 24 * 60 * 60 * 1000);
+
+  if ((row.verificationChannel ?? "email") === "email") {
+    await prisma.portalUser.update({
+      where: { id: userId },
+      data: {
+        signupVerificationCodeHash: "",
+        signupVerificationExpiresAt: expires,
+      },
+    });
+    return null;
+  }
+
   const verificationCode = String(randomInt(100000, 1000000));
   const hash = await bcrypt.hash(verificationCode, 10);
   await prisma.portalUser.update({
     where: { id: userId },
     data: {
       signupVerificationCodeHash: hash,
-      signupVerificationExpiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
+      signupVerificationExpiresAt: expires,
     },
   });
   return verificationCode;
@@ -588,6 +627,9 @@ export async function appendPortalCommunication(params: {
 export async function getUserPortalData(userId: string) {
   const row = await prisma.portalUser.findUnique({ where: { id: userId } });
   if (!row) throw new Error("User not found.");
+  if (row.signupVerificationPending) {
+    throw new Error("Account verification pending.");
+  }
   const user = rowToUserRecord(row);
   return {
     id: user.id,

@@ -1,3 +1,4 @@
+import { randomBytes } from "crypto";
 import { google } from "googleapis";
 
 const GMAIL_SEND_SCOPE = "https://www.googleapis.com/auth/gmail.send";
@@ -57,20 +58,39 @@ function buildMimeMessage(params: SendGmailParams) {
     ? `${params.fromName.trim()} <${params.impersonatedUser}>`
     : params.impersonatedUser;
 
-  const contentType = params.html
-    ? 'Content-Type: text/html; charset="UTF-8"'
-    : 'Content-Type: text/plain; charset="UTF-8"';
-  const body = params.html ?? params.text;
-
-  return [
+  const headers = [
     `From: ${from}`,
     `To: ${params.to}`,
     `Subject: ${params.subject}`,
     "MIME-Version: 1.0",
-    contentType,
-    "Content-Transfer-Encoding: 7bit",
+  ];
+
+  if (params.html) {
+    const boundary = `lu_${randomBytes(16).toString("hex")}`;
+    return [
+      ...headers,
+      `Content-Type: multipart/alternative; boundary="${boundary}"`,
+      "",
+      `--${boundary}`,
+      'Content-Type: text/plain; charset="UTF-8"',
+      "Content-Transfer-Encoding: 8bit",
+      "",
+      params.text,
+      `--${boundary}`,
+      'Content-Type: text/html; charset="UTF-8"',
+      "Content-Transfer-Encoding: 8bit",
+      "",
+      params.html,
+      `--${boundary}--`,
+    ].join("\r\n");
+  }
+
+  return [
+    ...headers,
+    'Content-Type: text/plain; charset="UTF-8"',
+    "Content-Transfer-Encoding: 8bit",
     "",
-    body,
+    params.text,
   ].join("\r\n");
 }
 

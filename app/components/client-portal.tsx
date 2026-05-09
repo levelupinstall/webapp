@@ -1,6 +1,7 @@
 "use client";
 
 import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 
 type PortalView = "saved-projects" | "invoices" | "profile" | "bookings";
 
@@ -65,6 +66,8 @@ export default function ClientPortal({
   const [profileServiceAddress, setProfileServiceAddress] = useState("");
   const [profileAvatar, setProfileAvatar] = useState("");
   const [invoiceCheckoutBusyId, setInvoiceCheckoutBusyId] = useState<string | null>(null);
+  const [verificationBanner, setVerificationBanner] = useState<string | null>(null);
+  const router = useRouter();
   const savedProjectsTrackRef = useRef(false);
   const spacePhotosTrackRef = useRef(false);
 
@@ -89,6 +92,24 @@ export default function ClientPortal({
     }, 0);
     return () => window.clearTimeout(timer);
   }, [loadMe]);
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const pv = params.get("portal_verify");
+    if (!pv) return;
+    const messages: Record<string, string> = {
+      expired:
+        "That confirmation link has expired or was already used. Please create your account again or contact us for help.",
+      invalid:
+        "That confirmation link is not valid. Try registering again or open the latest email we sent you.",
+      missing:
+        "We could not read a confirmation link. Open the link directly from your welcome email.",
+    };
+    setVerificationBanner(messages[pv] ?? "Something went wrong with email confirmation.");
+    params.delete("portal_verify");
+    const q = params.toString();
+    window.history.replaceState({}, "", `${window.location.pathname}${q ? `?${q}` : ""}`);
+  }, []);
 
   useEffect(() => {
     savedProjectsTrackRef.current = false;
@@ -134,8 +155,21 @@ export default function ClientPortal({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
       });
-      const data = (await response.json()) as { error?: string };
+      const data = (await response.json()) as {
+        error?: string;
+        needsVerification?: boolean;
+        verificationChannel?: string;
+        contactHint?: string;
+      };
       if (!response.ok) throw new Error(data.error || "Authentication failed.");
+      if (data.needsVerification) {
+        setPassword("");
+        const channel = encodeURIComponent(data.verificationChannel ?? "email");
+        const hintRaw = data.contactHint?.trim();
+        const hintQs = hintRaw ? `&hint=${encodeURIComponent(hintRaw)}` : "";
+        router.push(`/portal/signup-pending?channel=${channel}${hintQs}`);
+        return;
+      }
       await loadMe();
       setPassword("");
     } catch (authError) {
@@ -267,6 +301,20 @@ export default function ClientPortal({
         <p className="mt-3 text-[#55337b]">
           Create an account to save project ideas, view project status, and download invoices.
         </p>
+        {verificationBanner ? (
+          <div className="mt-4 rounded-2xl border border-[#c9e8c9] bg-[#f4faf4] px-4 py-3 text-sm text-[#1f4d22]">
+            <div className="flex gap-3">
+              <p className="min-w-0 flex-1">{verificationBanner}</p>
+              <button
+                type="button"
+                className="shrink-0 text-xs font-semibold text-[#2f7a32] underline"
+                onClick={() => setVerificationBanner(null)}
+              >
+                Dismiss
+              </button>
+            </div>
+          </div>
+        ) : null}
         <div className="mt-4 flex gap-2">
           <button
             type="button"
@@ -332,6 +380,20 @@ export default function ClientPortal({
 
   return (
     <section className="rounded-3xl border border-[#dac6fb] bg-white p-6 shadow-[0_10px_30px_-20px_rgba(91,33,182,0.55)] sm:p-8">
+      {verificationBanner ? (
+        <div className="mb-5 rounded-2xl border border-[#c9e8c9] bg-[#f4faf4] px-4 py-3 text-sm text-[#1f4d22]">
+          <div className="flex gap-3">
+            <p className="min-w-0 flex-1">{verificationBanner}</p>
+            <button
+              type="button"
+              className="shrink-0 text-xs font-semibold text-[#2f7a32] underline"
+              onClick={() => setVerificationBanner(null)}
+            >
+              Dismiss
+            </button>
+          </div>
+        </div>
+      ) : null}
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h2 className="text-2xl font-semibold text-[#2d1546] sm:text-3xl">

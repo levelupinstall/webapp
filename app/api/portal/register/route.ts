@@ -7,6 +7,7 @@ import {
 import {
   normalizePhoneE164,
   portalContactHint,
+  portalEmailSiteOrigin,
   portalVerificationConfigured,
   sendPortalSignupVerification,
 } from "@/lib/portal-verification-delivery";
@@ -86,12 +87,19 @@ export async function POST(request: Request) {
     });
 
     const ticket = signPortalSignupVerificationTicket(user.id);
+    const origin = portalEmailSiteOrigin();
+    const verificationLink =
+      verificationChannel === "email"
+        ? `${origin}/api/portal/verify-email?token=${encodeURIComponent(ticket)}`
+        : null;
+
     const sendResult = await sendPortalSignupVerification({
       channel: verificationChannel,
       email,
       phoneE164: phoneE164 ?? "",
       username,
       code: verificationCode,
+      verificationLink,
     });
 
     if (!sendResult.sent) {
@@ -108,7 +116,7 @@ export async function POST(request: Request) {
 
     return NextResponse.json({
       needsVerification: true,
-      verificationTicket: ticket,
+      ...(verificationChannel === "sms" ? { verificationTicket: ticket } : {}),
       verificationChannel,
       contactHint: portalContactHint(verificationChannel, email, phoneE164 ?? ""),
     });
