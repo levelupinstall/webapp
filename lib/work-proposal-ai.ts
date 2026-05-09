@@ -25,15 +25,68 @@ Required sections (use these exact ## titles when possible):
 
 Tone: professional, readable, honest about uncertainty. Do not invent SKUs; generic categories are fine.`;
 
+function combineProposalReferenceImages(
+  spaceParts: ContentPart[],
+  renderingParts: ContentPart[],
+  max = 4,
+): ContentPart[] {
+  const result: ContentPart[] = [];
+  let si = 0;
+  let ri = 0;
+  while (result.length < max && (si < spaceParts.length || ri < renderingParts.length)) {
+    if (si < spaceParts.length) {
+      result.push(spaceParts[si]);
+      si += 1;
+    }
+    if (result.length >= max) break;
+    if (ri < renderingParts.length) {
+      result.push(renderingParts[ri]);
+      ri += 1;
+    }
+  }
+  return result;
+}
+
+/** Pulls likely budget lines from the planner transcript for CRM / proposal header context. */
+export function extractBudgetHintFromTranscript(transcript: string): string | undefined {
+  const t = transcript.trim();
+  if (!t) return undefined;
+  const lines = t.split(/\n/);
+  const hits: string[] = [];
+  for (const line of lines) {
+    const lower = line.toLowerCase();
+    if (
+      /\$\s*[\d,]+/.test(line) ||
+      /\d\s*k\b/i.test(line) ||
+      lower.includes("budget") ||
+      lower.includes(" spend ") ||
+      lower.includes("investment")
+    ) {
+      const clip = line.trim().slice(0, 280);
+      if (clip) hits.push(clip);
+    }
+    if (hits.length >= 5) break;
+  }
+  if (hits.length) return [...new Set(hits)].join(" · ").slice(0, 1200);
+  const m = t.match(/\$[\d,]+(?:\.\d{2})?/);
+  if (m) return `Mentioned amount: ${m[0]}`;
+  return undefined;
+}
+
 function fallbackProposal(params: {
   clientName: string;
   transcript: string;
   renderingCount: number;
+  spacePhotoCount?: number;
 }): string {
   const clip = params.transcript.trim().slice(0, 12000);
+  const spaceNote =
+    params.spacePhotoCount && params.spacePhotoCount > 0
+      ? ` The homeowner attached **${params.spacePhotoCount}** photo(s) of their space for context.`
+      : "";
   return `## Project overview
 
-Formal proposal draft for **${params.clientName}**, generated from the AI planning conversation. Level Up will refine measurements on site.
+Formal proposal draft for **${params.clientName}**, generated from the AI planning conversation. Level Up will refine measurements on site.${spaceNote}
 
 ## Concept visuals for records
 
@@ -77,30 +130,47 @@ export async function generateWorkProposalMarkdown(params: {
   serviceAddress?: string;
   transcript: string;
   renderingParts: ContentPart[];
+  spacePhotoParts?: ContentPart[];
+  budgetHint?: string;
 }): Promise<string> {
   const addr = params.serviceAddress?.trim();
-  const header = `Client: ${params.clientName}${addr ? `\nService address (if provided): ${addr}` : ""}`;
+  const budgetLine = params.budgetHint?.trim()
+    ? `\nBudget / spend cues from conversation: ${params.budgetHint.trim().slice(0, 1500)}`
+    : "";
+  const header = `Client: ${params.clientName}${addr ? `\nService address (if provided): ${addr}` : ""}${budgetLine}`;
+
+  const spaceParts = params.spacePhotoParts ?? [];
+  const renderingParts = params.renderingParts;
 
   if (!isGeminiConfigured()) {
     return fallbackProposal({
       clientName: params.clientName,
       transcript: params.transcript,
-      renderingCount: params.renderingParts.filter((p) => "inline_data" in p).length,
+      renderingCount: renderingParts.filter((p) => "inline_data" in p).length,
+      spacePhotoCount: spaceParts.filter((p) => "inline_data" in p).length,
     });
   }
 
-  const userBlob = `${header}
+  const imageGuide =
+    spaceParts.length && renderingParts.length
+      ? "\n\n(Attached images alternate: customer space photo, then agreed concept rendering when both are present.)"
+      : spaceParts.length
+        ? "\n\n(Attached images are photos of the customer's space.)"
+        : "";
+
+  const userBlob = `${header}${imageGuide}
 
 ## Transcript (AI planner)
 
 ${params.transcript.trim().slice(0, 14000)}`;
 
-  if (params.renderingParts.length > 0) {
+  const combined = combineProposalReferenceImages(spaceParts, renderingParts, 4);
+  if (combined.length > 0) {
     const multimodal = await geminiPlannerTurn({
       systemInstruction:
         "You are a senior estimator and draftsman for residential finish carpentry. Follow instructions precisely.",
       userText: `${PROPOSAL_SYSTEM}\n\n---\n\nProduce the proposal now.\n\n${userBlob}`,
-      imageParts: params.renderingParts.slice(0, 4),
+      imageParts: combined,
     });
     if (!("error" in multimodal) && multimodal.text.trim()) return multimodal.text.trim();
   }
@@ -115,7 +185,8 @@ ${params.transcript.trim().slice(0, 14000)}`;
   return fallbackProposal({
     clientName: params.clientName,
     transcript: params.transcript,
-    renderingCount: params.renderingParts.filter((p) => "inline_data" in p).length,
+    renderingCount: renderingParts.filter((p) => "inline_data" in p).length,
+    spacePhotoCount: spaceParts.filter((p) => "inline_data" in p).length,
   });
 }
 

@@ -112,6 +112,14 @@ type JobRow = {
   materialsFulfillment?: "pickup" | "on_site" | "mixed";
   materialPrepNotes?: string;
   availabilityReview?: "pending" | "cleared";
+  formalProposalIntake?: { portalUserId: string; proposalId: string };
+  media?: Array<{
+    id: string;
+    type: "image" | "video";
+    url: string;
+    caption: string;
+    phase?: string;
+  }>;
   receipts: Receipt[];
   payments: JobPayment[];
   carpenterId: string;
@@ -754,6 +762,17 @@ export default function AdminDashboard() {
     return [];
   }, [jobs, tab]);
 
+  const formalProposalQueueJobs = useMemo(
+    () =>
+      jobs.filter(
+        (j) =>
+          j.status === "upcoming" &&
+          j.formalProposalIntake?.proposalId &&
+          j.formalProposalIntake.portalUserId,
+      ),
+    [jobs],
+  );
+
   const feedClients = useMemo(
     () =>
       Array.from(
@@ -1254,6 +1273,87 @@ export default function AdminDashboard() {
         {tab === "pending_jobs" || tab === "upcoming_jobs" || tab === "completed_jobs" ? (
           <section className="space-y-6">
             {tab === "pending_jobs" ? (
+              <div className="rounded-xl border border-violet-900/50 bg-violet-950/35 p-4">
+                <h2 className="text-sm font-semibold text-white">
+                  Formal proposals — admin review queue
+                </h2>
+                <p className="mt-1 text-xs text-zinc-500">
+                  Created when a customer agrees to proceed and taps{" "}
+                  <strong className="text-zinc-400">Request formal proposal</strong> in the AI planner.
+                  Each row links the job photos and draft proposal — refine text under{" "}
+                  <strong className="text-zinc-400">Clients → Formal proposals</strong> using{" "}
+                  <strong className="text-zinc-400">Apply with AI</strong> (Gemini), then email the
+                  customer.
+                </p>
+                {formalProposalQueueJobs.length === 0 ? (
+                  <p className="mt-4 text-sm text-zinc-500">
+                    No proposal-intake jobs yet — they appear here as{" "}
+                    <span className="text-zinc-400">upcoming</span> CRM rows with space + concept
+                    photos attached.
+                  </p>
+                ) : (
+                  <div className="mt-4 overflow-x-auto">
+                    <table className="w-full min-w-[760px] text-left text-sm">
+                      <thead className="border-b border-zinc-800 text-xs uppercase tracking-wider text-zinc-500">
+                        <tr>
+                          <th className="px-3 py-2 font-medium">Job</th>
+                          <th className="px-3 py-2 font-medium">Client</th>
+                          <th className="px-3 py-2 font-medium">Phone</th>
+                          <th className="px-3 py-2 font-medium">Site</th>
+                          <th className="px-3 py-2 font-medium">Proposal</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-zinc-800">
+                        {formalProposalQueueJobs.map((job) => (
+                          <tr key={job.id} className="align-top text-zinc-300">
+                            <td className="px-3 py-2">
+                              <p className="font-medium text-white">{job.title}</p>
+                              <p className="text-xs text-zinc-500">
+                                {new Date(job.startDate).toLocaleString()}
+                              </p>
+                              <p className="mt-1 text-[11px] text-zinc-500">
+                                Intake · {(job.media ?? []).length} photo(s) on file
+                              </p>
+                            </td>
+                            <td className="px-3 py-2">
+                              <p className="text-zinc-200">{job.client.name}</p>
+                              <p className="text-xs text-zinc-500">{job.client.email}</p>
+                            </td>
+                            <td className="px-3 py-2 text-xs">{job.client.phone || "—"}</td>
+                            <td className="px-3 py-2 text-xs text-zinc-400">
+                              {(job.client.address || "").trim() || "—"}
+                            </td>
+                            <td className="px-3 py-2">
+                              {job.clientPortalUserId && job.formalProposalIntake ? (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setTab("clients");
+                                    setExpandedClientId(job.clientPortalUserId ?? null);
+                                  }}
+                                  className="rounded-lg border border-violet-700 bg-violet-950/80 px-3 py-1.5 text-[11px] font-medium text-violet-200 hover:bg-violet-900/80"
+                                >
+                                  Open client &amp; proposal
+                                </button>
+                              ) : (
+                                <span className="text-xs text-zinc-500">—</span>
+                              )}
+                              {job.formalProposalIntake?.proposalId ? (
+                                <p className="mt-2 font-mono text-[10px] text-zinc-600">
+                                  {job.formalProposalIntake.proposalId.slice(0, 8)}…
+                                </p>
+                              ) : null}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+            ) : null}
+
+            {tab === "pending_jobs" ? (
               <div className="rounded-xl border border-zinc-800 bg-zinc-900/40 p-4">
                 <h2 className="text-sm font-semibold text-white">Carpenter availability</h2>
                 <p className="mt-1 text-xs text-zinc-500">
@@ -1425,6 +1525,42 @@ export default function AdminDashboard() {
                                 </p>
                               </div>
                             </div>
+                            {(job.media ?? []).length > 0 ? (
+                              <div>
+                                <h4 className="text-xs font-semibold uppercase text-zinc-500">
+                                  Photos (space &amp; agreed design)
+                                </h4>
+                                <ul className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                                  {(job.media ?? []).map((m) => (
+                                    <li
+                                      key={m.id}
+                                      className="overflow-hidden rounded-lg border border-zinc-800 bg-zinc-900"
+                                    >
+                                      {m.type === "image" && m.url.startsWith("data:") ? (
+                                        // eslint-disable-next-line @next/next/no-img-element
+                                        <img
+                                          src={m.url}
+                                          alt={m.caption}
+                                          className="max-h-52 w-full object-contain"
+                                        />
+                                      ) : (
+                                        <p className="p-3 text-xs text-zinc-500">
+                                          {m.caption || "Media"}
+                                        </p>
+                                      )}
+                                      <p className="border-t border-zinc-800 px-2 py-1 text-[11px] text-zinc-500">
+                                        {m.phase === "before"
+                                          ? "Customer space"
+                                          : m.phase === "after"
+                                            ? "After"
+                                            : "Agreed concept / reference"}
+                                        {m.caption ? ` · ${m.caption}` : ""}
+                                      </p>
+                                    </li>
+                                  ))}
+                                </ul>
+                              </div>
+                            ) : null}
                             <div className="rounded-lg border border-zinc-800 bg-zinc-900/40 p-3">
                               <h4 className="text-xs font-semibold uppercase text-zinc-500">
                                 Materials logistics (carpenter prep)

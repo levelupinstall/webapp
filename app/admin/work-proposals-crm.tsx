@@ -13,6 +13,9 @@ export type WorkProposalRow = {
   viewToken: string;
   sentAt?: string;
   aiChat?: Array<{ role: string; content: string; at: string }>;
+  spacePhotos?: Array<{ id: string; mimeType: string; dataUrl: string; caption?: string }>;
+  budgetNotes?: string;
+  renderings?: Array<{ id: string; mimeType: string; dataUrl: string; caption?: string }>;
 };
 
 function cadMoney(cents: number) {
@@ -137,6 +140,54 @@ function ProposalEditor(props: {
         <div className="rounded-lg border border-zinc-800 bg-zinc-900/80 px-3 py-2 text-[11px] text-zinc-400">
           <span className="text-zinc-500">Customer link: </span>
           <span className="break-all text-zinc-300">{customerLink}</span>
+        </div>
+      ) : null}
+
+      {proposal.budgetNotes?.trim() ? (
+        <div className="rounded-lg border border-amber-900/40 bg-amber-950/50 px-3 py-2 text-[11px] text-amber-100">
+          <span className="font-medium text-amber-400">Budget cues (from AI planner): </span>
+          {proposal.budgetNotes}
+        </div>
+      ) : null}
+
+      {(proposal.spacePhotos?.length || proposal.renderings?.length) ? (
+        <div className="space-y-3">
+          {proposal.spacePhotos?.length ? (
+            <div>
+              <h5 className="text-[11px] font-semibold uppercase text-zinc-500">
+                Customer space photos
+              </h5>
+              <div className="mt-2 grid gap-2 sm:grid-cols-2">
+                {proposal.spacePhotos.map((ph) => (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    key={ph.id}
+                    src={ph.dataUrl}
+                    alt={ph.caption || "Space"}
+                    className="max-h-48 w-full rounded-lg border border-zinc-800 object-contain"
+                  />
+                ))}
+              </div>
+            </div>
+          ) : null}
+          {proposal.renderings?.length ? (
+            <div>
+              <h5 className="text-[11px] font-semibold uppercase text-zinc-500">
+                Agreed concept renderings
+              </h5>
+              <div className="mt-2 grid gap-2 sm:grid-cols-2">
+                {proposal.renderings.map((ph) => (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    key={ph.id}
+                    src={ph.dataUrl}
+                    alt={ph.caption || "Rendering"}
+                    className="max-h-48 w-full rounded-lg border border-zinc-800 object-contain"
+                  />
+                ))}
+              </div>
+            </div>
+          ) : null}
         </div>
       ) : null}
 

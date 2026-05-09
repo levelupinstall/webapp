@@ -93,6 +93,10 @@ export type WorkProposal = {
   title: string;
   markdownBody: string;
   paymentAmountCents: number;
+  /** Customer-uploaded photos of the install location from the AI planner. */
+  spacePhotos?: WorkProposalRendering[];
+  /** Short budget signal extracted from the planner transcript (admin-facing). */
+  budgetNotes?: string;
   renderings: WorkProposalRendering[];
   sentAt?: string;
   viewedAt?: string;
@@ -224,6 +228,23 @@ function parseWorkProposals(value: Prisma.JsonValue): WorkProposal[] {
       }))
       .filter((r) => r.dataUrl.startsWith("data:"));
 
+    const spaceRaw = Array.isArray(raw.spacePhotos) ? raw.spacePhotos : [];
+    const spacePhotos: WorkProposalRendering[] = spaceRaw
+      .filter((r): r is Record<string, unknown> => !!r && typeof r === "object")
+      .map((r, i) => ({
+        id: String(r.id ?? `space-${i}`),
+        mimeType: String(r.mimeType ?? "image/jpeg"),
+        dataUrl: String(r.dataUrl ?? ""),
+        caption: r.caption !== undefined ? String(r.caption) : undefined,
+      }))
+      .filter((r) => r.dataUrl.startsWith("data:"));
+
+    const budgetNotesRaw = raw.budgetNotes;
+    const budgetNotes =
+      typeof budgetNotesRaw === "string" && budgetNotesRaw.trim()
+        ? budgetNotesRaw.trim().slice(0, 2000)
+        : undefined;
+
     const aiChatRaw = Array.isArray(raw.aiChat) ? raw.aiChat : [];
     const aiChat: WorkProposalAiTurn[] = aiChatRaw
       .filter((t): t is Record<string, unknown> => !!t && typeof t === "object")
@@ -250,6 +271,8 @@ function parseWorkProposals(value: Prisma.JsonValue): WorkProposal[] {
         0,
         Math.floor(Number(raw.paymentAmountCents ?? 0)) || 0,
       ),
+      ...(spacePhotos.length ? { spacePhotos } : {}),
+      ...(budgetNotes ? { budgetNotes } : {}),
       renderings,
       sentAt: raw.sentAt !== undefined ? String(raw.sentAt) : undefined,
       viewedAt: raw.viewedAt !== undefined ? String(raw.viewedAt) : undefined,
@@ -948,12 +971,22 @@ export async function createWorkProposalDraftForPortalUser(params: {
   markdownBody: string;
   paymentAmountCents: number;
   renderings: Array<{ mimeType: string; dataUrl: string; caption?: string }>;
+  spacePhotos?: Array<{ mimeType: string; dataUrl: string; caption?: string }>;
+  budgetNotes?: string;
 }): Promise<WorkProposal | null> {
   const row = await prisma.portalUser.findUnique({ where: { id: params.portalUserId } });
   if (!row || row.signupVerificationPending) return null;
 
   const user = rowToUserRecord(row);
   const now = new Date().toISOString();
+  const spacePhotos =
+    params.spacePhotos?.map((r) => ({
+      id: randomUUID(),
+      mimeType: r.mimeType || "image/jpeg",
+      dataUrl: r.dataUrl,
+      caption: r.caption?.trim() || undefined,
+    })) ?? [];
+
   const proposal: WorkProposal = {
     id: randomUUID(),
     createdAt: now,
@@ -963,6 +996,10 @@ export async function createWorkProposalDraftForPortalUser(params: {
     title: params.title.trim() || "Work proposal",
     markdownBody: params.markdownBody.trim(),
     paymentAmountCents: Math.max(100, Math.floor(params.paymentAmountCents)),
+    ...(spacePhotos.length ? { spacePhotos } : {}),
+    ...(params.budgetNotes?.trim()
+      ? { budgetNotes: params.budgetNotes.trim().slice(0, 2000) }
+      : {}),
     renderings: params.renderings.map((r) => ({
       id: randomUUID(),
       mimeType: r.mimeType || "image/jpeg",

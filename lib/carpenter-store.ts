@@ -68,6 +68,12 @@ type Payment = {
   status: "paid" | "scheduled";
 };
 
+/** Linked when this CRM row was created from Client Portal → formal proposal intake */
+export type FormalProposalIntakeLink = {
+  portalUserId: string;
+  proposalId: string;
+};
+
 export type CarpenterJob = {
   id: string;
   title: string;
@@ -78,6 +84,7 @@ export type CarpenterJob = {
   client: ClientProfile;
   comments: string[];
   media: JobMedia[];
+  formalProposalIntake?: FormalProposalIntakeLink;
   receipts: Receipt[];
   messages: JobMessage[];
   payments: Payment[];
@@ -179,8 +186,20 @@ function hydrateJob(job: CarpenterJob): CarpenterJob {
     ...m,
     phase: (m as JobMedia).phase ?? "general",
   }));
+  const intake = job.formalProposalIntake;
+  const formalProposalIntake =
+    intake &&
+    typeof intake === "object" &&
+    typeof (intake as FormalProposalIntakeLink).portalUserId === "string" &&
+    typeof (intake as FormalProposalIntakeLink).proposalId === "string"
+      ? {
+          portalUserId: String((intake as FormalProposalIntakeLink).portalUserId).trim(),
+          proposalId: String((intake as FormalProposalIntakeLink).proposalId).trim(),
+        }
+      : undefined;
   return {
     ...job,
+    ...(formalProposalIntake ? { formalProposalIntake } : {}),
     clientPortalUserId: job.clientPortalUserId,
     estimatedHours: job.estimatedHours,
     actualHours: job.actualHours,
@@ -865,6 +884,13 @@ export async function adminAssignJob(params: {
   materialsFulfillment?: unknown;
   materialPrepNotes?: string;
   availabilityReview?: unknown;
+  formalProposalIntake?: FormalProposalIntakeLink;
+  initialMedia?: Array<{
+    type: "image";
+    url: string;
+    caption: string;
+    phase?: JobMediaPhase;
+  }>;
 }) {
   const row = await prisma.carpenterAccount.findUnique({
     where: { id: params.carpenterId },
@@ -876,6 +902,19 @@ export async function adminAssignJob(params: {
   const status = params.status || "active";
   const availabilityParsed = parseAvailabilityReview(params.availabilityReview);
   const now = new Date().toISOString();
+  const initialMedia = (params.initialMedia ?? [])
+    .filter((m) => m.url.trim())
+    .map((m) => ({
+      id: randomUUID(),
+      type: "image" as const,
+      url: m.url.trim(),
+      caption: m.caption.trim() || "Photo",
+      createdAt: now,
+      phase:
+        m.phase === "before" || m.phase === "after" || m.phase === "general"
+          ? m.phase
+          : "general",
+    }));
   const job: CarpenterJob = {
     id: randomUUID(),
     title: params.title,
@@ -885,7 +924,7 @@ export async function adminAssignJob(params: {
     scopeOfWork: params.scopeOfWork,
     client: params.client,
     comments: ["Job assigned from CRM."],
-    media: [],
+    media: initialMedia,
     receipts: [],
     messages: [],
     payments: [],
@@ -896,6 +935,11 @@ export async function adminAssignJob(params: {
     materialsNeeded: normalizeJobItemList(params.materialsNeeded),
     materialPrepNotes: String(params.materialPrepNotes ?? "").trim(),
     ...(fulfillment ? { materialsFulfillment: fulfillment } : {}),
+    ...(params.formalProposalIntake &&
+    params.formalProposalIntake.portalUserId &&
+    params.formalProposalIntake.proposalId
+      ? { formalProposalIntake: params.formalProposalIntake }
+      : {}),
     ...(status === "upcoming"
       ? {
           availabilityReview: availabilityParsed ?? "pending",

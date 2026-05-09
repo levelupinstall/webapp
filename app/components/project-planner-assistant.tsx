@@ -392,12 +392,22 @@ export default function ProjectPlannerAssistant({
       if (renderings.length >= 6) break;
     }
 
+    const compressedSpace = await Promise.all(
+      sketchSpacePhotosRef.current.map((f) => compressImageForPlannerUpload(f)),
+    );
+
+    const formData = new FormData();
+    formData.append("transcript", transcript);
+    formData.append("renderings", JSON.stringify(renderings));
+    for (const file of compressedSpace) {
+      formData.append("spacePhotos", file);
+    }
+
     setProposalBusy(true);
     try {
       const response = await fetch("/api/portal/work-proposals/request", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ transcript, renderings }),
+        body: formData,
       });
       const data = (await response.json().catch(() => ({}))) as {
         error?: string;
