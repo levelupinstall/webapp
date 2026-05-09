@@ -2,6 +2,10 @@ import { NextResponse } from "next/server";
 import bcrypt from "bcryptjs";
 import { setSessionCookie } from "@/lib/client-portal-auth";
 import { findUserByUsername, recordPortalLogin } from "@/lib/client-portal-store";
+import {
+  normalizePhoneE164,
+  portalContactHint,
+} from "@/lib/portal-verification-delivery";
 
 export async function POST(request: Request) {
   const body = (await request.json()) as { username?: string; password?: string };
@@ -26,10 +30,17 @@ export async function POST(request: Request) {
   }
 
   if (user.signupVerificationPending) {
+    const channel = user.verificationChannel === "sms" ? ("sms" as const) : ("email" as const);
+    const phoneE164 = normalizePhoneE164(user.phone ?? "") ?? "";
     return NextResponse.json(
       {
         error:
-          "Please confirm your email first. Check your inbox for the welcome message with a confirmation link.",
+          channel === "sms"
+            ? "Your account is not verified yet. Check your phone for a text message with your verification code."
+            : "Your account is not verified yet. Check your inbox and spam folder for an email with a confirmation link to activate your account.",
+        needsVerification: true,
+        verificationChannel: channel,
+        contactHint: portalContactHint(channel, user.email, phoneE164),
       },
       { status: 403 },
     );

@@ -3,6 +3,8 @@ import bcrypt from "bcryptjs";
 import {
   createUser,
   deletePortalUserById,
+  findPortalUserByEmail,
+  findUserByUsername,
 } from "@/lib/client-portal-store";
 import {
   normalizePhoneE164,
@@ -74,6 +76,90 @@ export async function POST(request: Request) {
               : "Text verification is not configured on this server (Twilio env vars).",
         },
         { status: 503 },
+      );
+    }
+
+    const existingEmailUser = await findPortalUserByEmail(email);
+    if (existingEmailUser) {
+      if (!existingEmailUser.signupVerificationPending) {
+        return NextResponse.json({ error: "Email already registered." }, { status: 400 });
+      }
+      const pwdOk = await bcrypt.compare(password, existingEmailUser.passwordHash);
+      if (!pwdOk) {
+        return NextResponse.json({ error: "Email already registered." }, { status: 400 });
+      }
+      const pendingChannel =
+        existingEmailUser.verificationChannel === "sms" ? ("sms" as const) : ("email" as const);
+      if (process.env.NODE_ENV === "production" && !portalVerificationConfigured(pendingChannel)) {
+        return NextResponse.json(
+          {
+            error:
+              pendingChannel === "email"
+                ? "Email verification is not configured on this server."
+                : "Text verification is not configured on this server.",
+          },
+          { status: 503 },
+        );
+      }
+      const phoneE164Existing =
+        normalizePhoneE164(existingEmailUser.phone ?? "") ?? "";
+      return NextResponse.json(
+        {
+          error:
+            pendingChannel === "sms"
+              ? "An account with this email is already registered but not verified yet. Check your phone for a verification code, or send a new text."
+              : "An account with this email is already registered but not verified yet. Check your inbox and spam folder for a confirmation email, or send a new one.",
+          unverifiedDuplicate: true,
+          verificationChannel: pendingChannel,
+          contactHint: portalContactHint(
+            pendingChannel,
+            existingEmailUser.email,
+            phoneE164Existing,
+          ),
+        },
+        { status: 409 },
+      );
+    }
+
+    const existingUsernameUser = await findUserByUsername(username);
+    if (existingUsernameUser && existingUsernameUser.email.toLowerCase() !== email) {
+      if (!existingUsernameUser.signupVerificationPending) {
+        return NextResponse.json({ error: "Username already exists." }, { status: 400 });
+      }
+      const pwdOk = await bcrypt.compare(password, existingUsernameUser.passwordHash);
+      if (!pwdOk) {
+        return NextResponse.json({ error: "Username already exists." }, { status: 400 });
+      }
+      const pendingChannel =
+        existingUsernameUser.verificationChannel === "sms" ? ("sms" as const) : ("email" as const);
+      if (process.env.NODE_ENV === "production" && !portalVerificationConfigured(pendingChannel)) {
+        return NextResponse.json(
+          {
+            error:
+              pendingChannel === "email"
+                ? "Email verification is not configured on this server."
+                : "Text verification is not configured on this server.",
+          },
+          { status: 503 },
+        );
+      }
+      const phoneE164Existing =
+        normalizePhoneE164(existingUsernameUser.phone ?? "") ?? "";
+      return NextResponse.json(
+        {
+          error:
+            pendingChannel === "sms"
+              ? "This username belongs to an account that has not been verified yet. Check your phone for a verification code, or send a new text."
+              : "This username belongs to an account that has not been verified yet. Check your inbox and spam folder for a confirmation email, or send a new one.",
+          unverifiedDuplicate: true,
+          verificationChannel: pendingChannel,
+          contactHint: portalContactHint(
+            pendingChannel,
+            existingUsernameUser.email,
+            phoneE164Existing,
+          ),
+        },
+        { status: 409 },
       );
     }
 

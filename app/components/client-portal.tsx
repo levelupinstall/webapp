@@ -67,6 +67,12 @@ export default function ClientPortal({
   const [profileAvatar, setProfileAvatar] = useState("");
   const [invoiceCheckoutBusyId, setInvoiceCheckoutBusyId] = useState<string | null>(null);
   const [verificationBanner, setVerificationBanner] = useState<string | null>(null);
+  const [authGate, setAuthGate] = useState<null | {
+    kind: "login-unverified" | "register-duplicate";
+    verificationChannel: string;
+    contactHint: string;
+  }>(null);
+  const [resendBusy, setResendBusy] = useState(false);
   const router = useRouter();
   const savedProjectsTrackRef = useRef(false);
   const spacePhotosTrackRef = useRef(false);
@@ -92,6 +98,10 @@ export default function ClientPortal({
     }, 0);
     return () => window.clearTimeout(timer);
   }, [loadMe]);
+
+  useEffect(() => {
+    setAuthGate(null);
+  }, [mode]);
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -142,6 +152,7 @@ export default function ClientPortal({
   async function handleAuth(event: FormEvent) {
     event.preventDefault();
     setError(null);
+    setAuthGate(null);
     setLoading(true);
     try {
       const endpoint = mode === "login" ? "/api/portal/login" : "/api/portal/register";
@@ -160,8 +171,33 @@ export default function ClientPortal({
         needsVerification?: boolean;
         verificationChannel?: string;
         contactHint?: string;
+        unverifiedDuplicate?: boolean;
       };
-      if (!response.ok) throw new Error(data.error || "Authentication failed.");
+      if (!response.ok) {
+        if (
+          mode === "register" &&
+          response.status === 409 &&
+          data.unverifiedDuplicate
+        ) {
+          setAuthGate({
+            kind: "register-duplicate",
+            verificationChannel: data.verificationChannel ?? "email",
+            contactHint: data.contactHint ?? "",
+          });
+          setError(data.error ?? "This account is waiting for verification.");
+          return;
+        }
+        if (mode === "login" && response.status === 403 && data.needsVerification) {
+          setAuthGate({
+            kind: "login-unverified",
+            verificationChannel: data.verificationChannel ?? "email",
+            contactHint: data.contactHint ?? "",
+          });
+          setError(data.error ?? "Your account is not verified yet.");
+          return;
+        }
+        throw new Error(data.error || "Authentication failed.");
+      }
       if (data.needsVerification) {
         setPassword("");
         const channel = encodeURIComponent(data.verificationChannel ?? "email");
@@ -176,6 +212,40 @@ export default function ClientPortal({
       setError(authError instanceof Error ? authError.message : "Auth failed.");
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function handleResendVerification() {
+    if (!username.trim() || !password) {
+      setError("Enter your username and password, then try sending again.");
+      return;
+    }
+    setError(null);
+    setResendBusy(true);
+    try {
+      const response = await fetch("/api/portal/resend-verification", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ username, password }),
+      });
+      const data = (await response.json()) as {
+        error?: string;
+        verificationChannel?: string;
+        contactHint?: string;
+      };
+      if (!response.ok) {
+        throw new Error(data.error || "Could not send verification.");
+      }
+      setAuthGate(null);
+      setPassword("");
+      const channel = encodeURIComponent(data.verificationChannel ?? "email");
+      const hintRaw = data.contactHint?.trim();
+      const hintQs = hintRaw ? `&hint=${encodeURIComponent(hintRaw)}` : "";
+      router.push(`/portal/signup-pending?channel=${channel}${hintQs}&resent=1`);
+    } catch (resendErr) {
+      setError(resendErr instanceof Error ? resendErr.message : "Could not send verification.");
+    } finally {
+      setResendBusy(false);
     }
   }
 
@@ -364,6 +434,35 @@ export default function ClientPortal({
             className="w-full rounded-xl border border-[#dcbef9] bg-white px-3 py-2 text-sm text-[#32174f]"
           />
           {error ? <p className="text-sm text-[#a2175d]">{error}</p> : null}
+          {authGate ? (
+            <div className="rounded-2xl border border-[#e8d9ff] bg-[#faf6ff] px-4 py-4">
+              <p className="text-sm text-[#4d2e70]">
+                {authGate.contactHint ? (
+                  <>
+                    We will send to{" "}
+                    <span className="font-semibold text-[#2f1748]">{authGate.contactHint}</span>
+                    {authGate.verificationChannel === "sms" ? " by text." : "."}
+                  </>
+                ) : authGate.verificationChannel === "sms" ? (
+                  <>We will send a new text with your verification code.</>
+                ) : (
+                  <>We will send a new confirmation email.</>
+                )}
+              </p>
+              <button
+                type="button"
+                disabled={resendBusy || loading}
+                onClick={() => void handleResendVerification()}
+                className="mt-3 rounded-full bg-[#6e3eb2] px-5 py-2 text-sm font-semibold text-white disabled:opacity-60"
+              >
+                {resendBusy
+                  ? "Sending…"
+                  : authGate.verificationChannel === "sms"
+                    ? "Send new verification text"
+                    : "Send new verification email"}
+              </button>
+            </div>
+          ) : null}
           <button
             type="submit"
             disabled={loading}

@@ -208,6 +208,13 @@ export async function findUserByUsername(username: string) {
   return row ? rowToUserRecord(row) : undefined;
 }
 
+export async function findPortalUserByEmail(email: string) {
+  const row = await prisma.portalUser.findUnique({
+    where: { email: email.trim().toLowerCase() },
+  });
+  return row ? rowToUserRecord(row) : undefined;
+}
+
 export async function createUser(params: {
   username: string;
   email: string;

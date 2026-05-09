@@ -9,13 +9,14 @@ export const metadata: Metadata = {
 };
 
 type Props = {
-  searchParams: Promise<{ channel?: string; hint?: string }>;
+  searchParams: Promise<{ channel?: string; hint?: string; resent?: string }>;
 };
 
 export default async function PortalSignupPendingPage({ searchParams }: Props) {
-  const { channel, hint } = await searchParams;
+  const { channel, hint, resent } = await searchParams;
   const isSms = channel === "sms";
   const safeHint = hint?.trim();
+  const showResent = resent === "1" || resent === "true";
 
   return (
     <main className="min-h-screen bg-gradient-to-b from-[#f8f2ff] via-[#f2e9ff] to-[#ffffff] px-4 py-16 text-[#281437] sm:px-6">
@@ -35,6 +36,13 @@ export default async function PortalSignupPendingPage({ searchParams }: Props) {
           <h1 className="text-2xl font-semibold text-[#2d1546] sm:text-3xl">
             Thank you for creating your account
           </h1>
+
+          {showResent ? (
+            <p className="mt-4 rounded-xl border border-[#c9e8c9] bg-[#f4faf4] px-4 py-3 text-sm text-[#1f4d22]">
+              A fresh verification message has been sent. If you still do not see it, check spam or wait a
+              minute and try again.
+            </p>
+          ) : null}
 
           <p className="mt-4 text-base leading-relaxed text-[#55337b]">
             We are glad you joined the Level Up Install client portal. One quick step remains before
