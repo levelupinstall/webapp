@@ -223,6 +223,15 @@ function communicationChannelLabel(channel: "email" | "sms" | "app_notice") {
   }
 }
 
+function parseSignupCoord(raw: unknown): number | null {
+  if (typeof raw === "number" && Number.isFinite(raw)) return raw;
+  if (typeof raw === "string") {
+    const n = parseFloat(raw.trim());
+    if (Number.isFinite(n)) return n;
+  }
+  return null;
+}
+
 function SignupLocationReadout(props: { log: unknown }): ReactNode {
   if (
     props.log === null ||
@@ -239,6 +248,16 @@ function SignupLocationReadout(props: { log: unknown }): ReactNode {
   }
 
   const o = props.log as Record<string, unknown>;
+  const lat = parseSignupCoord(o.latitude);
+  const lng = parseSignupCoord(o.longitude);
+  const hasValidMap =
+    lat !== null &&
+    lng !== null &&
+    lat >= -90 &&
+    lat <= 90 &&
+    lng >= -180 &&
+    lng <= 180;
+
   const keys = [
     "recordedAt",
     "city",
@@ -252,6 +271,7 @@ function SignupLocationReadout(props: { log: unknown }): ReactNode {
 
   const rows: { label: string; value: string }[] = [];
   for (const key of keys) {
+    if (hasValidMap && (key === "latitude" || key === "longitude")) continue;
     const v = o[key];
     if (v === undefined || v === null || String(v).trim() === "") continue;
     rows.push({ label: key, value: String(v) });
@@ -260,6 +280,14 @@ function SignupLocationReadout(props: { log: unknown }): ReactNode {
     if ((keys as readonly string[]).includes(key)) continue;
     rows.push({ label: key, value: String(o[key]) });
   }
+
+  const mapEmbedSrc = hasValidMap
+    ? `https://www.google.com/maps?q=${encodeURIComponent(`${lat},${lng}`)}&z=11&output=embed`
+    : "";
+  const mapOpenHref = hasValidMap
+    ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${lat},${lng}`)}`
+    : "";
+  const osmHref = hasValidMap ? `https://www.openstreetmap.org/?mlat=${lat}&mlon=${lng}#map=13/${lat}/${lng}` : "";
 
   return (
     <div className="mt-4 border-t border-zinc-800 pt-4">
@@ -270,6 +298,46 @@ function SignupLocationReadout(props: { log: unknown }): ReactNode {
         Captured from the HTTP request when they registered (edge geo + forwarded IP when
         available — approximate, not GPS).
       </p>
+
+      {hasValidMap ? (
+        <div className="mt-3 space-y-2">
+          <div className="overflow-hidden rounded-lg border border-zinc-700 bg-zinc-950">
+            <iframe
+              title="Approximate signup location"
+              src={mapEmbedSrc}
+              className="h-56 w-full border-0 sm:h-64"
+              loading="lazy"
+              referrerPolicy="no-referrer-when-downgrade"
+              allowFullScreen
+            />
+          </div>
+          <div className="flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-zinc-500">
+            <span>
+              Approx. coordinates:{" "}
+              <span className="font-mono text-zinc-400">
+                {lat.toFixed(5)}, {lng.toFixed(5)}
+              </span>
+            </span>
+            <a
+              href={mapOpenHref}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-violet-400 underline hover:text-violet-300"
+            >
+              Google Maps
+            </a>
+            <a
+              href={osmHref}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-violet-400 underline hover:text-violet-300"
+            >
+              OpenStreetMap
+            </a>
+          </div>
+        </div>
+      ) : null}
+
       <dl className="mt-3 grid gap-2 text-sm text-zinc-300 sm:grid-cols-2">
         {rows.map((row) => (
           <div key={row.label}>
