@@ -7,10 +7,12 @@ import BookingCheckout from "./booking-checkout";
 type ChatMessage = {
   role: "user" | "assistant";
   content: string;
+  images?: { mimeType: string; dataUrl: string }[];
 };
 
 type AssistantResponse = {
   reply: string;
+  images?: { mimeType: string; data: string }[];
 };
 
 type IntakeFields = {
@@ -35,7 +37,7 @@ export default function ProjectPlannerAssistant({
     {
       role: "assistant",
       content:
-        "Hi! I can help you plan your carpentry project. Share your goals, room details, budget range, and upload photos of your space for tailored ideas.",
+        "Hi! I am your Level Up Install planner (Gemini). Share goals, room details, budget, and photos for a retailer-grounded brief. Check “Include concept image” or ask to sketch/visualize for an AI concept image (buildable ideas only — IKEA / Home Depot / Lowe's–style materials).",
     },
   ]);
   const [prompt, setPrompt] = useState("");
@@ -51,6 +53,7 @@ export default function ProjectPlannerAssistant({
   const [error, setError] = useState<string | null>(null);
   const [saveStatus, setSaveStatus] = useState<string | null>(null);
   const [showCreateAccountPrompt, setShowCreateAccountPrompt] = useState(false);
+  const [includeConceptImage, setIncludeConceptImage] = useState(false);
 
   const previews = useMemo(
     () => images.map((file) => ({ file, url: URL.createObjectURL(file) })),
@@ -100,6 +103,7 @@ export default function ProjectPlannerAssistant({
       formData.append("budget", intake.budget);
       formData.append("timeline", intake.timeline);
       images.forEach((image) => formData.append("images", image));
+      formData.append("includeConceptImage", includeConceptImage ? "true" : "false");
 
       const response = await fetch("/api/project-assistant", {
         method: "POST",
@@ -111,11 +115,17 @@ export default function ProjectPlannerAssistant({
       }
 
       const data = (await response.json()) as AssistantResponse;
+      const assistantImages = data.images?.map((img) => ({
+        mimeType: img.mimeType,
+        dataUrl: `data:${img.mimeType};base64,${img.data}`,
+      }));
+
       setMessages((prev) => [
         ...prev,
         {
           role: "assistant",
           content: data.reply,
+          ...(assistantImages?.length ? { images: assistantImages } : {}),
         },
       ]);
     } catch (submitError) {
@@ -188,8 +198,9 @@ export default function ProjectPlannerAssistant({
         Project Planner Assistant
       </h2>
       <p className="mt-3 text-[#55337b]">
-        Chat with our AI assistant to brainstorm ideas, scope work, and plan
-        your next project. Upload up to 4 photos so suggestions fit your space.
+        Chat with our Gemini-powered planner for grounded finish-carpentry ideas.
+        Upload up to 4 photos so suggestions fit your space. Optional concept images
+        use retailer-realistic materials (no fantasy builds).
       </p>
       <div className="mt-4 rounded-2xl border border-[#e8d9ff] bg-[#faf6ff] p-4 text-sm text-[#4d2e70]">
         Fill in the quick intake below. Each reply includes a clean{" "}
@@ -207,7 +218,20 @@ export default function ProjectPlannerAssistant({
                 : "ml-auto max-w-[90%] bg-[#6e3eb2] text-white"
             }`}
           >
-            {message.content}
+            <div className="whitespace-pre-wrap">{message.content}</div>
+            {message.images?.length ? (
+              <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                {message.images.map((img, i) => (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    key={`${index}-viz-${i}`}
+                    src={img.dataUrl}
+                    alt="Concept visualization"
+                    className="max-h-56 w-full rounded-xl border border-[#e8d9ff] object-contain"
+                  />
+                ))}
+              </div>
+            ) : null}
           </div>
         ))}
       </div>
@@ -307,6 +331,20 @@ export default function ProjectPlannerAssistant({
           <p className="mt-2 text-xs text-[#6a4a8f]">
             Up to {MAX_IMAGES} images, {MAX_IMAGE_MB}MB each.
           </p>
+        </label>
+
+        <label className="flex cursor-pointer items-start gap-3 rounded-2xl border border-[#e8d9ff] bg-[#faf6ff] px-4 py-3">
+          <input
+            type="checkbox"
+            checked={includeConceptImage}
+            onChange={(event) => setIncludeConceptImage(event.target.checked)}
+            className="mt-1 h-4 w-4 rounded border-[#6e3eb2] text-[#6e3eb2]"
+          />
+          <span className="text-sm text-[#4d2e70]">
+            <span className="font-semibold text-[#2f1748]">Include concept image</span>
+            — generates one Gemini visualization grounded in common retailer materials
+            (optional; slightly slower).
+          </span>
         </label>
 
         {previews.length > 0 ? (

@@ -5,6 +5,7 @@ import { FormEvent, useState } from "react";
 type ChatMessage = {
   role: "user" | "assistant";
   content: string;
+  images?: { mimeType: string; dataUrl: string }[];
 };
 
 type FloatingAgentChatProps = {
@@ -25,7 +26,7 @@ export default function FloatingAgentChat({
     {
       role: "assistant",
       content:
-        "Hi! I am your Level Up Install agent. Ask me about project ideas, scope, pricing, or booking prep.",
+        "Hi! I am your Level Up Install coordinator (Gemini). Ask about trim, built-ins, IKEA installs, TV mounting, scope, or booking. Say “show me” or “sketch” if you want a grounded concept image using retailer-realistic materials.",
     },
   ]);
 
@@ -48,7 +49,11 @@ export default function FloatingAgentChat({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ message: text, history: historyForApi }),
       });
-      const data = (await response.json()) as { reply?: string; error?: string };
+      const data = (await response.json()) as {
+        reply?: string;
+        error?: string;
+        images?: { mimeType: string; data: string }[];
+      };
 
       if (response.status === 401) {
         setAuthRequired(true);
@@ -56,11 +61,23 @@ export default function FloatingAgentChat({
         return;
       }
 
-      if (!response.ok || !data.reply) {
+      if (!response.ok || (!data.reply && !(data.images && data.images.length > 0))) {
         throw new Error(data.error || "Chat agent is unavailable.");
       }
 
-      setMessages((prev) => [...prev, { role: "assistant", content: data.reply as string }]);
+      const assistantImages = data.images?.map((img) => ({
+        mimeType: img.mimeType,
+        dataUrl: `data:${img.mimeType};base64,${img.data}`,
+      }));
+
+      setMessages((prev) => [
+        ...prev,
+        {
+          role: "assistant",
+          content: (data.reply ?? "").trim() || " ",
+          ...(assistantImages?.length ? { images: assistantImages } : {}),
+        },
+      ]);
     } catch (error) {
       setChatError(error instanceof Error ? error.message : "Unable to send message.");
     } finally {
@@ -93,7 +110,22 @@ export default function FloatingAgentChat({
                     : "ml-auto max-w-[90%] bg-[#6e3eb2] text-white"
                 }`}
               >
-                {msg.content}
+                {(msg.content ?? "").trim() ? (
+                  <p className="whitespace-pre-wrap">{msg.content}</p>
+                ) : null}
+                {msg.images?.length ? (
+                  <div className="mt-2 space-y-2">
+                    {msg.images.map((img, i) => (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img
+                        key={`${index}-img-${i}`}
+                        src={img.dataUrl}
+                        alt="Concept visualization"
+                        className="max-h-48 max-w-full rounded-lg border border-[#e8d9ff] object-contain"
+                      />
+                    ))}
+                  </div>
+                ) : null}
               </div>
             ))}
           </div>
