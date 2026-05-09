@@ -127,7 +127,7 @@ export async function sendPortalSignupVerification(params: {
   const greet = params.username.trim() ? `, ${params.username.trim()}` : "";
 
   if (params.channel === "email") {
-    const subject = "Welcome — confirm your Level Up Install portal email";
+    const subject = "Welcome to Level Up Install";
     const link = params.verificationLink?.trim();
     if (!link) {
       return { sent: false, error: "Missing verification link for email signup." };
