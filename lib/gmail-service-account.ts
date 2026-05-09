@@ -8,6 +8,13 @@ type ServiceAccountKey = {
   private_key: string;
 };
 
+/** Inline image for multipart/related (CID). References in HTML as src="cid:your_cid" */
+export type GmailInlineImage = {
+  cid: string;
+  contentType: string;
+  content: Buffer;
+};
+
 export type SendGmailParams = {
   to: string;
   subject: string;
@@ -15,6 +22,7 @@ export type SendGmailParams = {
   html?: string;
   impersonatedUser: string;
   fromName?: string;
+  inlineImages?: GmailInlineImage[];
 };
 
 function getServiceAccountKeyFromEnv(): ServiceAccountKey {
@@ -53,6 +61,15 @@ function toBase64Url(value: string) {
     .replace(/=+$/, "");
 }
 
+function foldBase64(buffer: Buffer): string {
+  const b64 = buffer.toString("base64");
+  const lines: string[] = [];
+  for (let i = 0; i < b64.length; i += 76) {
+    lines.push(b64.slice(i, i + 76));
+  }
+  return lines.join("\r\n");
+}
+
 function buildMimeMessage(params: SendGmailParams) {
   const from = params.fromName?.trim()
     ? `${params.fromName.trim()} <${params.impersonatedUser}>`
@@ -64,6 +81,48 @@ function buildMimeMessage(params: SendGmailParams) {
     `Subject: ${params.subject}`,
     "MIME-Version: 1.0",
   ];
+
+  if (params.html && params.inlineImages?.length) {
+    const related = `lu_rel_${randomBytes(14).toString("hex")}`;
+    const alt = `lu_alt_${randomBytes(14).toString("hex")}`;
+
+    const imageBlocks = params.inlineImages
+      .map((img) => {
+        const safeCid = img.cid.replace(/[^\w@-]/g, "");
+        return [
+          `--${related}`,
+          `Content-Type: ${img.contentType}`,
+          "Content-Transfer-Encoding: base64",
+          `Content-ID: <${safeCid}>`,
+          'Content-Disposition: inline; filename="logo"',
+          "",
+          foldBase64(img.content),
+        ].join("\r\n");
+      })
+      .join("\r\n");
+
+    return [
+      ...headers,
+      `Content-Type: multipart/related; boundary="${related}"; type="multipart/alternative"`,
+      "",
+      `--${related}`,
+      `Content-Type: multipart/alternative; boundary="${alt}"`,
+      "",
+      `--${alt}`,
+      'Content-Type: text/plain; charset="UTF-8"',
+      "Content-Transfer-Encoding: 8bit",
+      "",
+      params.text,
+      `--${alt}`,
+      'Content-Type: text/html; charset="UTF-8"',
+      "Content-Transfer-Encoding: 8bit",
+      "",
+      params.html,
+      `--${alt}--`,
+      imageBlocks,
+      `--${related}--`,
+    ].join("\r\n");
+  }
 
   if (params.html) {
     const boundary = `lu_${randomBytes(16).toString("hex")}`;

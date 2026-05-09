@@ -1,4 +1,8 @@
-import { sendEmailWithServiceAccount } from "@/lib/gmail-service-account";
+import {
+  sendEmailWithServiceAccount,
+  type GmailInlineImage,
+} from "@/lib/gmail-service-account";
+import { loadPortalEmailLogo, PORTAL_EMAIL_LOGO_CID } from "@/lib/portal-email-logo";
 import { resolveSiteOrigin } from "@/lib/site-origin";
 
 export type PortalVerificationChannel = "email" | "sms";
@@ -26,11 +30,16 @@ function escapeHtml(text: string): string {
 function buildSignupVerificationEmailHtml(params: {
   username: string;
   verificationLink: string;
-  logoUrl: string;
+  /** When set, logo is embedded via CID (same value as Gmail Content-ID without brackets). */
+  logoCid: string | null;
 }): string {
   const firstName = params.username.trim().split(/\s+/)[0] ?? "";
   const greeting = firstName ? `Hi ${escapeHtml(firstName)},` : "Hi there,";
   const safeLink = escapeHtml(params.verificationLink);
+
+  const logoBlock = params.logoCid
+    ? `<img src="cid:${escapeHtml(params.logoCid)}" alt="Level Up Install" width="200" style="display:block;margin:0 auto;max-width:200px;height:auto;border:0;outline:none;text-decoration:none;"/>`
+    : `<div role="presentation" style="font-size:22px;font-weight:700;color:#6e3eb2;letter-spacing:-0.02em;line-height:1.2;">Level Up Install</div>`;
 
   return `<!DOCTYPE html>
 <html lang="en">
@@ -40,7 +49,7 @@ function buildSignupVerificationEmailHtml(params: {
 <tr><td align="center">
 <table role="presentation" width="100%" style="max-width:520px;background:#ffffff;border-radius:16px;overflow:hidden;border:1px solid #e8d9ff;box-shadow:0 8px 28px rgba(47,23,72,0.08);">
 <tr><td style="padding:28px 28px 12px;text-align:center;background:linear-gradient(180deg,#faf6ff 0%,#ffffff 100%);">
-<img src="${escapeHtml(params.logoUrl)}" alt="Level Up Install" width="200" style="display:block;margin:0 auto;max-width:200px;height:auto;"/>
+${logoBlock}
 </td></tr>
 <tr><td style="padding:8px 28px 28px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;color:#2f1748;font-size:16px;line-height:1.55;">
 <p style="margin:0 0 16px;font-size:17px;">${greeting}</p>
@@ -123,7 +132,9 @@ export async function sendPortalSignupVerification(params: {
     if (!link) {
       return { sent: false, error: "Missing verification link for email signup." };
     }
-    const logoUrl = `${portalEmailSiteOrigin(params.request ?? undefined)}/level-up-install-logo.png`;
+    const logoAsset = await loadPortalEmailLogo();
+    const logoCid = logoAsset ? PORTAL_EMAIL_LOGO_CID : null;
+
     const text = `Welcome${greet}!
 
 Thank you for creating a Level Up Install client portal account. We are excited to help you plan your project.
@@ -138,10 +149,21 @@ If you did not sign up, you can ignore this message.
     const html = buildSignupVerificationEmailHtml({
       username: params.username,
       verificationLink: link,
-      logoUrl,
+      logoCid,
     });
 
-    return sendSignupEmail(params.email, subject, text, html);
+    const inlineImages =
+      logoAsset ?
+        [
+          {
+            cid: PORTAL_EMAIL_LOGO_CID,
+            contentType: logoAsset.contentType,
+            content: logoAsset.buffer,
+          },
+        ]
+      : undefined;
+
+    return sendSignupEmail(params.email, subject, text, html, inlineImages);
   }
 
   const code = params.code?.trim();
@@ -164,6 +186,7 @@ async function sendSignupEmail(
   subject: string,
   text: string,
   html: string,
+  inlineImages?: GmailInlineImage[],
 ): Promise<{ sent: boolean; error?: string }> {
   if (!gmailSignupEmailConfigured()) {
     if (process.env.NODE_ENV !== "production") {
@@ -186,6 +209,7 @@ async function sendSignupEmail(
       html,
       impersonatedUser,
       fromName: "Level Up Install",
+      inlineImages,
     });
     return { sent: true };
   } catch (error) {
