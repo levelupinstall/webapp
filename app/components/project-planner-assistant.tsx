@@ -1,8 +1,10 @@
 "use client";
 
 import Image from "next/image";
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import BookingCheckout from "./booking-checkout";
+import type { PlannerPhaseTag } from "@/lib/morgan-planner-prompt";
+import { PLANNER_ASSISTANT_NAME } from "@/lib/planner-brand";
 
 type ChatMessage = {
   role: "user" | "assistant";
@@ -12,15 +14,8 @@ type ChatMessage = {
 
 type AssistantResponse = {
   reply: string;
+  phase: PlannerPhaseTag;
   images?: { mimeType: string; data: string }[];
-};
-
-type IntakeFields = {
-  roomType: string;
-  dimensions: string;
-  style: string;
-  budget: string;
-  timeline: string;
 };
 
 type ProjectPlannerAssistantProps = {
@@ -36,24 +31,21 @@ export default function ProjectPlannerAssistant({
   const [messages, setMessages] = useState<ChatMessage[]>([
     {
       role: "assistant",
-      content:
-        "Hi! I am your Level Up Install planner (Gemini). Share goals, room details, budget, and photos for a retailer-grounded brief. Check “Include concept image” or ask to sketch/visualize for an AI concept image (buildable ideas only — IKEA / Home Depot / Lowe's–style materials).",
+      content: `Hi — I'm ${PLANNER_ASSISTANT_NAME}, Level Up's planning consultant. I'll ask a few quick questions about your project before suggesting directions — nothing overwhelming. Want to start by telling me which space you're thinking about?`,
     },
   ]);
-  const [prompt, setPrompt] = useState("");
+  const [draft, setDraft] = useState("");
   const [images, setImages] = useState<File[]>([]);
-  const [intake, setIntake] = useState<IntakeFields>({
-    roomType: "",
-    dimensions: "",
-    style: "",
-    budget: "",
-    timeline: "",
-  });
+  const [phase, setPhase] = useState<PlannerPhaseTag>("consultation");
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [saveStatus, setSaveStatus] = useState<string | null>(null);
   const [showCreateAccountPrompt, setShowCreateAccountPrompt] = useState(false);
   const [includeConceptImage, setIncludeConceptImage] = useState(false);
+
+  const galleryInputRef = useRef<HTMLInputElement>(null);
+  const cameraInputRef = useRef<HTMLInputElement>(null);
+  const scrollAnchorRef = useRef<HTMLDivElement>(null);
 
   const previews = useMemo(
     () => images.map((file) => ({ file, url: URL.createObjectURL(file) })),
@@ -66,44 +58,54 @@ export default function ProjectPlannerAssistant({
     };
   }, [previews]);
 
+  useEffect(() => {
+    scrollAnchorRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
+  }, [messages, isLoading]);
+
   const latestAssistantIdea = [...messages]
     .reverse()
     .find((message) => message.role === "assistant");
 
-  const latestMessage = messages[messages.length - 1];
   const showSecureBooking =
-    Boolean(latestMessage?.role === "assistant") &&
+    (phase === "recommend" || phase === "refine") &&
+    Boolean(latestAssistantIdea) &&
     messages.some((message) => message.role === "user");
+
+  const canSaveIdea = phase === "recommend" || phase === "refine";
 
   async function handleSubmit(event: FormEvent) {
     event.preventDefault();
 
-    if (!prompt.trim() && images.length === 0) {
-      setError("Add a message or at least one image.");
+    if (!draft.trim() && images.length === 0) {
+      setError("Type a message or add a photo.");
       return;
     }
 
     setError(null);
     setSaveStatus(null);
     setShowCreateAccountPrompt(false);
-    const userMessage = prompt.trim()
-      ? prompt.trim()
-      : "Please review these photos and suggest project ideas.";
+
+    const userMessage =
+      draft.trim() ||
+      "I'm sharing a photo of the space — please take a look.";
+
+    const payloadMessages: { role: "user" | "assistant"; content: string }[] = [
+      ...messages.map((m) => ({ role: m.role, content: m.content })),
+      { role: "user", content: userMessage },
+    ];
 
     setMessages((prev) => [...prev, { role: "user", content: userMessage }]);
-    setPrompt("");
+    setDraft("");
+    const imagesToSend = [...images];
+    setImages([]);
     setIsLoading(true);
 
     try {
       const formData = new FormData();
-      formData.append("prompt", userMessage);
-      formData.append("roomType", intake.roomType);
-      formData.append("dimensions", intake.dimensions);
-      formData.append("style", intake.style);
-      formData.append("budget", intake.budget);
-      formData.append("timeline", intake.timeline);
-      images.forEach((image) => formData.append("images", image));
+      formData.append("messages", JSON.stringify(payloadMessages));
+      formData.append("phase", phase);
       formData.append("includeConceptImage", includeConceptImage ? "true" : "false");
+      imagesToSend.forEach((image) => formData.append("images", image));
 
       const response = await fetch("/api/project-assistant", {
         method: "POST",
@@ -111,10 +113,12 @@ export default function ProjectPlannerAssistant({
       });
 
       if (!response.ok) {
-        throw new Error("Could not get a response from the assistant.");
+        throw new Error("Could not get a response right now.");
       }
 
       const data = (await response.json()) as AssistantResponse;
+      setPhase(data.phase);
+
       const assistantImages = data.images?.map((img) => ({
         mimeType: img.mimeType,
         dataUrl: `data:${img.mimeType};base64,${img.data}`,
@@ -132,7 +136,7 @@ export default function ProjectPlannerAssistant({
       const message =
         submitError instanceof Error
           ? submitError.message
-          : "Something went wrong while processing your request.";
+          : "Something went wrong while sending your message.";
       setError(message);
     } finally {
       setIsLoading(false);
@@ -153,6 +157,8 @@ export default function ProjectPlannerAssistant({
 
     const merged = [...images, ...validFiles].slice(0, MAX_IMAGES);
     setImages(merged);
+    galleryInputRef.current && (galleryInputRef.current.value = "");
+    cameraInputRef.current && (cameraInputRef.current.value = "");
   }
 
   function removeImage(index: number) {
@@ -160,13 +166,12 @@ export default function ProjectPlannerAssistant({
   }
 
   async function handleSaveIdea() {
-    if (!latestAssistantIdea) return;
+    if (!latestAssistantIdea || !canSaveIdea) return;
 
     setError(null);
     setSaveStatus(null);
 
-    const titlePrefix = intake.roomType?.trim() || "Carpentry";
-    const ideaTitle = `${titlePrefix} Project Brief`;
+    const ideaTitle = `${PLANNER_ASSISTANT_NAME} planning notes`;
 
     const response = await fetch("/api/portal/ideas", {
       method: "POST",
@@ -179,36 +184,31 @@ export default function ProjectPlannerAssistant({
 
     if (response.status === 401) {
       setShowCreateAccountPrompt(true);
-      setError("Create an account to save this project idea.");
+      setError("Create an account to save this conversation summary.");
       return;
     }
 
     if (!response.ok) {
-      setError("Could not save idea right now. Please try again.");
+      setError("Could not save right now. Please try again.");
       return;
     }
 
     setShowCreateAccountPrompt(false);
-    setSaveStatus("Idea saved to your Client Portal.");
+    setSaveStatus("Saved to your Client Portal.");
   }
 
   return (
     <section className="mt-8 rounded-3xl border border-[#dac6fb] bg-white p-6 shadow-[0_10px_30px_-20px_rgba(91,33,182,0.55)] sm:p-8">
       <h2 className="text-2xl font-semibold text-[#2d1546] sm:text-3xl">
-        Project Planner Assistant
+        Meet {PLANNER_ASSISTANT_NAME}, your planning consultant
       </h2>
       <p className="mt-3 text-[#55337b]">
-        Chat with our Gemini-powered planner for grounded finish-carpentry ideas.
-        Upload up to 4 photos so suggestions fit your space. Optional concept images
-        use retailer-realistic materials (no fantasy builds).
+        Short, conversational guidance for finish carpentry and installs.{" "}
+        {PLANNER_ASSISTANT_NAME} asks a few questions first (budget is important early),
+        then offers directions — no walls of text or shopping lists. Share photos anytime.
       </p>
-      <div className="mt-4 rounded-2xl border border-[#e8d9ff] bg-[#faf6ff] p-4 text-sm text-[#4d2e70]">
-        Fill in the quick intake below. Each reply includes a clean{" "}
-        <span className="font-semibold text-[#3f1f62]">Project Brief</span> you
-        can review before booking.
-      </div>
 
-      <div className="mt-6 space-y-3 rounded-2xl border border-[#ecdefe] bg-[#fcf9ff] p-4">
+      <div className="mt-6 max-h-[min(520px,70vh)] space-y-3 overflow-y-auto rounded-2xl border border-[#ecdefe] bg-[#fcf9ff] p-4">
         {messages.map((message, index) => (
           <div
             key={`${message.role}-${index}`}
@@ -226,7 +226,7 @@ export default function ProjectPlannerAssistant({
                   <img
                     key={`${index}-viz-${i}`}
                     src={img.dataUrl}
-                    alt="Concept visualization"
+                    alt="Visualization"
                     className="max-h-56 w-full rounded-xl border border-[#e8d9ff] object-contain"
                   />
                 ))}
@@ -234,6 +234,12 @@ export default function ProjectPlannerAssistant({
             ) : null}
           </div>
         ))}
+        {isLoading ? (
+          <div className="rounded-2xl bg-white px-4 py-3 text-sm text-[#6a4a8f]">
+            {PLANNER_ASSISTANT_NAME} is thinking…
+          </div>
+        ) : null}
+        <div ref={scrollAnchorRef} />
       </div>
 
       {showSecureBooking && latestAssistantIdea ? (
@@ -246,106 +252,41 @@ export default function ProjectPlannerAssistant({
       ) : null}
 
       <form className="mt-5 space-y-4" onSubmit={handleSubmit}>
-        <div className="grid gap-3 sm:grid-cols-2">
-          <label className="block">
-            <span className="text-sm font-semibold text-[#4a2381]">Room Type</span>
-            <input
-              value={intake.roomType}
-              onChange={(event) =>
-                setIntake((prev) => ({ ...prev, roomType: event.target.value }))
-              }
-              placeholder="Kitchen, mudroom, living room..."
-              className="mt-2 w-full rounded-xl border border-[#dcbef9] bg-white px-3 py-2 text-sm text-[#32174f] outline-none ring-[#c9a0f8] transition focus:ring-2"
-            />
-          </label>
-          <label className="block">
-            <span className="text-sm font-semibold text-[#4a2381]">Dimensions</span>
-            <input
-              value={intake.dimensions}
-              onChange={(event) =>
-                setIntake((prev) => ({ ...prev, dimensions: event.target.value }))
-              }
-              placeholder='Example: 7ft wall, 9ft ceiling'
-              className="mt-2 w-full rounded-xl border border-[#dcbef9] bg-white px-3 py-2 text-sm text-[#32174f] outline-none ring-[#c9a0f8] transition focus:ring-2"
-            />
-          </label>
-          <label className="block">
-            <span className="text-sm font-semibold text-[#4a2381]">Style</span>
-            <input
-              value={intake.style}
-              onChange={(event) =>
-                setIntake((prev) => ({ ...prev, style: event.target.value }))
-              }
-              placeholder="Modern, shaker, traditional..."
-              className="mt-2 w-full rounded-xl border border-[#dcbef9] bg-white px-3 py-2 text-sm text-[#32174f] outline-none ring-[#c9a0f8] transition focus:ring-2"
-            />
-          </label>
-          <label className="block">
-            <span className="text-sm font-semibold text-[#4a2381]">Budget</span>
-            <input
-              value={intake.budget}
-              onChange={(event) =>
-                setIntake((prev) => ({ ...prev, budget: event.target.value }))
-              }
-              placeholder="Example: $1,500 - $3,000"
-              className="mt-2 w-full rounded-xl border border-[#dcbef9] bg-white px-3 py-2 text-sm text-[#32174f] outline-none ring-[#c9a0f8] transition focus:ring-2"
-            />
-          </label>
-          <label className="block sm:col-span-2">
-            <span className="text-sm font-semibold text-[#4a2381]">Timeline</span>
-            <input
-              value={intake.timeline}
-              onChange={(event) =>
-                setIntake((prev) => ({ ...prev, timeline: event.target.value }))
-              }
-              placeholder="When would you like this completed?"
-              className="mt-2 w-full rounded-xl border border-[#dcbef9] bg-white px-3 py-2 text-sm text-[#32174f] outline-none ring-[#c9a0f8] transition focus:ring-2"
-            />
-          </label>
-        </div>
-
-        <label className="block">
-          <span className="text-sm font-semibold text-[#4a2381]">
-            Tell us about your project
-          </span>
-          <textarea
-            value={prompt}
-            onChange={(event) => setPrompt(event.target.value)}
-            placeholder="Example: I want a built-in mudroom bench with storage in a 7ft wall space."
-            rows={4}
-            className="mt-2 w-full rounded-2xl border border-[#dcbef9] bg-white px-4 py-3 text-[#32174f] outline-none ring-[#c9a0f8] transition focus:ring-2"
-          />
-        </label>
-
-        <label className="block">
-          <span className="text-sm font-semibold text-[#4a2381]">
-            Upload space photos (optional)
-          </span>
+        <div className="flex flex-wrap gap-2">
+          <button
+            type="button"
+            onClick={() => galleryInputRef.current?.click()}
+            className="rounded-full border border-[#dcc6fb] bg-[#faf6ff] px-4 py-2 text-xs font-semibold text-[#4a2381] transition hover:bg-[#f0e6ff] sm:text-sm"
+          >
+            Upload photo
+          </button>
+          <button
+            type="button"
+            onClick={() => cameraInputRef.current?.click()}
+            className="rounded-full border border-[#dcc6fb] bg-[#faf6ff] px-4 py-2 text-xs font-semibold text-[#4a2381] transition hover:bg-[#f0e6ff] sm:text-sm"
+          >
+            Take photo
+          </button>
           <input
+            ref={galleryInputRef}
             type="file"
             multiple
             accept="image/*"
+            className="hidden"
             onChange={(event) => handleFilesChange(event.target.files)}
-            className="mt-2 block w-full text-sm text-[#4a2a69] file:mr-4 file:rounded-full file:border-0 file:bg-[#ede0ff] file:px-4 file:py-2 file:font-semibold file:text-[#4a2381] hover:file:bg-[#e4d2ff]"
           />
-          <p className="mt-2 text-xs text-[#6a4a8f]">
-            Up to {MAX_IMAGES} images, {MAX_IMAGE_MB}MB each.
-          </p>
-        </label>
-
-        <label className="flex cursor-pointer items-start gap-3 rounded-2xl border border-[#e8d9ff] bg-[#faf6ff] px-4 py-3">
           <input
-            type="checkbox"
-            checked={includeConceptImage}
-            onChange={(event) => setIncludeConceptImage(event.target.checked)}
-            className="mt-1 h-4 w-4 rounded border-[#6e3eb2] text-[#6e3eb2]"
+            ref={cameraInputRef}
+            type="file"
+            accept="image/*"
+            capture="environment"
+            className="hidden"
+            onChange={(event) => handleFilesChange(event.target.files)}
           />
-          <span className="text-sm text-[#4d2e70]">
-            <span className="font-semibold text-[#2f1748]">Include concept image</span>
-            — generates one Gemini visualization grounded in common retailer materials
-            (optional; slightly slower).
+          <span className="self-center text-xs text-[#6a4a8f]">
+            Up to {MAX_IMAGES} photos, {MAX_IMAGE_MB}MB each (sent with your next message).
           </span>
-        </label>
+        </div>
 
         {previews.length > 0 ? (
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
@@ -374,6 +315,35 @@ export default function ProjectPlannerAssistant({
           </div>
         ) : null}
 
+        {(phase === "recommend" || phase === "refine") ? (
+          <label className="flex cursor-pointer items-start gap-3 rounded-2xl border border-[#e8d9ff] bg-[#faf6ff] px-4 py-3">
+            <input
+              type="checkbox"
+              checked={includeConceptImage}
+              onChange={(event) => setIncludeConceptImage(event.target.checked)}
+              className="mt-1 h-4 w-4 rounded border-[#6e3eb2] text-[#6e3eb2]"
+            />
+            <span className="text-sm text-[#4d2e70]">
+              <span className="font-semibold text-[#2f1748]">
+                Optional concept sketch
+              </span>
+              — adds a simple visualization with your next reply (slower). You can also ask
+              to &quot;show me&quot; in your message.
+            </span>
+          </label>
+        ) : null}
+
+        <label className="block">
+          <span className="text-sm font-semibold text-[#4a2381]">Your message</span>
+          <textarea
+            value={draft}
+            onChange={(event) => setDraft(event.target.value)}
+            placeholder="Reply here…"
+            rows={3}
+            className="mt-2 w-full resize-y rounded-2xl border border-[#dcbef9] bg-white px-4 py-3 text-[#32174f] outline-none ring-[#c9a0f8] transition focus:ring-2"
+          />
+        </label>
+
         {error ? <p className="text-sm text-[#a2175d]">{error}</p> : null}
 
         <div className="flex flex-wrap items-center gap-3">
@@ -382,15 +352,15 @@ export default function ProjectPlannerAssistant({
             disabled={isLoading}
             className="inline-flex items-center justify-center rounded-full bg-[#6e3eb2] px-6 py-3 text-sm font-semibold text-white transition hover:bg-[#5b3292] disabled:cursor-not-allowed disabled:opacity-65"
           >
-            {isLoading ? "Thinking..." : "Get Project Ideas"}
+            {isLoading ? "Sending…" : "Send"}
           </button>
-          {latestAssistantIdea ? (
+          {latestAssistantIdea && canSaveIdea ? (
             <button
               type="button"
               onClick={() => void handleSaveIdea()}
               className="inline-flex items-center justify-center rounded-full border-2 border-[#6e3eb2] bg-white px-6 py-3 text-sm font-semibold text-[#5b3292] transition hover:bg-[#f5efff]"
             >
-              Save This Idea
+              Save summary
             </button>
           ) : null}
         </div>
@@ -400,14 +370,14 @@ export default function ProjectPlannerAssistant({
         {showCreateAccountPrompt ? (
           <div className="flex flex-wrap items-center gap-2">
             <p className="text-sm text-[#55337b]">
-              To save ideas, please create a client account first.
+              Saving requires a free client account.
             </p>
             <button
               type="button"
               onClick={onRequireCreateAccount}
               className="rounded-full border border-[#6e3eb2] px-4 py-2 text-xs font-semibold text-[#5b3292] transition hover:bg-[#f3ebff] sm:text-sm"
             >
-              Create Account
+              Create account
             </button>
           </div>
         ) : null}

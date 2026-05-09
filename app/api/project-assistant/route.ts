@@ -2,153 +2,111 @@ import { NextResponse } from "next/server";
 import { getSessionFromCookie } from "@/lib/client-portal-auth";
 import {
   geminiGenerateConceptImage,
-  geminiPlannerTurn,
+  geminiPlannerMultiTurn,
   isGeminiConfigured,
   userRequestedImageGeneration,
 } from "@/lib/gemini-client";
-import { LEVEL_UP_LEAD_COORDINATOR_PROMPT } from "@/lib/level-up-gemini-persona";
+import { extractPlannerPhase, MORGAN_PLANNER_SYSTEM } from "@/lib/morgan-planner-prompt";
 import { appendAiPlannerActivity } from "@/lib/client-portal-store";
 
-const PLANNER_SYSTEM = `${LEVEL_UP_LEAD_COORDINATOR_PROMPT}
+type PlainChatRole = "user" | "assistant";
 
-You are also the AI project planner for homeowners preparing to book Level Up Install.
-
-When responding:
-- Be warm, concise, and practical.
-- Use intake details when provided: room type, dimensions, style, budget, timeline.
-- Give concrete ideas grounded in retailer-available materials (IKEA, Home Depot, Lowe's).
-- Ask up to 3 clarifying questions only when truly needed.
-- Include rough scope guidance, likely materials to discuss, and next planning steps.
-- Mention that final measurements and quote are confirmed on-site.
-- Whenever you suggest visual ideas, include a short **Materials List** (bullet list) of items findable at a typical hardware store.
-- Format output as:
-## Project Brief
-- Room/Area:
-- Goals:
-- Style Direction:
-- Budget & Timeline:
-- Suggested Build Ideas:
-- Materials List:
-- Questions to Confirm:
-- Next Step with Level Up Install:
-`;
-
-type IntakeDetails = {
-  roomType: string;
-  dimensions: string;
-  style: string;
-  budget: string;
-  timeline: string;
+export type PlannerClientMessage = {
+  role: PlainChatRole;
+  content: string;
 };
 
-function buildIntakeSummary(intake: IntakeDetails): string {
-  return `Room/Area: ${intake.roomType || "Not provided"}
-Dimensions: ${intake.dimensions || "Not provided"}
-Style: ${intake.style || "Not provided"}
-Budget: ${intake.budget || "Not provided"}
-Timeline: ${intake.timeline || "Not provided"}`;
-}
+type ContentPart =
+  | { text: string }
+  | { inline_data: { mime_type: string; data: string } };
 
-function buildFallbackReply(
-  prompt: string,
-  imageCount: number,
-  intake: IntakeDetails,
-): string {
-  const photoNote =
-    imageCount > 0
-      ? `I received ${imageCount} photo${imageCount > 1 ? "s" : ""}, which helps with layout-based suggestions.`
-      : "If you upload photos of your space, I can give more layout-specific suggestions.";
+const MAX_MESSAGES = 28;
 
-  return `${photoNote}
+function buildGeminiContents(
+  messages: PlannerClientMessage[],
+  latestImageParts: ContentPart[],
+): Array<{ role: "user" | "model"; parts: ContentPart[] }> | null {
+  if (messages.length === 0) return null;
+  const trimmed = messages.slice(-MAX_MESSAGES);
+  const contents: Array<{ role: "user" | "model"; parts: ContentPart[] }> = [];
 
-## Project Brief
-- Room/Area: ${intake.roomType || "To confirm on consult"}
-- Goals: ${prompt}
-- Style Direction: ${intake.style || "To be selected"}
-- Budget & Timeline: ${intake.budget || "Not provided"} / ${intake.timeline || "Not provided"}
-- Suggested Build Ideas:
-  1) Custom storage or built-ins sized to your room.
-  2) Finish trim/detail upgrades for a cleaner premium look.
-  3) Feature carpentry element (bench, shelving, or media wall).
-- Materials List:
-  - Paint-grade MDF or plywood core with hardwood trim (Home Depot / Lowe's).
-  - Soft-close hinges/slides and durable cabinet paint (IKEA / big-box hardware aisle).
-  - Trim profiles matched to existing door casing where possible.
-- Questions to Confirm:
-  - Exact wall and ceiling dimensions?
-  - Any outlets, vents, doors, or baseboard constraints?
-  - Preferred finish color and timeline target?
-- Next Step with Level Up Install:
-  Share final measurements/photos and we will confirm scope during the on-site visit before final quote.
-`;
-}
-
-async function callGeminiPlanner(
-  prompt: string,
-  images: File[],
-  intake: IntakeDetails,
-): Promise<{ text: string; plannerImages: { mimeType: string; data: string }[] } | null> {
-  if (!isGeminiConfigured()) return null;
-
-  const imageParts: Array<{ inline_data: { mime_type: string; data: string } }> =
-    await Promise.all(
-      images.map(async (image) => {
-        const bytes = Buffer.from(await image.arrayBuffer());
-        return {
-          inline_data: {
-            mime_type: image.type || "image/jpeg",
-            data: bytes.toString("base64"),
-          },
-        };
-      }),
-    );
-
-  const userText = `Client prompt:
-${prompt}
-
-Intake details:
-${buildIntakeSummary(intake)}`;
-
-  const result = await geminiPlannerTurn({
-    systemInstruction: PLANNER_SYSTEM,
-    userText,
-    imageParts,
-  });
-
-  if ("error" in result) {
-    throw new Error("Assistant service is temporarily unavailable.");
+  for (let i = 0; i < trimmed.length - 1; i++) {
+    const m = trimmed[i];
+    contents.push({
+      role: m.role === "assistant" ? "model" : "user",
+      parts: [{ text: m.content }],
+    });
   }
 
-  const plannerImages = result.images.map((img) => ({
-    mimeType: img.mimeType,
-    data: img.dataBase64,
-  }));
+  const last = trimmed[trimmed.length - 1];
+  if (last.role !== "user") return null;
 
-  return { text: result.text, plannerImages };
+  const parts: ContentPart[] = [];
+  const text = last.content.trim();
+  if (text) {
+    parts.push({ text });
+  } else if (latestImageParts.length > 0) {
+    parts.push({
+      text: "(The homeowner shared a photo of their space.)",
+    });
+  }
+
+  for (const img of latestImageParts) {
+    parts.push(img);
+  }
+
+  if (parts.length === 0) return null;
+
+  contents.push({ role: "user", parts });
+  return contents;
+}
+
+function buildFallbackReply(imageCount: number): string {
+  const photoNote =
+    imageCount > 0
+      ? "Thanks for the photo — that's helpful.\n\n"
+      : "";
+  return `${photoNote}I'm having a quick connection hiccup on my side. Let's keep going — what's a rough budget range you're aiming for on this project?
+
+[PHASE:consultation]`;
+}
+
+async function loadLatestImageParts(images: File[]): Promise<ContentPart[]> {
+  return Promise.all(
+    images.map(async (image) => {
+      const bytes = Buffer.from(await image.arrayBuffer());
+      return {
+        inline_data: {
+          mime_type: image.type || "image/jpeg",
+          data: bytes.toString("base64"),
+        },
+      };
+    }),
+  );
 }
 
 export async function POST(request: Request) {
   try {
     const formData = await request.formData();
-    const prompt = String(formData.get("prompt") ?? "").trim();
-    const includeConceptImage =
-      String(formData.get("includeConceptImage") ?? "").toLowerCase() === "true" ||
-      String(formData.get("includeConceptImage") ?? "") === "1";
 
-    const intake: IntakeDetails = {
-      roomType: String(formData.get("roomType") ?? "").trim(),
-      dimensions: String(formData.get("dimensions") ?? "").trim(),
-      style: String(formData.get("style") ?? "").trim(),
-      budget: String(formData.get("budget") ?? "").trim(),
-      timeline: String(formData.get("timeline") ?? "").trim(),
-    };
+    const messagesRaw = String(formData.get("messages") ?? "");
+    let messages: PlannerClientMessage[] = [];
+    try {
+      messages = JSON.parse(messagesRaw) as PlannerClientMessage[];
+    } catch {
+      return NextResponse.json({ error: "Invalid messages payload." }, { status: 400 });
+    }
 
-    if (!prompt) {
+    if (!Array.isArray(messages) || messages.length === 0) {
       return NextResponse.json(
-        { error: "Prompt is required." },
+        { error: "At least one message is required." },
         { status: 400 },
       );
     }
+
+    const includeConceptImage =
+      String(formData.get("includeConceptImage") ?? "").toLowerCase() === "true" ||
+      String(formData.get("includeConceptImage") ?? "") === "1";
 
     const files = formData
       .getAll("images")
@@ -158,40 +116,72 @@ export async function POST(request: Request) {
       (file) => file.type.startsWith("image/") && file.size <= 5 * 1024 * 1024,
     );
 
-    let reply = "";
-    const responseImages: { mimeType: string; data: string }[] = [];
+    const lastUserText =
+      [...messages].reverse().find((m) => m.role === "user")?.content?.trim() ?? "";
+
+    if (!lastUserText && imageFiles.length === 0) {
+      return NextResponse.json(
+        { error: "Add a message or attach at least one photo." },
+        { status: 400 },
+      );
+    }
+
+    const contents = buildGeminiContents(messages, await loadLatestImageParts(imageFiles));
+    if (!contents) {
+      return NextResponse.json(
+        { error: "Conversation must end with your latest message." },
+        { status: 400 },
+      );
+    }
+
+    let replyRaw = "";
+    let plannerInlineImages: { mimeType: string; data: string }[] = [];
 
     try {
-      const gemini = await callGeminiPlanner(prompt, imageFiles, intake);
-      if (gemini?.text?.trim()) {
-        reply = gemini.text.trim();
-      }
-      if (gemini?.plannerImages?.length) {
-        responseImages.push(...gemini.plannerImages);
+      if (isGeminiConfigured()) {
+        const result = await geminiPlannerMultiTurn({
+          systemInstruction: MORGAN_PLANNER_SYSTEM,
+          contents,
+        });
+
+        if (!("error" in result)) {
+          replyRaw = result.text.trim();
+          plannerInlineImages = result.images.map((img) => ({
+            mimeType: img.mimeType,
+            data: img.dataBase64,
+          }));
+        }
       }
     } catch {
-      reply = "";
+      replyRaw = "";
     }
 
-    if (!reply.trim()) {
-      reply = buildFallbackReply(prompt, imageFiles.length, intake);
+    if (!replyRaw) {
+      replyRaw = buildFallbackReply(imageFiles.length);
     }
 
-    const wantVisual =
-      includeConceptImage || userRequestedImageGeneration(prompt);
+    const { cleanReply, phase } = extractPlannerPhase(replyRaw);
 
-    if (wantVisual && isGeminiConfigured() && responseImages.length === 0) {
+    const allowConceptImage =
+      phase !== "consultation" &&
+      (includeConceptImage || userRequestedImageGeneration(lastUserText));
+
+    const responseImages: { mimeType: string; data: string }[] = [...plannerInlineImages];
+
+    if (allowConceptImage && isGeminiConfigured() && responseImages.length === 0) {
+      const transcript = messages
+        .slice(-12)
+        .map((m) => `${m.role === "user" ? "Homeowner" : "Morgan"}: ${m.content}`)
+        .join("\n");
+
       const visual = await geminiGenerateConceptImage({
-        promptContext: `${buildIntakeSummary(intake)}\n\nPlanner draft:\n${reply.slice(0, 8000)}`,
-        userGoal: prompt.slice(0, 4000),
+        promptContext: `${transcript}\n\nMorgan reply:\n${cleanReply.slice(0, 6000)}`,
+        userGoal: lastUserText.slice(0, 4000) || cleanReply.slice(0, 1200),
       });
 
       if (!("error" in visual) && visual.images.length > 0) {
         for (const img of visual.images) {
           responseImages.push({ mimeType: img.mimeType, data: img.dataBase64 });
-        }
-        if (visual.text?.trim()) {
-          reply = `${reply}\n\n---\n**Concept visualization notes:**\n${visual.text.trim()}`;
         }
       }
     }
@@ -200,9 +190,9 @@ export async function POST(request: Request) {
     if (portalSession?.userId) {
       try {
         await appendAiPlannerActivity(portalSession.userId, {
-          promptPreview: prompt.slice(0, 280),
-          replyPreview: reply.slice(0, 480),
-          intakeSummary: buildIntakeSummary(intake),
+          promptPreview: lastUserText.slice(0, 280) || "(photo)",
+          replyPreview: cleanReply.slice(0, 480),
+          intakeSummary: `phase:${phase};turns:${messages.length}`,
           imageCount: imageFiles.length + responseImages.length,
         });
       } catch {
@@ -211,7 +201,8 @@ export async function POST(request: Request) {
     }
 
     return NextResponse.json({
-      reply,
+      reply: cleanReply,
+      phase,
       ...(responseImages.length ? { images: responseImages } : {}),
     });
   } catch {

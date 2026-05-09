@@ -6,6 +6,7 @@ import { Suspense, useEffect, useState } from "react";
 import ClientPortal from "./components/client-portal";
 import FloatingAgentChat from "./components/floating-agent-chat";
 import ProjectPlannerAssistant from "./components/project-planner-assistant";
+import { PLANNER_ASSISTANT_NAME } from "@/lib/planner-brand";
 import ReviewsGallery from "./components/reviews-gallery";
 
 type SectionKey = "overview" | "reviews" | "rates" | "planner" | "account";
@@ -202,7 +203,7 @@ function HomeContent() {
               onClick={() => setActiveSection("planner")}
               className={sectionButtonClass("planner")}
             >
-              AI Planner
+              Planner
             </button>
           </div>
         </div>
@@ -315,12 +316,10 @@ function HomeContent() {
                 See what&apos;s possible before you pick up a hammer.
               </h2>
               <p className="mt-3 max-w-2xl text-base leading-relaxed text-[#4d2e70]">
-                Our AI planner helps you explore finish carpentry ideas in plain language—then turns
-                your goals, room details, and optional photos into a structured{" "}
-                <span className="font-semibold text-[#31184a]">Project Brief</span> you can refine,
-                save (with a free account), and share when you book. It does not replace an
-                on-site visit or quote; it helps you visualize directions and vocabulary so
-                conversations with our crew start ahead of the curve.
+                {PLANNER_ASSISTANT_NAME}, our planning consultant, chats through a few focused questions
+                first—budget, your space, what you already have in mind—then offers short, practical
+                directions (no shopping lists). Add photos anytime. Save highlights with a free account
+                and use them when you book. Nothing here replaces an on-site visit or firm quote.
               </p>
               <ul className="mt-6 grid gap-4 text-sm leading-relaxed text-[#55337b] sm:grid-cols-2 sm:text-[15px]">
                 <li className="flex flex-col overflow-hidden rounded-xl border border-[#eddfff] bg-white shadow-[0_8px_28px_-18px_rgba(91,33,182,0.35)]">
@@ -339,14 +338,14 @@ function HomeContent() {
                       <path d="M243 118l4 4 8-10" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
                     </svg>
                     <span className="absolute left-3 top-3 rounded-full bg-white/90 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-[#6e3eb2] shadow-sm">
-                      Intake
+                      Consult
                     </span>
                   </div>
                   <div className="p-4">
-                    <p className="font-semibold text-[#31184a]">Smart intake</p>
+                    <p className="font-semibold text-[#31184a]">Consultation-first</p>
                     <p className="mt-2">
-                      Describe the room, dimensions, style, budget, and timeline so suggestions stay
-                      grounded in your real constraints.
+                      One question at a time until your goals and constraints are clear—especially budget—then{" "}
+                      {PLANNER_ASSISTANT_NAME} shifts into suggestions.
                     </p>
                   </div>
                 </li>
@@ -395,15 +394,14 @@ function HomeContent() {
                       <path d="M118 88 L130 88" stroke="#6e3eb2" strokeWidth="2" strokeLinecap="round" strokeDasharray="4 4" />
                     </svg>
                     <span className="absolute left-3 top-3 rounded-full bg-white/90 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-[#6e3eb2] shadow-sm">
-                      Brief
+                      Next steps
                     </span>
                   </div>
                   <div className="p-4">
-                    <p className="font-semibold text-[#31184a]">Visualization-friendly brief</p>
+                    <p className="font-semibold text-[#31184a]">Keep it conversational</p>
                     <p className="mt-2">
-                      Get organized headings for goals, style direction, suggested build ideas,
-                      materials to consider, and questions to confirm—so you can picture options side
-                      by side.
+                      Short answers and plain-language guidance—then refine together after you&apos;ve seen
+                      initial directions. Save the summary when you&apos;re signed in.
                     </p>
                   </div>
                 </li>
@@ -448,7 +446,7 @@ function HomeContent() {
                   Create a plan for my space
                 </button>
                 <p className="text-xs text-[#6a4a8f]">
-                  Signed-in clients can save briefs to their account for later.
+                  Signed-in clients can save planning notes from the chat for later.
                 </p>
               </div>
             </div>
@@ -594,12 +592,13 @@ function HomeContent() {
                   Create an account to save AI project ideas, track your
                   booking and progress photos from the crew, chat with our
                   agent anytime, and keep invoices in one place. When you are
-                  ready, booking your call-out starts from the AI Planner after your brief.
+                  ready, booking your call-out starts from the planner after you and{" "}
+                  {PLANNER_ASSISTANT_NAME} have a direction.
                 </p>
                 <ul className="mt-5 grid gap-2 text-sm text-[#55337b] sm:grid-cols-2 sm:text-[15px]">
                   <li className="flex gap-2">
                     <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-[#6e3eb2]" />
-                    Save and revisit project briefs from the AI planner
+                    Save and revisit planning notes from your chat with {PLANNER_ASSISTANT_NAME}
                   </li>
                   <li className="flex gap-2">
                     <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-[#6e3eb2]" />
@@ -637,7 +636,7 @@ function HomeContent() {
                     onClick={() => setActiveSection("rates")}
                     className="font-semibold text-[#4a2381] underline decoration-[#c9a5f1] underline-offset-4 hover:text-[#3f1d70]"
                   >
-                    View rates & open AI Planner
+                    View rates & open planner
                   </button>
                 </p>
               </div>
@@ -745,9 +744,8 @@ function HomeContent() {
                 <li className="flex gap-3">
                   <span className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-[#6e3eb2]" />
                   <span>
-                    <span className="font-semibold text-[#31184a]">Booking checkout:</span> From the{" "}
-                    <span className="font-semibold text-[#31184a]">AI Planner</span>, after you receive a
-                    project brief, the{" "}
+                    <span className="font-semibold text-[#31184a]">Booking checkout:</span> From the planner,
+                    after you and {PLANNER_ASSISTANT_NAME} have a planning direction, the{" "}
                     <span className="font-semibold text-[#31184a]">Secure your booking</span> section sends
                     you to{" "}
                     <span className="font-semibold text-[#31184a]">Stripe Checkout</span>. Completing payment
@@ -804,8 +802,8 @@ function HomeContent() {
             <div className="mt-8 rounded-2xl border border-[#dcc6fb] bg-[#faf8ff] p-5 sm:p-6">
               <h3 className="text-lg font-semibold text-[#230f35]">Ready to book?</h3>
               <p className="mt-2 text-sm leading-relaxed text-[#4d2e70] sm:text-[15px]">
-                Use the <span className="font-semibold text-[#31184a]">AI Planner</span> to generate a
-                brief — then use <span className="font-semibold text-[#31184a]">Secure your booking</span>{" "}
+                Chat with <span className="font-semibold text-[#31184a]">{PLANNER_ASSISTANT_NAME}</span> in the
+                planner — then use <span className="font-semibold text-[#31184a]">Secure your booking</span>{" "}
                 right below the conversation to pay the call-out fee and send your details to our team.
               </p>
               <button
@@ -813,7 +811,7 @@ function HomeContent() {
                 onClick={() => setActiveSection("planner")}
                 className="mt-4 inline-flex rounded-full bg-[#6e3eb2] px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-[#5b3292]"
               >
-                Open AI Planner
+                Open planner
               </button>
             </div>
           </div>

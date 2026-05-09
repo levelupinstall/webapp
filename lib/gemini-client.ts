@@ -179,6 +179,28 @@ export async function geminiTextChat(params: {
   return extractParts(result.json);
 }
 
+/** Multi-turn planner chat; last user turn may include images in \`parts\`. */
+export async function geminiPlannerMultiTurn(params: {
+  systemInstruction: string;
+  contents: Array<{ role: "user" | "model"; parts: ContentPart[] }>;
+}): Promise<GeminiGenerateResult | { error: string }> {
+  const model = defaultGeminiTextModel();
+
+  const result = await geminiGenerateContent({
+    model,
+    systemInstruction: params.systemInstruction,
+    contents: params.contents,
+  });
+
+  if (!result.ok) {
+    return {
+      error: `Gemini error (${result.status}). ${result.body}`,
+    };
+  }
+
+  return extractParts(result.json);
+}
+
 /** Multimodal: text + optional reference images (planner uploads). */
 export async function geminiPlannerTurn(params: {
   systemInstruction: string;
