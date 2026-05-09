@@ -42,7 +42,7 @@ export async function sendPendingPortalSignupVerification(
     channel,
     email: row.email,
     phoneE164,
-    username: row.username,
+    displayName: row.fullName.trim() || row.username,
     code: verificationCode,
     verificationLink,
     request,

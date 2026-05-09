@@ -51,7 +51,8 @@ export async function POST(request: Request) {
     }
 
     const portalContext = `Client portal context:
-- Username: ${user.username}
+- Client name: ${user.fullName?.trim() || "(not set)"}
+- Login email: ${user.email}
 - Current project phase: ${user.projectStatus.phase}
 - Current project notes: ${user.projectStatus.details}
 - Saved idea count: ${user.ideas.length}`;

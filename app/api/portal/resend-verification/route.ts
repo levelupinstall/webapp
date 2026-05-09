@@ -1,26 +1,30 @@
 import { NextResponse } from "next/server";
 import bcrypt from "bcryptjs";
-import { findUserByUsername } from "@/lib/client-portal-store";
+import { findPortalUserForLogin } from "@/lib/client-portal-store";
 import { sendPendingPortalSignupVerification } from "@/lib/portal-pending-verification-send";
 import { portalVerificationConfigured } from "@/lib/portal-verification-delivery";
 
 export async function POST(request: Request) {
   try {
-    const body = (await request.json()) as { username?: string; password?: string };
-    const username = body.username?.trim() || "";
+    const body = (await request.json()) as {
+      email?: string;
+      username?: string;
+      password?: string;
+    };
+    const identifier = (body.email ?? body.username)?.trim() || "";
     const password = body.password || "";
 
-    if (!username || !password) {
+    if (!identifier || !password) {
       return NextResponse.json(
-        { error: "Username and password are required." },
+        { error: "Email and password are required." },
         { status: 400 },
       );
     }
 
-    const user = await findUserByUsername(username);
+    const user = await findPortalUserForLogin(identifier);
     if (!user) {
       return NextResponse.json(
-        { error: "Could not send verification. Check your username and password." },
+        { error: "Could not send verification. Check your email and password." },
         { status: 401 },
       );
     }
@@ -28,7 +32,7 @@ export async function POST(request: Request) {
     const valid = await bcrypt.compare(password, user.passwordHash);
     if (!valid) {
       return NextResponse.json(
-        { error: "Could not send verification. Check your username and password." },
+        { error: "Could not send verification. Check your email and password." },
         { status: 401 },
       );
     }

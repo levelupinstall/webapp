@@ -313,6 +313,26 @@ export async function findCarpenterByUsername(username: string) {
   return row ? rowToCarpenterUser(row) : undefined;
 }
 
+export async function findCarpenterByEmail(email: string) {
+  const normalized = email.trim().toLowerCase();
+  if (!normalized || !normalized.includes("@")) return undefined;
+  const row = await prisma.carpenterAccount.findFirst({
+    where: { email: { equals: normalized, mode: "insensitive" } },
+  });
+  return row ? rowToCarpenterUser(row) : undefined;
+}
+
+/** Login identifier: email (preferred) or legacy username. */
+export async function findCarpenterForLogin(identifier: string) {
+  const trimmed = identifier.trim();
+  if (!trimmed) return undefined;
+  if (trimmed.includes("@")) {
+    const byEmail = await findCarpenterByEmail(trimmed);
+    if (byEmail) return byEmail;
+  }
+  return findCarpenterByUsername(trimmed);
+}
+
 export async function beginCarpenterPasswordReset(
   email: string,
 ): Promise<{
@@ -388,7 +408,6 @@ export async function finishCarpenterPasswordReset(
 }
 
 export async function createCarpenterUser(params: {
-  username: string;
   passwordHash: string;
   fullName: string;
   email: string;
@@ -407,10 +426,22 @@ export async function createCarpenterUser(params: {
   profilePictureDataUrl: string;
   signupLocationLog?: Prisma.InputJsonValue;
 }) {
-  const exists = await prisma.carpenterAccount.findFirst({
-    where: { username: { equals: params.username, mode: "insensitive" } },
+  const emailNormalized = params.email.trim().toLowerCase();
+  const username = emailNormalized;
+
+  const existsEmail = await prisma.carpenterAccount.findFirst({
+    where: { email: { equals: emailNormalized, mode: "insensitive" } },
   });
-  if (exists) throw new Error("Username already exists.");
+  if (existsEmail) {
+    throw new Error("An account with this email already exists.");
+  }
+
+  const existsUsername = await prisma.carpenterAccount.findFirst({
+    where: { username: { equals: username, mode: "insensitive" } },
+  });
+  if (existsUsername) {
+    throw new Error("An account with this email already exists.");
+  }
 
   const now = new Date().toISOString();
   const sampleJob: CarpenterJob = {
@@ -478,10 +509,10 @@ export async function createCarpenterUser(params: {
   try {
     const row = await prisma.carpenterAccount.create({
       data: {
-        username: params.username,
+        username,
         passwordHash: params.passwordHash,
         fullName: params.fullName,
-        email: params.email,
+        email: emailNormalized,
         phone: params.phone,
         emergencyContactName: params.emergencyContactName,
         emergencyContactRelationship: params.emergencyContactRelationship,
@@ -511,7 +542,7 @@ export async function createCarpenterUser(params: {
       error instanceof Prisma.PrismaClientKnownRequestError &&
       error.code === "P2002"
     ) {
-      throw new Error("Username already exists.");
+      throw new Error("An account with this email already exists.");
     }
     throw error;
   }

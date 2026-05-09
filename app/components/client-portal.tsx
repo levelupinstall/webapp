@@ -52,7 +52,7 @@ export default function ClientPortal({
 }: ClientPortalProps) {
   const [mode, setMode] = useState<"login" | "register">(initialMode);
   const [user, setUser] = useState<PortalUser | null>(null);
-  const [username, setUsername] = useState("");
+  const [registerFullName, setRegisterFullName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [ideaTitle, setIdeaTitle] = useState("");
@@ -169,8 +169,12 @@ export default function ClientPortal({
       const endpoint = mode === "login" ? "/api/portal/login" : "/api/portal/register";
       const payload =
         mode === "login"
-          ? { username, password }
-          : { username, password, email };
+          ? { email: email.trim(), password }
+          : {
+              fullName: registerFullName.trim(),
+              email: email.trim(),
+              password,
+            };
 
       const response = await fetch(endpoint, {
         method: "POST",
@@ -260,8 +264,8 @@ export default function ClientPortal({
   }
 
   async function handleResendVerification() {
-    if (!username.trim() || !password) {
-      setError("Enter your username and password, then try sending again.");
+    if (!email.trim() || !password) {
+      setError("Enter your email and password, then try sending again.");
       return;
     }
     setError(null);
@@ -270,7 +274,7 @@ export default function ClientPortal({
       const response = await fetch("/api/portal/resend-verification", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ username, password }),
+        body: JSON.stringify({ email: email.trim(), password }),
       });
       const data = (await response.json()) as {
         error?: string;
@@ -452,25 +456,27 @@ export default function ClientPortal({
           </button>
         </div>
         <form className="mt-5 space-y-3" onSubmit={handleAuth}>
-          {(mode === "register" || (mode === "login" && !forgotPasswordOpen)) && (
+          {mode === "register" ? (
             <input
               required
-              value={username}
-              onChange={(event) => setUsername(event.target.value)}
-              placeholder="Username"
+              value={registerFullName}
+              onChange={(event) => setRegisterFullName(event.target.value)}
+              placeholder="Full name"
+              autoComplete="name"
               className="w-full rounded-xl border border-[#dcbef9] bg-white px-3 py-2 text-sm text-[#32174f]"
             />
-          )}
-          {mode === "register" ? (
+          ) : null}
+          {(mode === "register" || (mode === "login" && !forgotPasswordOpen)) && (
             <input
               required
               type="email"
               value={email}
               onChange={(event) => setEmail(event.target.value)}
               placeholder="Email"
+              autoComplete="email"
               className="w-full rounded-xl border border-[#dcbef9] bg-white px-3 py-2 text-sm text-[#32174f]"
             />
-          ) : null}
+          )}
           {(mode === "register" || (mode === "login" && !forgotPasswordOpen)) && (
             <input
               required
@@ -585,7 +591,7 @@ export default function ClientPortal({
     );
   }
 
-  const displayName = user.fullName?.trim() || user.username;
+  const displayName = user.fullName?.trim() || user.email || user.username;
 
   return (
     <section className="rounded-3xl border border-[#dac6fb] bg-white p-6 shadow-[0_10px_30px_-20px_rgba(91,33,182,0.55)] sm:p-8">

@@ -28,12 +28,12 @@ function escapeHtml(text: string): string {
 }
 
 function buildSignupVerificationEmailHtml(params: {
-  username: string;
+  displayName: string;
   verificationLink: string;
   /** When set, logo is embedded via CID (same value as Gmail Content-ID without brackets). */
   logoCid: string | null;
 }): string {
-  const firstName = params.username.trim().split(/\s+/)[0] ?? "";
+  const firstName = params.displayName.trim().split(/\s+/)[0] ?? "";
   const greeting = firstName ? `Hi ${escapeHtml(firstName)},` : "Hi there,";
   const safeLink = escapeHtml(params.verificationLink);
 
@@ -297,7 +297,8 @@ export async function sendPortalSignupVerification(params: {
   channel: PortalVerificationChannel;
   email: string;
   phoneE164: string;
-  username: string;
+  /** Shown in greeting (e.g. full name); falls back to email local-part */
+  displayName: string;
   /** SMS-only; omitted when verifying by email link */
   code?: string | null;
   /** Absolute HTTPS URL for magic-link email verification */
@@ -305,7 +306,11 @@ export async function sendPortalSignupVerification(params: {
   /** Infer public URL for logo when building links from the API request */
   request?: Request | null;
 }): Promise<{ sent: boolean; error?: string }> {
-  const greet = params.username.trim() ? `, ${params.username.trim()}` : "";
+  const greetSource =
+    params.displayName.trim() ||
+    params.email.split("@")[0]?.trim() ||
+    "";
+  const greet = greetSource ? `, ${greetSource}` : "";
 
   if (params.channel === "email") {
     const subject = "Welcome to Level Up Install";
@@ -328,7 +333,7 @@ If you did not sign up, you can ignore this message.
 — Level Up Install`;
 
     const html = buildSignupVerificationEmailHtml({
-      username: params.username,
+      displayName: greetSource,
       verificationLink: link,
       logoCid,
     });

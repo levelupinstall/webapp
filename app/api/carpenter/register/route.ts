@@ -8,9 +8,9 @@ import { captureSignupLocationFromRequest } from "@/lib/signup-location-log";
 export async function POST(request: Request) {
   try {
     const body = (await request.json()) as {
-      username?: string;
       password?: string;
       fullName?: string;
+      name?: string;
       email?: string;
       phone?: string;
       hasLiabilityInsurance?: boolean;
@@ -26,10 +26,9 @@ export async function POST(request: Request) {
       toolsInventory?: string;
     };
 
-    const username = body.username?.trim() || "";
     const password = body.password || "";
-    const fullName = body.fullName?.trim() || "";
-    const email = body.email?.trim() || "";
+    const fullName = (body.fullName ?? body.name)?.trim() || "";
+    const email = body.email?.trim().toLowerCase() || "";
     const phone = body.phone?.trim() || "";
     const hasLiabilityInsurance = Boolean(body.hasLiabilityInsurance);
     const liabilityInsuranceDetails =
@@ -44,14 +43,18 @@ export async function POST(request: Request) {
     const skillsSummary = body.skillsSummary?.trim() || "";
     const toolsInventory = body.toolsInventory?.trim() || "";
 
-    if (!username || !password || !fullName || !email || !phone) {
+    if (!password || !fullName || !email || !phone) {
       return NextResponse.json(
         {
           error:
-            "Username, password, full name, email, and phone number are required.",
+            "Password, full name, email, and phone number are required.",
         },
         { status: 400 },
       );
+    }
+
+    if (fullName.length < 2) {
+      return NextResponse.json({ error: "Please enter your full name." }, { status: 400 });
     }
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
       return NextResponse.json(
@@ -98,7 +101,6 @@ export async function POST(request: Request) {
     const passwordHash = await bcrypt.hash(password, 10);
     const signupLocationLog = captureSignupLocationFromRequest(request);
     const user = await createCarpenterUser({
-      username,
       passwordHash,
       fullName,
       email,

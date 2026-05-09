@@ -35,7 +35,7 @@ export async function GET(
 
   const lines = [
     `Invoice ID: ${invoice.id}`,
-    `Client: ${user.username}`,
+    `Client: ${user.fullName?.trim() || user.email}`,
     `Project: ${invoice.projectName}`,
     `Amount: $${(invoice.amountCents / 100).toFixed(2)} CAD`,
     `Status: ${invoice.status.toUpperCase()}`,

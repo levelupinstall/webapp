@@ -240,7 +240,6 @@ type CarpenterUser = {
 export default function CarpenterApp() {
   const [mode, setMode] = useState<"login" | "register">("login");
   const [user, setUser] = useState<CarpenterUser | null>(null);
-  const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [fullName, setFullName] = useState("");
   const [email, setEmail] = useState("");
@@ -473,6 +472,10 @@ export default function CarpenterApp() {
       return;
     }
     if (mode === "register") {
+      if (!fullName.trim() || fullName.trim().length < 2) {
+        setError("Please enter your full name.");
+        return;
+      }
       if (!email.trim() || !phone.trim()) {
         setError("Email and phone number are required.");
         return;
@@ -501,9 +504,8 @@ export default function CarpenterApp() {
     const endpoint = mode === "login" ? "/api/carpenter/login" : "/api/carpenter/register";
     const payload =
       mode === "login"
-        ? { username, password }
+        ? { email: email.trim(), password }
         : {
-            username,
             password,
             fullName,
             email: email.trim(),
@@ -540,6 +542,8 @@ export default function CarpenterApp() {
   async function handleLogout() {
     await fetch("/api/carpenter/logout", { method: "POST" });
     setUser(null);
+    setEmail("");
+    setPassword("");
   }
 
   async function handleUpdateJob(event: FormEvent) {
@@ -795,19 +799,21 @@ export default function CarpenterApp() {
             <button type="button" onClick={() => setMode("register")} className={`rounded-full px-4 py-2 text-sm font-semibold ${mode === "register" ? "bg-[#6e3eb2] text-white" : "border border-[#6e3eb2] text-[#5b3292]"}`}>Create Account</button>
           </div>
           <form className="mt-4 space-y-4" onSubmit={handleAuth}>
-            {(mode === "register" || (mode === "login" && !forgotPasswordOpen)) && (
+            {mode === "login" && !forgotPasswordOpen ? (
               <input
                 className="w-full rounded-xl border border-[#dcbef9] px-3 py-2 text-sm"
-                placeholder="Username"
-                value={username}
-                onChange={(e) => setUsername(e.target.value)}
+                type="email"
+                placeholder="Email"
+                autoComplete="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
                 required
               />
-            )}
+            ) : null}
             {mode === "register" ? (
               <>
-                <input className="w-full rounded-xl border border-[#dcbef9] px-3 py-2 text-sm" placeholder="Full Name" value={fullName} onChange={(e) => setFullName(e.target.value)} required />
-                <input className="w-full rounded-xl border border-[#dcbef9] px-3 py-2 text-sm" type="email" placeholder="Email address" value={email} onChange={(e) => setEmail(e.target.value)} required />
+                <input className="w-full rounded-xl border border-[#dcbef9] px-3 py-2 text-sm" placeholder="Full name" autoComplete="name" value={fullName} onChange={(e) => setFullName(e.target.value)} required />
+                <input className="w-full rounded-xl border border-[#dcbef9] px-3 py-2 text-sm" type="email" placeholder="Email address" autoComplete="email" value={email} onChange={(e) => setEmail(e.target.value)} required />
                 <input className="w-full rounded-xl border border-[#dcbef9] px-3 py-2 text-sm" type="tel" placeholder="Your mobile / work phone" value={phone} onChange={(e) => setPhone(e.target.value)} required />
                 <div className="rounded-2xl border border-[#e8d9ff] bg-[#faf6ff] p-4">
                   <p className="text-sm font-semibold text-[#2f1748]">Emergency contact</p>
@@ -1009,7 +1015,7 @@ export default function CarpenterApp() {
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
             <h1 className="text-3xl font-semibold text-[#2d1546]">Carpenter Dashboard</h1>
-            <p className="text-[#55337b]">Welcome, {user.fullName || user.username}</p>
+            <p className="text-[#55337b]">Welcome, {user.fullName?.trim() || user.email || user.username}</p>
             <p className="text-sm text-[#6a4a8f]">{user.email}</p>
           </div>
           <button onClick={handleLogout} className="rounded-full border border-[#6e3eb2] px-4 py-2 text-sm font-semibold text-[#5b3292]">Log Out</button>

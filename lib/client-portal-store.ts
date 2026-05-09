@@ -210,6 +210,17 @@ export async function findUserByUsername(username: string) {
   return row ? rowToUserRecord(row) : undefined;
 }
 
+/** Login identifier: email address (preferred) or legacy username. */
+export async function findPortalUserForLogin(identifier: string) {
+  const trimmed = identifier.trim();
+  if (!trimmed) return undefined;
+  if (trimmed.includes("@")) {
+    const byEmail = await findPortalUserByEmail(trimmed.toLowerCase());
+    if (byEmail) return byEmail;
+  }
+  return findUserByUsername(trimmed);
+}
+
 export async function findPortalUserByEmail(email: string) {
   const row = await prisma.portalUser.findUnique({
     where: { email: email.trim().toLowerCase() },
@@ -247,7 +258,7 @@ export async function beginPortalPasswordReset(
 
   return {
     plainToken,
-    username: row.username,
+    username: row.fullName.trim() || row.username,
     toEmail: row.email,
     userId: row.id,
   };
@@ -291,22 +302,19 @@ export async function finishPortalPasswordReset(
 }
 
 export async function createUser(params: {
-  username: string;
   email: string;
+  fullName: string;
   passwordHash: string;
   phone: string;
   verificationChannel: "email" | "sms";
   signupLocationLog?: Prisma.InputJsonValue;
 }): Promise<{ user: UserRecord; verificationCode: string | null }> {
-  const existingUsername = await prisma.portalUser.findFirst({
-    where: { username: { equals: params.username, mode: "insensitive" } },
-  });
-  if (existingUsername) {
-    throw new Error("Username already exists.");
-  }
+  const emailNormalized = params.email.trim().toLowerCase();
+  const username = emailNormalized;
+  const fullNameTrimmed = params.fullName.trim();
 
   const existingEmail = await prisma.portalUser.findUnique({
-    where: { email: params.email.toLowerCase() },
+    where: { email: emailNormalized },
   });
   if (existingEmail) {
     throw new Error("Email already registered.");
@@ -335,15 +343,15 @@ export async function createUser(params: {
   try {
     const row = await prisma.portalUser.create({
       data: {
-        username: params.username,
-        email: params.email.toLowerCase(),
+        username,
+        email: emailNormalized,
         passwordHash: params.passwordHash,
         phone: params.phone.trim(),
         verificationChannel: params.verificationChannel,
         signupVerificationPending: true,
         signupVerificationCodeHash,
         signupVerificationExpiresAt,
-        fullName: "",
+        fullName: fullNameTrimmed,
         serviceAddress: "",
         avatarDataUrl: "",
         ideas: [],
@@ -369,7 +377,7 @@ export async function createUser(params: {
       if (targets?.some((t) => String(t).toLowerCase().includes("email"))) {
         throw new Error("Email already registered.");
       }
-      throw new Error("Username already exists.");
+      throw new Error("That email is already registered.");
     }
     throw error;
   }

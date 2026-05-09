@@ -1,25 +1,29 @@
 import { NextResponse } from "next/server";
 import bcrypt from "bcryptjs";
 import { setSessionCookie } from "@/lib/client-portal-auth";
-import { findUserByUsername, recordPortalLogin } from "@/lib/client-portal-store";
+import { findPortalUserForLogin, recordPortalLogin } from "@/lib/client-portal-store";
 import {
   normalizePhoneE164,
   portalContactHint,
 } from "@/lib/portal-verification-delivery";
 
 export async function POST(request: Request) {
-  const body = (await request.json()) as { username?: string; password?: string };
-  const username = body.username?.trim() || "";
+  const body = (await request.json()) as {
+    email?: string;
+    username?: string;
+    password?: string;
+  };
+  const identifier = (body.email ?? body.username)?.trim() || "";
   const password = body.password || "";
 
-  if (!username || !password) {
+  if (!identifier || !password) {
     return NextResponse.json(
-      { error: "Username and password are required." },
+      { error: "Email and password are required." },
       { status: 400 },
     );
   }
 
-  const user = await findUserByUsername(username);
+  const user = await findPortalUserForLogin(identifier);
   if (!user) {
     return NextResponse.json({ error: "Invalid credentials." }, { status: 401 });
   }

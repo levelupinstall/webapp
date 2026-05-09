@@ -39,8 +39,8 @@ export default async function PortalWelcomeAfterVerificationPage() {
             Your account is active
           </h1>
           <p className="mt-4 text-base leading-relaxed text-[#55337b]">
-            Thanks for confirming your email. Your Level Up Install client portal is ready—you are
-            logged in as <span className="font-semibold text-[#2f1748]">{session.username}</span>.
+            Thanks for confirming your email. Your Level Up Install client portal is ready and you are
+            signed in.
           </p>
           <p className="mt-4 text-base leading-relaxed text-[#4d2e70]">
             Next, open the{" "}

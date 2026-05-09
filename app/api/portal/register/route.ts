@@ -4,7 +4,6 @@ import {
   createUser,
   deletePortalUserById,
   findPortalUserByEmail,
-  findUserByUsername,
 } from "@/lib/client-portal-store";
 import {
   normalizePhoneE164,
@@ -19,25 +18,30 @@ import { captureSignupLocationFromRequest } from "@/lib/signup-location-log";
 export async function POST(request: Request) {
   try {
     const body = (await request.json()) as {
-      username?: string;
+      fullName?: string;
+      name?: string;
       password?: string;
       email?: string;
       phone?: string;
       verificationChannel?: string;
     };
 
-    const username = body.username?.trim() || "";
+    const fullName = (body.fullName ?? body.name)?.trim() || "";
     const password = body.password || "";
     const email = body.email?.trim().toLowerCase() || "";
     const phoneRaw = body.phone?.trim() || "";
     const verificationChannel =
       body.verificationChannel === "sms" ? ("sms" as const) : ("email" as const);
 
-    if (!username || !password || !email) {
+    if (!fullName || !password || !email) {
       return NextResponse.json(
-        { error: "Username, email, and password are required." },
+        { error: "Name, email, and password are required." },
         { status: 400 },
       );
+    }
+
+    if (fullName.length < 2) {
+      return NextResponse.json({ error: "Please enter your name." }, { status: 400 });
     }
 
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
@@ -68,7 +72,10 @@ export async function POST(request: Request) {
       );
     }
 
-    if (process.env.NODE_ENV === "production" && !portalVerificationConfigured(verificationChannel)) {
+    if (
+      process.env.NODE_ENV === "production" &&
+      !portalVerificationConfigured(verificationChannel)
+    ) {
       return NextResponse.json(
         {
           error:
@@ -91,7 +98,10 @@ export async function POST(request: Request) {
       }
       const pendingChannel =
         existingEmailUser.verificationChannel === "sms" ? ("sms" as const) : ("email" as const);
-      if (process.env.NODE_ENV === "production" && !portalVerificationConfigured(pendingChannel)) {
+      if (
+        process.env.NODE_ENV === "production" &&
+        !portalVerificationConfigured(pendingChannel)
+      ) {
         return NextResponse.json(
           {
             error:
@@ -122,53 +132,11 @@ export async function POST(request: Request) {
       );
     }
 
-    const existingUsernameUser = await findUserByUsername(username);
-    if (existingUsernameUser && existingUsernameUser.email.toLowerCase() !== email) {
-      if (!existingUsernameUser.signupVerificationPending) {
-        return NextResponse.json({ error: "Username already exists." }, { status: 400 });
-      }
-      const pwdOk = await bcrypt.compare(password, existingUsernameUser.passwordHash);
-      if (!pwdOk) {
-        return NextResponse.json({ error: "Username already exists." }, { status: 400 });
-      }
-      const pendingChannel =
-        existingUsernameUser.verificationChannel === "sms" ? ("sms" as const) : ("email" as const);
-      if (process.env.NODE_ENV === "production" && !portalVerificationConfigured(pendingChannel)) {
-        return NextResponse.json(
-          {
-            error:
-              pendingChannel === "email"
-                ? "Email verification is not configured on this server."
-                : "Text verification is not configured on this server.",
-          },
-          { status: 503 },
-        );
-      }
-      const phoneE164Existing =
-        normalizePhoneE164(existingUsernameUser.phone ?? "") ?? "";
-      return NextResponse.json(
-        {
-          error:
-            pendingChannel === "sms"
-              ? "This username belongs to an account that has not been verified yet. Check your phone for a verification code, or send a new text."
-              : "This username belongs to an account that has not been verified yet. Check your inbox and spam folder for a confirmation email, or send a new one.",
-          unverifiedDuplicate: true,
-          verificationChannel: pendingChannel,
-          contactHint: portalContactHint(
-            pendingChannel,
-            existingUsernameUser.email,
-            phoneE164Existing,
-          ),
-        },
-        { status: 409 },
-      );
-    }
-
     const passwordHash = await bcrypt.hash(password, 10);
     const signupLocationLog = captureSignupLocationFromRequest(request);
     const { user, verificationCode } = await createUser({
-      username,
       email,
+      fullName,
       passwordHash,
       phone: phoneE164 ?? "",
       verificationChannel,
@@ -186,7 +154,7 @@ export async function POST(request: Request) {
       channel: verificationChannel,
       email,
       phoneE164: phoneE164 ?? "",
-      username,
+      displayName: fullName,
       code: verificationCode,
       verificationLink,
       request,
