@@ -122,6 +122,8 @@ export default function ProjectPlannerAssistant({
   const [showCreateAccountPrompt, setShowCreateAccountPrompt] = useState(false);
   const [photoInviteActive, setPhotoInviteActive] = useState(false);
   const [sketchRoundsDelivered, setSketchRoundsDelivered] = useState(0);
+  const [proposalBusy, setProposalBusy] = useState(false);
+  const [saveBusy, setSaveBusy] = useState(false);
 
   const galleryInputRef = useRef<HTMLInputElement>(null);
   const cameraInputRef = useRef<HTMLInputElement>(null);
@@ -146,17 +148,34 @@ export default function ProjectPlannerAssistant({
 
   useEffect(() => {
     if (!photoInviteActive) {
-      setImages([]);
-      if (galleryInputRef.current) galleryInputRef.current.value = "";
-      if (cameraInputRef.current) cameraInputRef.current.value = "";
+      queueMicrotask(() => {
+        setImages([]);
+        if (galleryInputRef.current) galleryInputRef.current.value = "";
+        if (cameraInputRef.current) cameraInputRef.current.value = "";
+      });
     }
   }, [photoInviteActive]);
 
-  const latestAssistantIdea = [...messages]
-    .reverse()
-    .find((message) => message.role === "assistant");
+  /** Sign-in required — at least one homeowner message exists (including photo-only sends). */
+  const canSaveConversation = messages.some((m) => m.role === "user");
 
-  const canSaveIdea = phase === "recommend" || phase === "refine";
+  function buildConversationNotes(): string {
+    const chunks: string[] = [];
+    for (const m of messages) {
+      const label = m.role === "user" ? "You" : PLANNER_ASSISTANT_NAME;
+      const body =
+        m.role === "assistant" ? stripPlannerPhaseMarkers(m.content) : m.content;
+      let block = `${label}: ${body}`;
+      if (m.images?.length) {
+        block += `\n[Includes ${m.images.length} AI concept visual(s) — reopen this planner chat on your device to view images.]`;
+      }
+      chunks.push(block);
+    }
+    const full = chunks.join("\n\n");
+    const max = 48_000;
+    if (full.length <= max) return full;
+    return `${full.slice(0, max)}\n\n… (saved excerpt truncated — continue saving after starting a fresh planner thread if needed.)`;
+  }
 
   async function handleSubmit(event: FormEvent) {
     event.preventDefault();
@@ -334,44 +353,119 @@ export default function ProjectPlannerAssistant({
       setError(null);
     }
 
-    galleryInputRef.current && (galleryInputRef.current.value = "");
-    cameraInputRef.current && (cameraInputRef.current.value = "");
+    if (galleryInputRef.current) galleryInputRef.current.value = "";
+    if (cameraInputRef.current) cameraInputRef.current.value = "";
   }
 
   function removeImage(index: number) {
     setImages((prev) => prev.filter((_, current) => current !== index));
   }
 
-  async function handleSaveIdea() {
-    if (!latestAssistantIdea || !canSaveIdea) return;
-
+  async function handleRequestFormalProposal() {
     setError(null);
     setSaveStatus(null);
 
-    const ideaTitle = `${PLANNER_ASSISTANT_NAME} planning notes`;
+    const transcript = messages
+      .map((m) => {
+        const label = m.role === "user" ? "Homeowner" : PLANNER_ASSISTANT_NAME;
+        let block = `${label}: ${m.content}`;
+        if (m.images?.length) {
+          block += `\n[Includes ${m.images.length} planner visualization(s)]`;
+        }
+        return block;
+      })
+      .join("\n\n");
 
-    const response = await fetch("/api/portal/ideas", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        title: ideaTitle,
-        notes: stripPlannerPhaseMarkers(latestAssistantIdea.content),
-      }),
-    });
+    const seen = new Set<string>();
+    const renderings: { mimeType: string; dataBase64: string }[] = [];
+    for (const m of messages) {
+      if (m.role !== "assistant" || !m.images?.length) continue;
+      for (const img of m.images) {
+        const parsed = /^data:([^;]+);base64,(.+)$/i.exec(img.dataUrl.trim());
+        if (!parsed) continue;
+        const fingerprint = parsed[2].slice(0, 200);
+        if (seen.has(fingerprint)) continue;
+        seen.add(fingerprint);
+        renderings.push({ mimeType: parsed[1], dataBase64: parsed[2] });
+        if (renderings.length >= 6) break;
+      }
+      if (renderings.length >= 6) break;
+    }
 
-    if (response.status === 401) {
-      setShowCreateAccountPrompt(true);
-      setError("Create an account to save this conversation summary.");
+    setProposalBusy(true);
+    try {
+      const response = await fetch("/api/portal/work-proposals/request", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ transcript, renderings }),
+      });
+      const data = (await response.json().catch(() => ({}))) as {
+        error?: string;
+        message?: string;
+      };
+
+      if (response.status === 401) {
+        setShowCreateAccountPrompt(true);
+        setError("Sign in to request a formal proposal.");
+        return;
+      }
+
+      if (!response.ok) {
+        setError(data.error || "Could not submit proposal request.");
+        return;
+      }
+
+      setShowCreateAccountPrompt(false);
+      setSaveStatus(
+        data.message ||
+          "Proposal draft created — Level Up will review it and email you when it is ready.",
+      );
+    } catch {
+      setError("Could not submit proposal request.");
+    } finally {
+      setProposalBusy(false);
+    }
+  }
+
+  async function handleSaveConversation() {
+    setError(null);
+    setSaveStatus(null);
+
+    if (!canSaveConversation) {
+      setError("Send at least one message (or photos) in the planner before saving.");
       return;
     }
 
-    if (!response.ok) {
-      setError("Could not save right now. Please try again.");
-      return;
-    }
+    const ideaTitle = `${PLANNER_ASSISTANT_NAME} · Design conversation (${new Date().toLocaleString()})`;
+    const notes = buildConversationNotes();
 
-    setShowCreateAccountPrompt(false);
-    setSaveStatus("Saved to your Client Portal.");
+    setSaveBusy(true);
+    try {
+      const response = await fetch("/api/portal/ideas", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          title: ideaTitle.slice(0, 200),
+          notes,
+        }),
+      });
+
+      if (response.status === 401) {
+        setShowCreateAccountPrompt(true);
+        setError("Create an account to save your planner conversation.");
+        return;
+      }
+
+      if (!response.ok) {
+        setError("Could not save right now. Please try again.");
+        return;
+      }
+
+      setShowCreateAccountPrompt(false);
+      setSaveStatus("Saved to Client Portal → Saved Ideas.");
+    } finally {
+      setSaveBusy(false);
+    }
   }
 
   const welcome = welcomeDisplayName?.trim();
@@ -386,6 +480,10 @@ export default function ProjectPlannerAssistant({
           <p className="mt-2 text-sm leading-relaxed text-[#2d6a45]">
             You&apos;re signed in — continue your project plan with{" "}
             {PLANNER_ASSISTANT_NAME} below.
+            <span className="mt-2 block text-[#256038]">
+              Use <strong className="font-semibold">Save design &amp; conversation</strong> anytime to store this chat in{" "}
+              <strong className="font-semibold">Saved Ideas</strong> in your portal.
+            </span>
           </p>
         </div>
       ) : null}
@@ -553,13 +651,38 @@ export default function ProjectPlannerAssistant({
           >
             {isLoading ? "Sending…" : "Send"}
           </button>
-          {latestAssistantIdea && canSaveIdea ? (
+          {welcome ? (
             <button
               type="button"
-              onClick={() => void handleSaveIdea()}
-              className="inline-flex items-center justify-center rounded-full border-2 border-[#6e3eb2] bg-white px-6 py-3 text-sm font-semibold text-[#5b3292] transition hover:bg-[#f5efff]"
+              disabled={saveBusy || isLoading || !canSaveConversation}
+              onClick={() => void handleSaveConversation()}
+              title={
+                canSaveConversation
+                  ? "Save full transcript to Saved Ideas"
+                  : "Send a message first to enable saving"
+              }
+              className="inline-flex items-center justify-center rounded-full border-2 border-[#6e3eb2] bg-white px-6 py-3 text-sm font-semibold text-[#5b3292] transition hover:bg-[#f5efff] disabled:cursor-not-allowed disabled:border-[#cbb8e8] disabled:text-[#9b87b5]"
             >
-              Save summary
+              {saveBusy ? "Saving…" : "Save design & conversation"}
+            </button>
+          ) : onRequireCreateAccount ? (
+            <button
+              type="button"
+              disabled={isLoading}
+              onClick={onRequireCreateAccount}
+              className="inline-flex items-center justify-center rounded-full border-2 border-[#6e3eb2] bg-white px-6 py-3 text-sm font-semibold text-[#5b3292] transition hover:bg-[#f5efff] disabled:opacity-65"
+            >
+              Save to portal — sign in
+            </button>
+          ) : null}
+          {welcome ? (
+            <button
+              type="button"
+              disabled={proposalBusy || isLoading}
+              onClick={() => void handleRequestFormalProposal()}
+              className="inline-flex items-center justify-center rounded-full border border-[#2f7a32] bg-[#f4fcf7] px-6 py-3 text-sm font-semibold text-[#1a4d2e] transition hover:bg-[#dff5e8] disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {proposalBusy ? "Submitting…" : "Request formal proposal"}
             </button>
           ) : null}
           {onViewSavedIdeas ? (

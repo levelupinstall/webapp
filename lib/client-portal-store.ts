@@ -22,7 +22,7 @@ export type Invoice = {
   issuedAt: string;
   stripeSessionId?: string;
   receiptEmail?: string;
-  billingKind?: "call_out" | "balance";
+  billingKind?: "call_out" | "balance" | "work_proposal";
   pendingStripeSessionId?: string;
   lineItemsSummary?: string;
 };
@@ -48,6 +48,56 @@ export type AiPlannerActivity = {
   replyPreview: string;
   intakeSummary: string;
   imageCount: number;
+};
+
+export type WorkProposalStatus =
+  | "draft"
+  | "sent"
+  | "viewed"
+  | "accepted_pending_payment"
+  | "paid";
+
+export type WorkProposalRendering = {
+  id: string;
+  mimeType: string;
+  dataUrl: string;
+  caption?: string;
+};
+
+export type WorkProposalAiTurn = {
+  role: "admin" | "assistant";
+  content: string;
+  at: string;
+};
+
+/** Subset exposed to the signed-in client portal (includes link token). */
+export type PortalWorkProposalSummary = {
+  id: string;
+  title: string;
+  status: WorkProposalStatus;
+  createdAt: string;
+  updatedAt: string;
+  paymentAmountCents: number;
+  viewToken: string;
+};
+
+export type WorkProposal = {
+  id: string;
+  createdAt: string;
+  updatedAt: string;
+  status: WorkProposalStatus;
+  /** Unguessable token for customer deep-link (no login). */
+  viewToken: string;
+  title: string;
+  markdownBody: string;
+  paymentAmountCents: number;
+  renderings: WorkProposalRendering[];
+  sentAt?: string;
+  viewedAt?: string;
+  acceptedAt?: string;
+  acceptedSignerName?: string;
+  stripeCheckoutSessionId?: string;
+  aiChat?: WorkProposalAiTurn[];
 };
 
 export type PortalAnalytics = {
@@ -87,6 +137,7 @@ type UserRecord = {
   lastLoginAt?: string;
   portalAnalytics: PortalAnalytics;
   communicationLog: ClientCommunicationEntry[];
+  workProposals: WorkProposal[];
 };
 
 function parseIdeas(value: Prisma.JsonValue): Idea[] {
@@ -107,6 +158,79 @@ function parseAiActivity(value: Prisma.JsonValue): AiPlannerActivity[] {
 
 function parseCommunicationLog(value: Prisma.JsonValue): ClientCommunicationEntry[] {
   return Array.isArray(value) ? (value as unknown as ClientCommunicationEntry[]) : [];
+}
+
+function parseWorkProposals(value: Prisma.JsonValue): WorkProposal[] {
+  if (!Array.isArray(value)) return [];
+  const list = value as unknown as Record<string, unknown>[];
+  const allowed: WorkProposalStatus[] = [
+    "draft",
+    "sent",
+    "viewed",
+    "accepted_pending_payment",
+    "paid",
+  ];
+  const out: WorkProposal[] = [];
+  for (const raw of list) {
+    if (!raw || typeof raw !== "object") continue;
+    const id = String(raw.id ?? "");
+    const viewToken = String(raw.viewToken ?? "");
+    if (!id || !viewToken) continue;
+    const st = String(raw.status ?? "draft");
+    const status = allowed.includes(st as WorkProposalStatus)
+      ? (st as WorkProposalStatus)
+      : "draft";
+    const renderingsRaw = Array.isArray(raw.renderings) ? raw.renderings : [];
+    const renderings: WorkProposalRendering[] = renderingsRaw
+      .filter((r): r is Record<string, unknown> => !!r && typeof r === "object")
+      .map((r, i) => ({
+        id: String(r.id ?? `rend-${i}`),
+        mimeType: String(r.mimeType ?? "image/jpeg"),
+        dataUrl: String(r.dataUrl ?? ""),
+        caption: r.caption !== undefined ? String(r.caption) : undefined,
+      }))
+      .filter((r) => r.dataUrl.startsWith("data:"));
+
+    const aiChatRaw = Array.isArray(raw.aiChat) ? raw.aiChat : [];
+    const aiChat: WorkProposalAiTurn[] = aiChatRaw
+      .filter((t): t is Record<string, unknown> => !!t && typeof t === "object")
+      .map((t) => {
+        const role: WorkProposalAiTurn["role"] =
+          t.role === "assistant" ? "assistant" : "admin";
+        return {
+          role,
+          content: String(t.content ?? ""),
+          at: String(t.at ?? new Date().toISOString()),
+        };
+      })
+      .filter((t) => t.content.trim().length > 0);
+
+    out.push({
+      id,
+      createdAt: String(raw.createdAt ?? new Date().toISOString()),
+      updatedAt: String(raw.updatedAt ?? new Date().toISOString()),
+      status,
+      viewToken,
+      title: String(raw.title ?? "Work proposal"),
+      markdownBody: String(raw.markdownBody ?? ""),
+      paymentAmountCents: Math.max(
+        0,
+        Math.floor(Number(raw.paymentAmountCents ?? 0)) || 0,
+      ),
+      renderings,
+      sentAt: raw.sentAt !== undefined ? String(raw.sentAt) : undefined,
+      viewedAt: raw.viewedAt !== undefined ? String(raw.viewedAt) : undefined,
+      acceptedAt: raw.acceptedAt !== undefined ? String(raw.acceptedAt) : undefined,
+      acceptedSignerName:
+        raw.acceptedSignerName !== undefined ? String(raw.acceptedSignerName) : undefined,
+      stripeCheckoutSessionId:
+        raw.stripeCheckoutSessionId !== undefined
+          ? String(raw.stripeCheckoutSessionId)
+          : undefined,
+      aiChat: aiChat.length ? aiChat : undefined,
+    });
+  }
+  return out;
 }
 
 function parseProjectStatus(value: Prisma.JsonValue): ProjectStatus {
@@ -161,6 +285,7 @@ function rowToUserRecord(row: PortalUserRow): UserRecord {
     lastLoginAt: row.lastLoginAt?.toISOString(),
     portalAnalytics: parsePortalAnalytics(row.portalAnalytics),
     communicationLog: parseCommunicationLog(row.communicationLog),
+    workProposals: parseWorkProposals(row.workProposals),
   });
 }
 
@@ -180,6 +305,7 @@ function hydrateUser(user: UserRecord): UserRecord {
       spacePhotosSectionOpens: 0,
     },
     communicationLog: user.communicationLog ?? [],
+    workProposals: user.workProposals ?? [],
   };
 }
 
@@ -195,6 +321,7 @@ async function persistJsonSnapshots(
     | "aiPlannerActivity"
     | "portalAnalytics"
     | "communicationLog"
+    | "workProposals"
   >,
 ) {
   await prisma.portalUser.update({
@@ -362,6 +489,7 @@ export async function createUser(params: {
         aiPlannerActivity: [],
         portalAnalytics: portalAnalyticsPayload,
         communicationLog: [],
+        workProposals: [],
         ...(params.signupLocationLog !== undefined
           ? { signupLocationLog: params.signupLocationLog }
           : {}),
@@ -745,6 +873,19 @@ export async function getUserPortalData(userId: string) {
     carpenterUploads: user.carpenterUploads || [],
     spacePhotos: user.spacePhotos || [],
     aiPlannerActivity: user.aiPlannerActivity || [],
+    workProposals: [...user.workProposals]
+      .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime())
+      .map(
+        (p): PortalWorkProposalSummary => ({
+          id: p.id,
+          title: p.title,
+          status: p.status,
+          createdAt: p.createdAt,
+          updatedAt: p.updatedAt,
+          paymentAmountCents: p.paymentAmountCents,
+          viewToken: p.viewToken,
+        }),
+      ),
   };
 }
 
@@ -766,6 +907,268 @@ export async function appendAiPlannerActivity(
     aiPlannerActivity: user.aiPlannerActivity as unknown as Prisma.InputJsonValue,
   });
   return activity;
+}
+
+export async function createWorkProposalDraftForPortalUser(params: {
+  portalUserId: string;
+  title: string;
+  markdownBody: string;
+  paymentAmountCents: number;
+  renderings: Array<{ mimeType: string; dataUrl: string; caption?: string }>;
+}): Promise<WorkProposal | null> {
+  const row = await prisma.portalUser.findUnique({ where: { id: params.portalUserId } });
+  if (!row || row.signupVerificationPending) return null;
+
+  const user = rowToUserRecord(row);
+  const now = new Date().toISOString();
+  const proposal: WorkProposal = {
+    id: randomUUID(),
+    createdAt: now,
+    updatedAt: now,
+    status: "draft",
+    viewToken: randomUUID(),
+    title: params.title.trim() || "Work proposal",
+    markdownBody: params.markdownBody.trim(),
+    paymentAmountCents: Math.max(100, Math.floor(params.paymentAmountCents)),
+    renderings: params.renderings.map((r) => ({
+      id: randomUUID(),
+      mimeType: r.mimeType || "image/jpeg",
+      dataUrl: r.dataUrl,
+      caption: r.caption?.trim() || undefined,
+    })),
+    aiChat: [],
+  };
+
+  user.workProposals = user.workProposals ?? [];
+  user.workProposals.unshift(proposal);
+
+  await persistJsonSnapshots(row.id, {
+    workProposals: user.workProposals as unknown as Prisma.InputJsonValue,
+  });
+  return proposal;
+}
+
+export async function adminPatchWorkProposal(params: {
+  portalUserId: string;
+  proposalId: string;
+  title?: string;
+  markdownBody?: string;
+  paymentAmountCents?: number;
+}): Promise<WorkProposal | null> {
+  const row = await prisma.portalUser.findUnique({ where: { id: params.portalUserId } });
+  if (!row) return null;
+
+  const user = rowToUserRecord(row);
+  const idx = user.workProposals.findIndex((p) => p.id === params.proposalId);
+  if (idx < 0) return null;
+
+  const cur = user.workProposals[idx];
+  const next: WorkProposal = {
+    ...cur,
+    updatedAt: new Date().toISOString(),
+    ...(params.title !== undefined ? { title: params.title.trim() || cur.title } : {}),
+    ...(params.markdownBody !== undefined ? { markdownBody: params.markdownBody } : {}),
+    ...(params.paymentAmountCents !== undefined
+      ? { paymentAmountCents: Math.max(100, Math.floor(params.paymentAmountCents)) }
+      : {}),
+  };
+
+  user.workProposals[idx] = next;
+  await persistJsonSnapshots(row.id, {
+    workProposals: user.workProposals as unknown as Prisma.InputJsonValue,
+  });
+  return next;
+}
+
+export async function appendWorkProposalAiChat(params: {
+  portalUserId: string;
+  proposalId: string;
+  turns: WorkProposalAiTurn[];
+}): Promise<WorkProposal | null> {
+  const row = await prisma.portalUser.findUnique({ where: { id: params.portalUserId } });
+  if (!row) return null;
+
+  const user = rowToUserRecord(row);
+  const idx = user.workProposals.findIndex((p) => p.id === params.proposalId);
+  if (idx < 0) return null;
+
+  const cur = user.workProposals[idx];
+  const merged = [...(cur.aiChat ?? []), ...params.turns].slice(-40);
+  const next: WorkProposal = {
+    ...cur,
+    aiChat: merged,
+    updatedAt: new Date().toISOString(),
+  };
+  user.workProposals[idx] = next;
+  await persistJsonSnapshots(row.id, {
+    workProposals: user.workProposals as unknown as Prisma.InputJsonValue,
+  });
+  return next;
+}
+
+export async function adminMarkWorkProposalSent(params: {
+  portalUserId: string;
+  proposalId: string;
+}): Promise<WorkProposal | null> {
+  const row = await prisma.portalUser.findUnique({ where: { id: params.portalUserId } });
+  if (!row) return null;
+
+  const user = rowToUserRecord(row);
+  const idx = user.workProposals.findIndex((p) => p.id === params.proposalId);
+  if (idx < 0) return null;
+
+  const cur = user.workProposals[idx];
+  if (cur.status === "paid") return cur;
+
+  const now = new Date().toISOString();
+  const nextStatus: WorkProposalStatus = cur.status === "draft" ? "sent" : cur.status;
+  const next: WorkProposal = {
+    ...cur,
+    status: nextStatus,
+    sentAt: now,
+    updatedAt: now,
+  };
+  user.workProposals[idx] = next;
+  await persistJsonSnapshots(row.id, {
+    workProposals: user.workProposals as unknown as Prisma.InputJsonValue,
+  });
+  return next;
+}
+
+export async function findPortalUserAndProposalByViewToken(viewToken: string): Promise<{
+  portalUserId: string;
+  proposal: WorkProposal;
+} | null> {
+  const token = viewToken.trim();
+  if (!token) return null;
+
+  const rows = await prisma.portalUser.findMany({
+    select: { id: true, signupVerificationPending: true, workProposals: true },
+  });
+
+  for (const row of rows) {
+    if (row.signupVerificationPending) continue;
+    const list = parseWorkProposals(row.workProposals);
+    const proposal = list.find((p) => p.viewToken === token);
+    if (proposal) return { portalUserId: row.id, proposal };
+  }
+  return null;
+}
+
+export async function markWorkProposalViewed(params: {
+  portalUserId: string;
+  proposalId: string;
+}): Promise<void> {
+  const row = await prisma.portalUser.findUnique({ where: { id: params.portalUserId } });
+  if (!row) return;
+
+  const user = rowToUserRecord(row);
+  const idx = user.workProposals.findIndex((p) => p.id === params.proposalId);
+  if (idx < 0) return;
+
+  const cur = user.workProposals[idx];
+  if (cur.status !== "sent" && cur.status !== "viewed") return;
+
+  const now = new Date().toISOString();
+  const next: WorkProposal = {
+    ...cur,
+    status: "viewed",
+    viewedAt: cur.viewedAt ?? now,
+    updatedAt: now,
+  };
+  user.workProposals[idx] = next;
+  await persistJsonSnapshots(row.id, {
+    workProposals: user.workProposals as unknown as Prisma.InputJsonValue,
+  });
+}
+
+export async function recordWorkProposalAcceptance(params: {
+  portalUserId: string;
+  proposalId: string;
+  signerName: string;
+}): Promise<WorkProposal | null> {
+  const row = await prisma.portalUser.findUnique({ where: { id: params.portalUserId } });
+  if (!row) return null;
+
+  const user = rowToUserRecord(row);
+  const idx = user.workProposals.findIndex((p) => p.id === params.proposalId);
+  if (idx < 0) return null;
+
+  const cur = user.workProposals[idx];
+  if (cur.status !== "sent" && cur.status !== "viewed") return null;
+
+  const now = new Date().toISOString();
+  const next: WorkProposal = {
+    ...cur,
+    status: "accepted_pending_payment",
+    acceptedAt: now,
+    acceptedSignerName: params.signerName.trim(),
+    updatedAt: now,
+  };
+  user.workProposals[idx] = next;
+  await persistJsonSnapshots(row.id, {
+    workProposals: user.workProposals as unknown as Prisma.InputJsonValue,
+  });
+  return next;
+}
+
+export async function markWorkProposalPaid(params: {
+  portalUserId: string;
+  proposalId: string;
+  stripeSessionId: string;
+  paidAmountCents: number;
+}): Promise<WorkProposal | null> {
+  const row = await prisma.portalUser.findUnique({ where: { id: params.portalUserId } });
+  if (!row) return null;
+
+  const user = rowToUserRecord(row);
+  const idx = user.workProposals.findIndex((p) => p.id === params.proposalId);
+  if (idx < 0) return null;
+
+  const cur = user.workProposals[idx];
+  if (cur.status === "paid" && cur.stripeCheckoutSessionId === params.stripeSessionId) {
+    return cur;
+  }
+
+  const now = new Date().toISOString();
+  const next: WorkProposal = {
+    ...cur,
+    status: "paid",
+    stripeCheckoutSessionId: params.stripeSessionId,
+    updatedAt: now,
+  };
+  user.workProposals[idx] = next;
+
+  const dup = user.invoices.some((inv) => inv.stripeSessionId === params.stripeSessionId);
+  if (!dup) {
+    user.invoices.unshift({
+      id: `inv-${Math.floor(Math.random() * 900000 + 100000)}`,
+      projectName: cur.title,
+      amountCents: params.paidAmountCents,
+      status: "paid",
+      issuedAt: now,
+      stripeSessionId: params.stripeSessionId,
+      receiptEmail: user.email,
+      billingKind: "work_proposal",
+      lineItemsSummary: `Work proposal`,
+    });
+  }
+
+  await persistJsonSnapshots(row.id, {
+    workProposals: user.workProposals as unknown as Prisma.InputJsonValue,
+    invoices: user.invoices as unknown as Prisma.InputJsonValue,
+  });
+  return next;
+}
+
+export async function getWorkProposalById(
+  portalUserId: string,
+  proposalId: string,
+): Promise<WorkProposal | null> {
+  const row = await prisma.portalUser.findUnique({ where: { id: portalUserId } });
+  if (!row) return null;
+  const user = rowToUserRecord(row);
+  return user.workProposals.find((p) => p.id === proposalId) ?? null;
 }
 
 export async function listPortalUsersForAdmin() {
@@ -793,6 +1196,7 @@ export async function listPortalUsersForAdmin() {
       },
       communicationLog: user.communicationLog ?? [],
       signupLocationLog: row.signupLocationLog ?? null,
+      workProposals: user.workProposals ?? [],
     };
   });
 }

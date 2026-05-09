@@ -3,7 +3,7 @@
 import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 
-type PortalView = "saved-projects" | "invoices" | "profile" | "bookings";
+type PortalView = "saved-projects" | "proposals" | "invoices" | "profile" | "bookings";
 
 type PortalUser = {
   id: string;
@@ -33,11 +33,44 @@ type PortalUser = {
     amountCents: number;
     status: "paid" | "due";
     issuedAt: string;
-    billingKind?: "call_out" | "balance";
+    billingKind?: "call_out" | "balance" | "work_proposal";
     lineItemsSummary?: string;
   }[];
   projectStatus: { phase: string; updatedAt: string; details: string };
+  workProposals: {
+    id: string;
+    title: string;
+    status: string;
+    createdAt: string;
+    updatedAt: string;
+    paymentAmountCents: number;
+    viewToken: string;
+  }[];
 };
+
+function formatProposalStatus(status: string): string {
+  switch (status) {
+    case "draft":
+      return "With Level Up for review";
+    case "sent":
+      return "Sent — ready to open";
+    case "viewed":
+      return "Opened";
+    case "accepted_pending_payment":
+      return "Accepted — payment pending";
+    case "paid":
+      return "Paid";
+    default:
+      return status.replace(/_/g, " ");
+  }
+}
+
+function cadMoneyPortal(cents: number) {
+  return new Intl.NumberFormat("en-CA", {
+    style: "currency",
+    currency: "CAD",
+  }).format(cents / 100);
+}
 
 type ClientPortalProps = {
   initialMode?: "login" | "register";
@@ -93,12 +126,16 @@ export default function ClientPortal({
       return null;
     }
     const data = (await response.json()) as { user: PortalUser };
-    setUser(data.user);
-    onAuthChange?.(data.user);
-    setProfileName(data.user.fullName || "");
-    setProfileServiceAddress(data.user.serviceAddress || "");
-    setProfileAvatar(data.user.avatarDataUrl || "");
-    return data.user;
+    const normalized: PortalUser = {
+      ...data.user,
+      workProposals: data.user.workProposals ?? [],
+    };
+    setUser(normalized);
+    onAuthChange?.(normalized);
+    setProfileName(normalized.fullName || "");
+    setProfileServiceAddress(normalized.serviceAddress || "");
+    setProfileAvatar(normalized.avatarDataUrl || "");
+    return normalized;
   }, [onAuthChange]);
 
   useEffect(() => {
@@ -710,6 +747,64 @@ export default function ClientPortal({
                 <p className="text-sm text-[#6a4a8f]">No uploads yet.</p>
               )}
             </div>
+          </div>
+        </div>
+      ) : null}
+
+      {selectedView === "proposals" ? (
+        <div className="mt-6 rounded-2xl border border-[#e8d9ff] p-4">
+          <h3 className="font-semibold text-[#2f1748]">Formal proposals</h3>
+          <p className="mt-1 text-sm text-[#6a4a8f]">
+            After you request a proposal from the planner, drafts appear here. Once Level Up emails your link,
+            open it to review visuals, terms, accept, and pay.
+          </p>
+          <div className="mt-4 space-y-3">
+            {(user.workProposals ?? []).length === 0 ? (
+              <p className="text-sm text-[#6a4a8f]">
+                No proposals yet. Use{" "}
+                <span className="font-semibold text-[#4d2e70]">Request formal proposal</span> in the planner
+                when you&apos;re signed in.
+              </p>
+            ) : (
+              (user.workProposals ?? []).map((p) => {
+                const canOpen = p.status !== "draft";
+                const href = `/portal/proposal?t=${encodeURIComponent(p.viewToken)}`;
+                return (
+                  <div
+                    key={p.id}
+                    className="flex flex-col gap-3 rounded-xl border border-[#eddfff] p-4 sm:flex-row sm:items-center sm:justify-between"
+                  >
+                    <div className="min-w-0 flex-1">
+                      <p className="font-semibold text-[#2f1748]">{p.title}</p>
+                      <p className="text-sm text-[#4d2e70]">
+                        {formatProposalStatus(p.status)} · {cadMoneyPortal(p.paymentAmountCents)} · Updated{" "}
+                        {new Date(p.updatedAt).toLocaleString()}
+                      </p>
+                      {p.status === "draft" ? (
+                        <p className="mt-2 text-xs text-[#6a4a8f]">
+                          Level Up is preparing this draft. You&apos;ll get an email when it&apos;s ready to
+                          sign.
+                        </p>
+                      ) : null}
+                    </div>
+                    <div className="flex shrink-0 flex-wrap gap-2">
+                      {canOpen ? (
+                        <a
+                          href={href}
+                          className="inline-flex items-center justify-center rounded-full bg-[#6e3eb2] px-4 py-2 text-xs font-semibold text-white sm:text-sm"
+                        >
+                          Open proposal
+                        </a>
+                      ) : (
+                        <span className="inline-flex items-center justify-center rounded-full border border-[#dcc6fb] px-4 py-2 text-xs font-semibold text-[#6a4a8f] sm:text-sm">
+                          Not shared yet
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                );
+              })
+            )}
           </div>
         </div>
       ) : null}

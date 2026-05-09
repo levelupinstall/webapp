@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import Stripe from "stripe";
 import { finalizeBalanceCheckoutSession } from "@/lib/finalize-balance-checkout";
+import { finalizeProposalCheckoutSession } from "@/lib/finalize-proposal-checkout";
 import { createStripeServer } from "@/lib/stripe-server";
 
 export async function POST(request: Request) {
@@ -28,6 +29,7 @@ export async function POST(request: Request) {
   if (event.type === "checkout.session.completed") {
     const checkoutSession = event.data.object as Stripe.Checkout.Session;
     await finalizeBalanceCheckoutSession(checkoutSession);
+    await finalizeProposalCheckoutSession(checkoutSession);
   }
 
   return NextResponse.json({ received: true });

@@ -9,7 +9,7 @@ import { PLANNER_ASSISTANT_NAME } from "@/lib/planner-brand";
 import ReviewsGallery from "./components/reviews-gallery";
 
 type SectionKey = "overview" | "reviews" | "rates" | "planner" | "account";
-type AccountMenuView = "saved-projects" | "invoices" | "profile" | "bookings";
+type AccountMenuView = "saved-projects" | "proposals" | "invoices" | "profile" | "bookings";
 type AuthUser = {
   id: string;
   username: string;
@@ -71,9 +71,11 @@ function HomeContent() {
   }, []);
 
   useEffect(() => {
-    if (queryPortalView !== "invoices") return undefined;
+    const view = queryPortalView?.trim().toLowerCase();
+    if (view !== "invoices" && view !== "proposals") return undefined;
     const timer = window.setTimeout(() => {
-      setAccountView("invoices");
+      if (view === "invoices") setAccountView("invoices");
+      if (view === "proposals") setAccountView("proposals");
       navigateToSection("account");
     }, 0);
     return () => window.clearTimeout(timer);
@@ -149,6 +151,13 @@ function HomeContent() {
                     className="w-full rounded-lg px-3 py-2 text-left text-sm text-[#4d2e70] hover:bg-[#f5efff]"
                   >
                     Saved Projects
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => openAccountView("proposals")}
+                    className="w-full rounded-lg px-3 py-2 text-left text-sm text-[#4d2e70] hover:bg-[#f5efff]"
+                  >
+                    Proposals
                   </button>
                   <button
                     type="button"

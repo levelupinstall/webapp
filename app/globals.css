@@ -24,3 +24,33 @@ body {
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
 }
+
+/* Formal proposal: print or Save as PDF from the browser */
+@media print {
+  .no-print {
+    display: none !important;
+  }
+
+  .proposal-print-root {
+    max-width: none !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    border: none !important;
+    box-shadow: none !important;
+    background: white !important;
+    color: #000 !important;
+  }
+
+  .proposal-print-root img {
+    max-height: 280px !important;
+    page-break-inside: avoid;
+  }
+
+  .proposal-print-root .proposal-body {
+    page-break-inside: auto;
+  }
+
+  body {
+    background: white !important;
+  }
+}

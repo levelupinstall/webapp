@@ -9,6 +9,7 @@ import {
   type ReactNode,
 } from "react";
 import { JobCompletionSocialPanel } from "./job-completion-social-panel";
+import { WorkProposalsCrm, type WorkProposalRow } from "./work-proposals-crm";
 
 type AiPlannerActivity = {
   id: string;
@@ -54,6 +55,7 @@ type PortalClient = {
   }>;
   /** Request/geo snapshot at portal registration (when captured). */
   signupLocationLog?: unknown;
+  workProposals?: WorkProposalRow[];
 };
 
 type CarpenterRow = {
@@ -189,12 +191,6 @@ type QuarterlyReport = {
 
 function formatMoney(cents: number) {
   return new Intl.NumberFormat(undefined, { style: "currency", currency: "USD" }).format(
-    cents / 100,
-  );
-}
-
-function formatMoneyCad(cents: number) {
-  return new Intl.NumberFormat(undefined, { style: "currency", currency: "CAD" }).format(
     cents / 100,
   );
 }
@@ -507,7 +503,7 @@ export default function AdminDashboard() {
 
   useEffect(() => {
     if (!authenticated) {
-      setSocialIntegration(null);
+      queueMicrotask(() => setSocialIntegration(null));
       return;
     }
     let cancelled = false;
@@ -1869,6 +1865,12 @@ export default function AdminDashboard() {
                         </ul>
                       )}
                     </div>
+
+                    <WorkProposalsCrm
+                      portalUserId={c.id}
+                      proposals={c.workProposals ?? []}
+                      onRefresh={() => void refreshOverview()}
+                    />
 
                     <div>
                       <h4 className="text-xs font-semibold uppercase text-zinc-500">Project status</h4>

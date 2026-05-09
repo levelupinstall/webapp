@@ -34,6 +34,8 @@ model PortalUser {
   aiPlannerActivity Json @default("[]") @map("ai_planner_activity")
   portalAnalytics   Json @default("{}") @map("portal_analytics")
   communicationLog  Json @default("[]") @map("communication_log")
+  /// Formal job proposals (draft → sent → accepted); JSON array of WorkProposal records.
+  workProposals     Json @default("[]") @map("work_proposals")
   /// Snapshot from request at registration (IP/geo headers when available).
   signupLocationLog Json? @map("signup_location_log")
 
