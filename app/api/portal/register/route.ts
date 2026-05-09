@@ -173,7 +173,7 @@ export async function POST(request: Request) {
     });
 
     const ticket = signPortalSignupVerificationTicket(user.id);
-    const origin = portalEmailSiteOrigin();
+    const origin = portalEmailSiteOrigin(request);
     const verificationLink =
       verificationChannel === "email"
         ? `${origin}/api/portal/verify-email?token=${encodeURIComponent(ticket)}`
@@ -186,6 +186,7 @@ export async function POST(request: Request) {
       username,
       code: verificationCode,
       verificationLink,
+      request,
     });
 
     if (!sendResult.sent) {

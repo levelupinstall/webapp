@@ -54,7 +54,7 @@ export async function POST(request: Request) {
       );
     }
 
-    const result = await sendPendingPortalSignupVerification(user.id);
+    const result = await sendPendingPortalSignupVerification(user.id, request);
     if (!result.sent) {
       return NextResponse.json(
         { error: result.error || "Could not send verification message. Try again later." },

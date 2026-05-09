@@ -8,7 +8,10 @@ import {
 } from "@/lib/portal-verification-delivery";
 import { signPortalSignupVerificationTicket } from "@/lib/portal-verification-ticket";
 
-export async function sendPendingPortalSignupVerification(userId: string): Promise<{
+export async function sendPendingPortalSignupVerification(
+  userId: string,
+  request?: Request,
+): Promise<{
   sent: boolean;
   error?: string;
   verificationChannel: "email" | "sms";
@@ -27,7 +30,7 @@ export async function sendPendingPortalSignupVerification(userId: string): Promi
   const channel = row.verificationChannel === "sms" ? ("sms" as const) : ("email" as const);
   const verificationCode = await regeneratePortalSignupVerificationCode(userId);
   const ticket = signPortalSignupVerificationTicket(userId);
-  const origin = portalEmailSiteOrigin();
+  const origin = portalEmailSiteOrigin(request);
   const verificationLink =
     channel === "email"
       ? `${origin}/api/portal/verify-email?token=${encodeURIComponent(ticket)}`
@@ -42,6 +45,7 @@ export async function sendPendingPortalSignupVerification(userId: string): Promi
     username: row.username,
     code: verificationCode,
     verificationLink,
+    request,
   });
 
   return {

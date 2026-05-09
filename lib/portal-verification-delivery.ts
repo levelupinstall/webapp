@@ -1,4 +1,5 @@
 import { sendEmailWithServiceAccount } from "@/lib/gmail-service-account";
+import { resolveSiteOrigin } from "@/lib/site-origin";
 
 export type PortalVerificationChannel = "email" | "sms";
 
@@ -10,9 +11,8 @@ function gmailSignupEmailConfigured(): boolean {
 }
 
 /** Site origin for absolute URLs in outbound email (no trailing slash). */
-export function portalEmailSiteOrigin(): string {
-  const raw = (process.env.NEXT_PUBLIC_SITE_URL ?? "").trim().replace(/\/+$/, "");
-  return raw || "http://localhost:3000";
+export function portalEmailSiteOrigin(request?: Request): string {
+  return resolveSiteOrigin(request);
 }
 
 function escapeHtml(text: string): string {
@@ -112,6 +112,8 @@ export async function sendPortalSignupVerification(params: {
   code?: string | null;
   /** Absolute HTTPS URL for magic-link email verification */
   verificationLink?: string | null;
+  /** Infer public URL for logo when building links from the API request */
+  request?: Request | null;
 }): Promise<{ sent: boolean; error?: string }> {
   const greet = params.username.trim() ? `, ${params.username.trim()}` : "";
 
@@ -121,7 +123,7 @@ export async function sendPortalSignupVerification(params: {
     if (!link) {
       return { sent: false, error: "Missing verification link for email signup." };
     }
-    const logoUrl = `${portalEmailSiteOrigin()}/level-up-install-logo.png`;
+    const logoUrl = `${portalEmailSiteOrigin(params.request ?? undefined)}/level-up-install-logo.png`;
     const text = `Welcome${greet}!
 
 Thank you for creating a Level Up Install client portal account. We are excited to help you plan your project.
