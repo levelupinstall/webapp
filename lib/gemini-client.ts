@@ -93,6 +93,21 @@ export function homeownerPureEnthusiasmAfterSketch(message: string): boolean {
   return true;
 }
 
+function extractInlineImageFromPart(part: unknown): GeminiInlineImage | null {
+  if (!part || typeof part !== "object") return null;
+  const o = part as Record<string, unknown>;
+  const inline = (o.inlineData ?? o.inline_data) as
+    | { mimeType?: string; mime_type?: string; data?: string }
+    | undefined;
+  if (inline?.data && typeof inline.data === "string" && inline.data.length >= 64) {
+    return {
+      mimeType: inline.mimeType || inline.mime_type || "image/png",
+      dataBase64: inline.data,
+    };
+  }
+  return null;
+}
+
 function extractParts(json: unknown): GeminiGenerateResult {
   const root = json as {
     candidates?: Array<{
@@ -103,27 +118,36 @@ function extractParts(json: unknown): GeminiGenerateResult {
   };
 
   const blockReason = root.promptFeedback?.blockReason;
-  const parts = root.candidates?.[0]?.content?.parts;
-  if (!Array.isArray(parts)) {
+  const candidates = root.candidates;
+  if (!Array.isArray(candidates) || candidates.length === 0) {
     return { text: "", images: [], blockReason };
   }
 
   const textChunks: string[] = [];
   const images: GeminiInlineImage[] = [];
+  const seenImageData = new Set<string>();
 
-  for (const part of parts) {
-    if (!part || typeof part !== "object") continue;
-    const o = part as Record<string, unknown>;
-    if (typeof o.text === "string" && o.text) textChunks.push(o.text);
+  const firstParts = candidates[0]?.content?.parts;
+  if (Array.isArray(firstParts)) {
+    for (const part of firstParts) {
+      if (!part || typeof part !== "object") continue;
+      const o = part as Record<string, unknown>;
+      if (typeof o.text === "string" && o.text) textChunks.push(o.text);
+    }
+  }
 
-    const inline = (o.inlineData ?? o.inline_data) as
-      | { mimeType?: string; mime_type?: string; data?: string }
-      | undefined;
-    if (inline?.data && typeof inline.data === "string") {
-      images.push({
-        mimeType: inline.mimeType || inline.mime_type || "image/png",
-        dataBase64: inline.data,
-      });
+  for (const cand of candidates) {
+    const parts = cand?.content?.parts;
+    if (!Array.isArray(parts)) continue;
+    for (const part of parts) {
+      const img = extractInlineImageFromPart(part);
+      if (img) {
+        const key = img.dataBase64.slice(0, 160);
+        if (!seenImageData.has(key)) {
+          seenImageData.add(key);
+          images.push(img);
+        }
+      }
     }
   }
 
@@ -139,6 +163,8 @@ export async function geminiGenerateContent(params: {
   systemInstruction?: string;
   contents: Array<{ role: "user" | "model"; parts: ContentPart[] }>;
   generationConfig?: Record<string, unknown>;
+  /** Grounding with Google Search — real-time retail/product facts (billable; see Gemini pricing). */
+  tools?: Array<Record<string, unknown>>;
 }): Promise<{ ok: true; json: unknown } | { ok: false; status: number; body: string }> {
   const apiKey = getApiKey();
   if (!apiKey) {
@@ -162,6 +188,10 @@ export async function geminiGenerateContent(params: {
 
   if (params.generationConfig && Object.keys(params.generationConfig).length > 0) {
     body.generationConfig = params.generationConfig;
+  }
+
+  if (params.tools && params.tools.length > 0) {
+    body.tools = params.tools;
   }
 
   const res = await fetch(url, {

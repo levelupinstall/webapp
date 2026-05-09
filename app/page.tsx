@@ -336,10 +336,11 @@ function HomeContent() {
                 See what&apos;s possible before you pick up a hammer.
               </h2>
               <p className="mt-3 max-w-2xl text-base leading-relaxed text-[#4d2e70]">
-                {PLANNER_ASSISTANT_NAME}, our planning consultant, chats through a few focused questions
-                first—budget, your space, what you already have in mind—then offers short, practical
-                directions (no shopping lists). Add photos anytime. Save highlights with a free account
-                and use them when you book. Nothing here replaces an on-site visit or firm quote.
+                {PLANNER_ASSISTANT_NAME}, our planning consultant, chats through scope and your space, then helps you
+                iterate on <span className="font-semibold text-[#31184a]">concept visuals</span> — no prices, products, or store names in that chat.
+                Add photos anytime. Save highlights with a free account. When you&apos;re happy with the design direction,
+                Level Up <span className="font-semibold text-[#31184a]">reviews your designs</span> and reaches out with a{" "}
+                <span className="font-semibold text-[#31184a]">detailed proposal for approval</span>. Nothing here replaces an on-site visit or firm quote.
               </p>
               <ul className="mt-6 grid gap-4 text-sm leading-relaxed text-[#55337b] sm:grid-cols-2 sm:text-[15px]">
                 <li className="flex flex-col overflow-hidden rounded-xl border border-[#eddfff] bg-white shadow-[0_8px_28px_-18px_rgba(91,33,182,0.35)]">
@@ -580,10 +581,12 @@ function HomeContent() {
                 <p className="mt-3 max-w-2xl text-base leading-relaxed text-[#4d2e70]">
                   Create an account to save AI project ideas, track your
                   booking and progress photos from the crew, chat with our
-                  agent anytime, and keep invoices in one place. When you are
-                  ready, {PLANNER_ASSISTANT_NAME} can walk through booking next steps in chat in the planner,
-                  and our team follows up to confirm visit details, collect your phone number if needed, and
-                  coordinate payment—no checkout form inside the planner itself.
+                  agent anytime, and keep invoices in one place. In the planner,{" "}
+                  {PLANNER_ASSISTANT_NAME} focuses on how your project could{" "}
+                  <span className="font-semibold text-[#31184a]">look</span>
+                  —no product lists or pricing in that chat. When you&apos;re happy with the direction, Level Up{" "}
+                  <span className="font-semibold text-[#31184a]">reviews your designs</span> and reaches out with a{" "}
+                  <span className="font-semibold text-[#31184a]">detailed proposal for approval</span> before work is lined up.
                 </p>
                 <ul className="mt-5 grid gap-2 text-sm text-[#55337b] sm:grid-cols-2 sm:text-[15px]">
                   <li className="flex gap-2">
@@ -734,13 +737,12 @@ function HomeContent() {
                 <li className="flex gap-3">
                   <span className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-[#6e3eb2]" />
                   <span>
-                    <span className="font-semibold text-[#31184a]">Call-out fee payment:</span> After you and{" "}
-                    {PLANNER_ASSISTANT_NAME} align on a direction in the planner chat, you confirm booking intent
-                    there—then our team reaches out to finalize details and sends{" "}
-                    <span className="font-semibold text-[#31184a]">Stripe Checkout</span> (or another agreed
-                    method) for the{" "}
-                    <span className="font-semibold text-[#31184a]">$150 call-out fee</span> (CAD) when it&apos;s
-                    time to pay.
+                    <span className="font-semibold text-[#31184a]">Call-out fee payment:</span> The planner is for design visuals only. After you and{" "}
+                    {PLANNER_ASSISTANT_NAME} settle on a direction you like, our team{" "}
+                    <span className="font-semibold text-[#31184a]">reviews what you explored</span> and reaches out with a{" "}
+                    <span className="font-semibold text-[#31184a]">detailed proposal for approval</span>. When it&apos;s time for the call-out fee, we&apos;ll send{" "}
+                    <span className="font-semibold text-[#31184a]">Stripe Checkout</span> (or another agreed method) for the{" "}
+                    <span className="font-semibold text-[#31184a]">$150 call-out fee</span> (CAD)—not inside the planner chat.
                   </span>
                 </li>
                 <li className="flex gap-3">
@@ -790,11 +792,12 @@ function HomeContent() {
             </div>
 
             <div className="mt-8 rounded-2xl border border-[#dcc6fb] bg-[#faf8ff] p-5 sm:p-6">
-              <h3 className="text-lg font-semibold text-[#230f35]">Ready to book?</h3>
+              <h3 className="text-lg font-semibold text-[#230f35]">Ready to explore?</h3>
               <p className="mt-2 text-sm leading-relaxed text-[#4d2e70] sm:text-[15px]">
                 Chat with <span className="font-semibold text-[#31184a]">{PLANNER_ASSISTANT_NAME}</span> in the
-                planner — when you&apos;re happy with the direction, they&apos;ll walk through securing next steps
-                in the conversation; our team then reaches out to confirm details and arrange the call-out payment.
+                planner to refine how your project could look. When you&apos;re happy with the design direction, Level Up will{" "}
+                <span className="font-semibold text-[#31184a]">review your designs</span> and contact you with a{" "}
+                <span className="font-semibold text-[#31184a]">more detailed proposal for approval</span>—pricing and next steps move forward from there.
               </p>
               <button
                 type="button"

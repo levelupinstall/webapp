@@ -56,3 +56,19 @@ export function extractPlannerPhase(reply: string): {
   const cleanReply = stripPlannerPhaseMarkers(trimmed);
   return { cleanReply, phase, showPhotoUploader };
 }
+
+/** When no concept image was delivered, remove common model phrases that falsely claim one was attached. */
+export function stripMisleadingImageDeliveryClaims(text: string): string {
+  if (!text.trim()) return text;
+  let t = text;
+  const patterns = [
+    /\bI'?ve\s+(just\s+)?(created|generated|attached|included|added|shown)\s+[^.!?\n]*[.!?]\s*/gi,
+    /\bI\s+(also\s+)?(created|generated|attached|included)\s+(a|your|the)\s+[^.!?\n]*[.!?]\s*/gi,
+    /\b(here'?s|here is)\s+(your\s+|a\s+|the\s+)?(sketch|rendering|visual|concept\s+image|image|mock-?up)[^.!?\n]*[.!?]\s*/gi,
+    /\b(the\s+)?(sketch|image|visual|rendering)\s+(is\s+)?(below|attached|included|ready|for\s+you)[^.!?\n]*[.!?]\s*/gi,
+  ];
+  for (const re of patterns) {
+    t = t.replace(re, "");
+  }
+  return t.replace(/\n{3,}/g, "\n\n").trim();
+}

@@ -9,6 +9,7 @@ import {
 } from "@/lib/gemini-client";
 import {
   extractPlannerPhase,
+  stripMisleadingImageDeliveryClaims,
   type PlannerPhaseTag,
 } from "@/lib/planner-phase-utils";
 import { PLANNER_ASSISTANT_SYSTEM } from "@/lib/planner-assistant-prompt";
@@ -26,6 +27,9 @@ function isPlannerImageUpload(file: File): boolean {
   return /\.(heic|heif|jpg|jpeg|png|webp|gif)$/i.test(n);
 }
 
+/** User messages shorter than this skip generic blank-room sketch generation (avoids noisy renders). */
+const MIN_USER_CHARS_FOR_GENERIC_SKETCH = 40;
+
 export const maxDuration = 120;
 
 function buildPlannerSystemInstruction(params: {
@@ -41,32 +45,32 @@ function buildPlannerSystemInstruction(params: {
   if (params.priorTurnHadConceptImage) {
     chunks.push(`
 ## Session hint (platform)
-Your immediately previous assistant turn included a **concept visualization** the homeowner saw. Their latest message may react to that image—prioritize what they **like** vs want **changed**. A **revised sketch will usually be generated** after your reply when they give feedback, so keep your text concise and end by checking if the direction feels closer (still no materials lists).`);
+Your immediately previous assistant turn included a **concept visualization** the homeowner saw. Their latest message may react to that image—prioritize what they **like** vs want **changed**. A **revised sketch may be generated** after your reply when they give feedback; **do not** say you personally generated or attached it. Stay concise; end with a **follow-up question**. **Do not** name products, stores, or prices—design and proportions only.`);
   }
 
   if (params.sketchLikelyAfterReply) {
     chunks.push(`
 ## Session hint (platform)
-The platform will likely attach a **new concept sketch** after this reply (either because they just shared space photos, or they are refining an earlier sketch). Thank them briefly when photos are new; otherwise acknowledge you're adjusting visually. Ask whether this direction matches what they had in mind and what they'd still tweak.`);
+The platform **may** attach a concept sketch after this reply—either tied to their room photos or a **neutral blank-studio style** preview if they have not shared pictures. **Never** claim you created, rendered, or attached the image. Focus on **look and layout**. **Do not** mention retailers, SKUs, or prices. Ask one clear **question** about whether the direction feels close—not a statement ending.`);
   }
 
   if (params.userAttachedPhotosThisTurn) {
     chunks.push(`
 ## Session hint (platform)
-The homeowner attached **real photos of their space** with this message—thank them warmly. Stay short; the system will generate a first-pass sketch from the consultation + their pictures. Prefer moving to \`[PHASE:refine]\` after this turn so you can iterate on the visualization together.`);
+The homeowner attached **photos** with this message—they may be **room shots**, **pictures of purchased materials/kits**, or both; interpret accordingly. Thank them warmly. Stay short; the system can generate a sketch from consultation + their pictures. Prefer moving to \`[PHASE:refine]\` after this turn when you're iterating visually. End with a **question**.`);
   }
 
   if (params.suggestInPersonAfterManySketches) {
     const n = params.sketchRoundsDelivered;
     chunks.push(`
 ## Session hint (platform)
-The homeowner has already received **${n} rounds** with AI concept sketches in this chat. If they still sound unhappy or keep asking for big visual swings, **set expectations kindly**: this planner is a **tool to help** with ideas—not a substitute for walking the actual space. Recommend **moving toward an on-site visit** — explain someone from Level Up can **follow up** after they confirm booking intent **here in chat** (no forms or terms in this UI). Stay brief; it's okay to offer smaller tweaks, but be honest about what remote renders can't capture.`);
+The homeowner has already received **${n} rounds** with AI concept sketches in this chat. If they still sound unhappy or keep asking for big visual swings, **set expectations kindly**: this planner is for **exploring how things could look**—not a substitute for walking the space. Say **Level Up can review everything here** and follow up with **next steps in writing** when they're ready. Stay brief; it's okay to offer smaller visual tweaks.`);
   }
 
   if (params.advanceTowardSiteVisit) {
     chunks.push(`
 ## Session hint (platform)
-The homeowner sounds **happy with the direction** or **ready to move forward**. Continue **entirely in chat**: shift to **booking-intent** questions—confirm they'd like Level Up to **follow up** for a **call-out / site visit**, gather **one helpful detail at a time** (timing, neighbourhood, etc.). Do **not** mention forms, checkout, or Terms of Service. Close by confirming **intent is noted** and our **team will reach out** to confirm details and **collect a phone number** for coordination (firm quotes still follow after someone sees the space—not here). Sound genuinely pleased for them; keep it warm, not a hard sell.`);
+The homeowner sounds **happy with the design direction** or **ready to move forward having the work done**. Continue **entirely in chat**: warmly explain that **Level Up will review what you've explored together here** (including the visuals) and **will reach out with a more detailed proposal for your approval** before work is scheduled — **no shopping lists, prices, or store names** in this planner. Do **not** mention checkout, deposits, or Terms of Service here. Optional **one light planning question** (e.g. rough timing or area of town) if helpful—still end with a **question** when natural.`);
   }
 
   return chunks.join("\n");
@@ -135,7 +139,7 @@ function buildFallbackReply(imageCount: number): string {
     imageCount > 0
       ? "Thanks for the photo — that's helpful.\n\n"
       : "";
-  return `${photoNote}I'm having a quick connection hiccup on my side. Let's keep going — what's a rough budget range you're aiming for on this project?
+  return `${photoNote}I'm having a quick connection hiccup on my side. Let's keep going — are you leaning toward a simpler refresh or something more built-out for this space?
 
 [PHASE:consultation]`;
 }
@@ -226,12 +230,22 @@ export async function POST(request: Request) {
         clientPhase === "refine" ||
         priorTurnHadConceptImage);
 
+    const trimmedUser = lastUserText.trim();
+    const hasUserMessage = trimmedUser.length > 0;
+    const substantiveForGenericSketch =
+      trimmedUser.length >= MIN_USER_CHARS_FOR_GENERIC_SKETCH;
+
+    const likelyGenericBlankSketch =
+      substantiveForGenericSketch &&
+      !userAttachedPhotosThisTurn &&
+      imageFiles.length === 0 &&
+      sketchReferenceFiles.length === 0;
+
     const sketchLikelyAfterReply =
       !pureEnthusiasmAfterSketch &&
       (userAttachedPhotosThisTurn ||
-        (priorTurnHadConceptImage &&
-          clientPhase !== "consultation" &&
-          Boolean(lastUserText.trim())));
+        (priorTurnHadConceptImage && hasUserMessage) ||
+        likelyGenericBlankSketch);
 
     const latestImageParts = await loadLatestImageParts(imageFiles);
     const sketchReferenceParts = await loadLatestImageParts(sketchReferenceFiles);
@@ -264,10 +278,12 @@ export async function POST(request: Request) {
 
         if (!("error" in result)) {
           replyRaw = result.text.trim();
-          plannerInlineImages = result.images.map((img) => ({
-            mimeType: img.mimeType,
-            data: img.dataBase64,
-          }));
+          plannerInlineImages = result.images
+            .filter((img) => img.dataBase64.length >= 64)
+            .map((img) => ({
+              mimeType: img.mimeType,
+              data: img.dataBase64,
+            }));
         }
       }
     } catch {
@@ -278,18 +294,31 @@ export async function POST(request: Request) {
       replyRaw = buildFallbackReply(imageFiles.length);
     }
 
-    const { cleanReply, phase, showPhotoUploader } = extractPlannerPhase(replyRaw);
+    const { cleanReply: cleanReplyRaw, phase, showPhotoUploader } =
+      extractPlannerPhase(replyRaw);
+
+    const genericBlankSketchEligible =
+      substantiveForGenericSketch &&
+      !userAttachedPhotosThisTurn &&
+      conceptReferenceParts.length === 0 &&
+      (phase === "consultation" ||
+        phase === "recommend" ||
+        phase === "refine");
 
     const allowConceptImage =
       isGeminiConfigured() &&
       plannerInlineImages.length === 0 &&
       !pureEnthusiasmAfterSketch &&
+      hasUserMessage &&
       (userAttachedPhotosThisTurn ||
-        (priorTurnHadConceptImage &&
-          Boolean(lastUserText.trim()) &&
-          phase !== "consultation"));
+        (priorTurnHadConceptImage && hasUserMessage) ||
+        genericBlankSketchEligible);
 
-    const responseImages: { mimeType: string; data: string }[] = [...plannerInlineImages];
+    const responseImages: { mimeType: string; data: string }[] = [
+      ...plannerInlineImages,
+    ];
+
+    let cleanReply = cleanReplyRaw;
 
     if (allowConceptImage && responseImages.length === 0) {
       const transcript = messages
@@ -301,25 +330,39 @@ export async function POST(request: Request) {
         .join("\n");
 
       const exploratoryNote =
-        phase === "consultation" && !userAttachedPhotosThisTurn
-          ? "\n\n(Context: early consultation — visualization is exploratory only.)"
+        conceptReferenceParts.length > 0
+          ? "\n\n(Context: homeowner reference photos are attached — produce an updated concept that applies their latest feedback while preserving their actual room's layout, openings, and proportions.)"
           : phase === "consultation" && userAttachedPhotosThisTurn
             ? "\n\n(Context: homeowner shared real room photos during consultation — anchor the sketch to their space and stated goals; still not a final quote.)"
-            : conceptReferenceParts.length > 0
-              ? "\n\n(Context: homeowner reference photos are attached — produce an updated concept that applies their latest feedback while preserving their actual room's layout, openings, and proportions.)"
-              : "\n\n(Context: refining direction from prior chat — adjust the sketch to match their feedback.)";
+            : phase === "consultation"
+              ? "\n\n(Context: consultation — no room photos in request; neutral blank studio backdrop, illustrative proportions only.)"
+              : "\n\n(Context: no reference photos — neutral blank studio room; apply chat feedback to the concept.)";
 
-      const visual = await geminiGenerateConceptImage({
-        promptContext: `${transcript}\n\n${PLANNER_ASSISTANT_NAME} reply:\n${cleanReply.slice(0, 6000)}${exploratoryNote}`,
-        userGoal: lastUserText.slice(0, 4000) || cleanReply.slice(0, 1200),
-        referenceImageParts:
-          conceptReferenceParts.length > 0 ? conceptReferenceParts : undefined,
-      });
+      const basePrompt = `${transcript}\n\n${PLANNER_ASSISTANT_NAME} reply:\n${cleanReply.slice(0, 6000)}${exploratoryNote}`;
+      const baseGoal =
+        lastUserText.slice(0, 4000) || cleanReply.slice(0, 1200);
 
-      if (!("error" in visual) && visual.images.length > 0) {
-        for (const img of visual.images) {
-          responseImages.push({ mimeType: img.mimeType, data: img.dataBase64 });
+      for (let attempt = 0; attempt < 2; attempt++) {
+        const visual = await geminiGenerateConceptImage({
+          promptContext: basePrompt,
+          userGoal:
+            attempt === 0
+              ? baseGoal
+              : `${baseGoal}\n\n(Second attempt: output must include one clear IMAGE part showing the finish-carpentry concept.)`,
+          referenceImageParts:
+            conceptReferenceParts.length > 0 ? conceptReferenceParts : undefined,
+        });
+
+        if (!("error" in visual) && visual.images.length > 0) {
+          for (const img of visual.images) {
+            responseImages.push({ mimeType: img.mimeType, data: img.dataBase64 });
+          }
+          break;
         }
+      }
+
+      if (responseImages.length === 0) {
+        cleanReply = stripMisleadingImageDeliveryClaims(cleanReply);
       }
     }
 

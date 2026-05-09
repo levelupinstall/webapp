@@ -393,9 +393,11 @@ export default function ProjectPlannerAssistant({
         Meet {PLANNER_ASSISTANT_NAME}, your planning consultant
       </h2>
       <p className="mt-3 text-[#55337b]">
-        Short, conversational guidance for finish carpentry and installs.{" "}
-        {PLANNER_ASSISTANT_NAME} asks a few questions first (budget is important early),
-        then invites photos of your space so we can sketch a concept together — refinements happen in chat until the direction feels right. When you like the rendering, {PLANNER_ASSISTANT_NAME} walks through securing next steps right here in chat (no checkout form in this planner); our team then reaches out to confirm details and phone. No walls of text or shopping lists.
+        Conversational guidance from a finish-carpentry mindset — budget and practical constraints matter early.
+        {PLANNER_ASSISTANT_NAME} asks tailored questions (sizes, what you already bought, closet habits, IKEA lines when relevant)
+        and invites photos when it helps; if you skip photos, you may still see a neutral blank-room sketch so you can react visually.
+        Refinements stay in chat until the direction feels right — no prices or store-specific products here, just the look.
+        When you&apos;re ready to proceed, Level Up reviews your designs and reaches out with a detailed proposal for approval.
       </p>
 
       <div className="mt-6 max-h-[min(520px,70vh)] space-y-3 overflow-y-auto rounded-2xl border border-[#ecdefe] bg-[#fcf9ff] p-4">
@@ -441,10 +443,11 @@ export default function ProjectPlannerAssistant({
           <div className="space-y-3 rounded-2xl border border-[#e8d9ff] bg-[#faf6ff] p-4">
             <p className="text-sm text-[#4d2e70]">
               <span className="font-semibold text-[#2f1748]">
-                {PLANNER_ASSISTANT_NAME} asked for pictures of your space.
+                {PLANNER_ASSISTANT_NAME} asked for photos.
               </span>{" "}
-              Upload from your gallery or use your phone camera — they&apos;ll be sent with your next message (
-              up to {MAX_IMAGES} photos, {MAX_IMAGE_MB}MB each).
+              Share pictures of your <strong className="text-[#4d2e70]">space</strong> and, if you already have materials or kits, photos of{" "}
+              <strong className="text-[#4d2e70]">those items</strong> too — upload from your gallery or use your camera (
+              up to {MAX_IMAGES} photos per send, {MAX_IMAGE_MB}MB each).
             </p>
             <p className="text-xs leading-relaxed text-[#6a4a8f]">
               Choose photos, preview them below, then tap{" "}
