@@ -250,6 +250,8 @@ export default function AdminDashboard() {
   const [feedSearch, setFeedSearch] = useState("");
   const [expandedClientId, setExpandedClientId] = useState<string | null>(null);
   const [deleteClientBusyId, setDeleteClientBusyId] = useState<string | null>(null);
+  const [portalDeleteConfirmClient, setPortalDeleteConfirmClient] =
+    useState<PortalClient | null>(null);
   const [expandedJobId, setExpandedJobId] = useState<string | null>(null);
   const [balanceInvoiceDraft, setBalanceInvoiceDraft] = useState({
     title: "",
@@ -490,18 +492,9 @@ export default function AdminDashboard() {
     setActivityFeed([]);
   }
 
-  async function handleDeletePortalClient(client: PortalClient) {
-    const label = `${client.fullName || client.username} (${client.email})`;
-    const msg1 =
-      `Delete portal account for ${label}?\n\n` +
-      `This permanently removes their login and ALL portal data (ideas, photos, uploads, invoices in the portal, planner history, communication log).\n\n` +
-      `Paid booking records in this CRM that are tied only to this portal login will be removed.\n` +
-      `Assigned carpenter jobs stay on file; the link to this portal account is removed.\n\n` +
-      `This cannot be undone.`;
-    if (!globalThis.confirm(msg1)) return;
-
-    const msg2 = `FINAL CONFIRM: permanently delete ${client.email}?`;
-    if (!globalThis.confirm(msg2)) return;
+  async function executeConfirmedPortalDelete() {
+    const client = portalDeleteConfirmClient;
+    if (!client) return;
 
     setDeleteClientBusyId(client.id);
     try {
@@ -514,6 +507,7 @@ export default function AdminDashboard() {
         globalThis.alert(data.error || "Could not delete account.");
         return;
       }
+      setPortalDeleteConfirmClient(null);
       setExpandedClientId(null);
       await refreshOverview();
     } finally {
@@ -1956,16 +1950,18 @@ export default function AdminDashboard() {
                         Danger zone
                       </h4>
                       <p className="mt-2 text-xs leading-relaxed text-zinc-500">
-                        Delete this client&apos;s portal login and everything stored in their portal
-                        account. You will be asked to confirm twice so nothing is removed by mistake.
+                        Permanently delete this customer&apos;s portal account from the database:
+                        login credentials (password hash), profile data, saved ideas, photos,
+                        uploads, portal invoices, AI planner history, and communication log. A
+                        confirmation dialog opens so this isn&apos;t triggered by mistake.
                       </p>
                       <button
                         type="button"
                         disabled={deleteClientBusyId === c.id}
-                        onClick={() => void handleDeletePortalClient(c)}
+                        onClick={() => setPortalDeleteConfirmClient(c)}
                         className="mt-3 rounded-lg border border-rose-600 bg-rose-950/90 px-4 py-2 text-xs font-semibold text-rose-100 hover:bg-rose-900 disabled:cursor-not-allowed disabled:opacity-50"
                       >
-                        {deleteClientBusyId === c.id ? "Deleting…" : "Delete portal account"}
+                        Delete customer from system…
                       </button>
                     </div>
                   </div>
@@ -2221,6 +2217,65 @@ export default function AdminDashboard() {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      ) : null}
+
+      {portalDeleteConfirmClient ? (
+        <div className="fixed inset-0 z-[30] flex items-end justify-center bg-black/70 p-4 sm:items-center">
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="portal-delete-title"
+            className="w-full max-w-md rounded-2xl border border-rose-900/60 bg-zinc-900 p-6 shadow-2xl"
+          >
+            <h2
+              id="portal-delete-title"
+              className="text-lg font-semibold text-rose-100"
+            >
+              Delete customer permanently?
+            </h2>
+            <p className="mt-3 text-sm leading-relaxed text-zinc-300">
+              You are about to remove{" "}
+              <span className="font-semibold text-white">
+                {portalDeleteConfirmClient.fullName ||
+                  portalDeleteConfirmClient.username}
+              </span>{" "}
+              (<span className="text-zinc-200">{portalDeleteConfirmClient.email}</span>)
+              from the system.
+            </p>
+            <ul className="mt-3 list-inside list-disc space-y-1 text-xs leading-relaxed text-zinc-400">
+              <li>Portal login and password are erased (database row deleted).</li>
+              <li>
+                All portal data goes with it: ideas, photos, invoices shown in the portal, AI planner
+                activity, communication log.
+              </li>
+              <li>
+                CRM booking rows tied only to this login may be removed; carpenter jobs stay, unlinked
+                from this account.
+              </li>
+              <li>This cannot be undone.</li>
+            </ul>
+            <div className="mt-6 flex flex-wrap justify-end gap-2">
+              <button
+                type="button"
+                disabled={deleteClientBusyId === portalDeleteConfirmClient.id}
+                onClick={() => setPortalDeleteConfirmClient(null)}
+                className="rounded-lg border border-zinc-600 px-4 py-2 text-sm text-zinc-200 hover:bg-zinc-800 disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={deleteClientBusyId === portalDeleteConfirmClient.id}
+                onClick={() => void executeConfirmedPortalDelete()}
+                className="rounded-lg bg-rose-600 px-4 py-2 text-sm font-semibold text-white hover:bg-rose-500 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {deleteClientBusyId === portalDeleteConfirmClient.id
+                  ? "Deleting…"
+                  : "Yes, delete permanently"}
+              </button>
+            </div>
           </div>
         </div>
       ) : null}
