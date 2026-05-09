@@ -6,8 +6,30 @@ import {
   isGeminiConfigured,
   userRequestedImageGeneration,
 } from "@/lib/gemini-client";
-import { extractPlannerPhase, MORGAN_PLANNER_SYSTEM } from "@/lib/morgan-planner-prompt";
+import { extractPlannerPhase } from "@/lib/planner-phase-utils";
+import { MORGAN_PLANNER_SYSTEM } from "@/lib/morgan-planner-prompt";
 import { appendAiPlannerActivity } from "@/lib/client-portal-store";
+
+function buildMorganSystemInstruction(params: {
+  priorTurnHadConceptImage: boolean;
+  willAttachConceptImageThisTurn: boolean;
+}): string {
+  const chunks: string[] = [MORGAN_PLANNER_SYSTEM];
+
+  if (params.priorTurnHadConceptImage) {
+    chunks.push(`
+## Session hint (platform)
+Your immediately previous assistant turn included a **concept visualization** the homeowner saw. Their latest message may react to that image—prioritize understanding what they **like** vs want **changed**. Adjust your guidance across turns until they sound satisfied or ask for another sketch; keep questions focused and short. Once you're giving directional ideas (not still purely filling intake), prefer staying in refine-phase behavior and tagging accordingly.`);
+  }
+
+  if (params.willAttachConceptImageThisTurn) {
+    chunks.push(`
+## Session hint (platform)
+This reply will likely be shown **together with a new concept sketch**. Acknowledge that it's a draft for discussion. Close by inviting quick reactions—what appeals and what they'd tweak—so the **next** message can narrow or pivot (still short; no materials lists).`);
+  }
+
+  return chunks.join("\n");
+}
 
 type PlainChatRole = "user" | "assistant";
 
@@ -108,6 +130,10 @@ export async function POST(request: Request) {
       String(formData.get("includeConceptImage") ?? "").toLowerCase() === "true" ||
       String(formData.get("includeConceptImage") ?? "") === "1";
 
+    const priorTurnHadConceptImage =
+      String(formData.get("priorTurnHadConceptImage") ?? "").toLowerCase() === "true" ||
+      String(formData.get("priorTurnHadConceptImage") ?? "") === "1";
+
     const files = formData
       .getAll("images")
       .filter((value): value is File => value instanceof File);
@@ -118,6 +144,9 @@ export async function POST(request: Request) {
 
     const lastUserText =
       [...messages].reverse().find((m) => m.role === "user")?.content?.trim() ?? "";
+
+    const willAttachConceptImageThisTurn =
+      includeConceptImage || userRequestedImageGeneration(lastUserText);
 
     if (!lastUserText && imageFiles.length === 0) {
       return NextResponse.json(
@@ -140,7 +169,10 @@ export async function POST(request: Request) {
     try {
       if (isGeminiConfigured()) {
         const result = await geminiPlannerMultiTurn({
-          systemInstruction: MORGAN_PLANNER_SYSTEM,
+          systemInstruction: buildMorganSystemInstruction({
+            priorTurnHadConceptImage,
+            willAttachConceptImageThisTurn,
+          }),
           contents,
         });
 
@@ -162,9 +194,7 @@ export async function POST(request: Request) {
 
     const { cleanReply, phase } = extractPlannerPhase(replyRaw);
 
-    const allowConceptImage =
-      phase !== "consultation" &&
-      (includeConceptImage || userRequestedImageGeneration(lastUserText));
+    const allowConceptImage = willAttachConceptImageThisTurn;
 
     const responseImages: { mimeType: string; data: string }[] = [...plannerInlineImages];
 
@@ -174,8 +204,13 @@ export async function POST(request: Request) {
         .map((m) => `${m.role === "user" ? "Homeowner" : "Morgan"}: ${m.content}`)
         .join("\n");
 
+      const exploratoryNote =
+        phase === "consultation"
+          ? "\n\n(Context: early consultation — any visualization is exploratory/inspirational only, not a committed design or quote.)"
+          : "";
+
       const visual = await geminiGenerateConceptImage({
-        promptContext: `${transcript}\n\nMorgan reply:\n${cleanReply.slice(0, 6000)}`,
+        promptContext: `${transcript}\n\nMorgan reply:\n${cleanReply.slice(0, 6000)}${exploratoryNote}`,
         userGoal: lastUserText.slice(0, 4000) || cleanReply.slice(0, 1200),
       });
 

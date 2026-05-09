@@ -3,7 +3,10 @@
 import Image from "next/image";
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import BookingCheckout from "./booking-checkout";
-import type { PlannerPhaseTag } from "@/lib/morgan-planner-prompt";
+import {
+  type PlannerPhaseTag,
+  stripPlannerPhaseMarkers,
+} from "@/lib/planner-phase-utils";
 import { PLANNER_ASSISTANT_NAME } from "@/lib/planner-brand";
 
 type ChatMessage = {
@@ -89,8 +92,19 @@ export default function ProjectPlannerAssistant({
       draft.trim() ||
       "I'm sharing a photo of the space — please take a look.";
 
+    const lastAssistantBeforeSend = [...messages]
+      .reverse()
+      .find((m) => m.role === "assistant");
+    const priorTurnHadConceptImage = Boolean(lastAssistantBeforeSend?.images?.length);
+
     const payloadMessages: { role: "user" | "assistant"; content: string }[] = [
-      ...messages.map((m) => ({ role: m.role, content: m.content })),
+      ...messages.map((m) => ({
+        role: m.role,
+        content:
+          m.role === "assistant"
+            ? stripPlannerPhaseMarkers(m.content)
+            : m.content,
+      })),
       { role: "user", content: userMessage },
     ];
 
@@ -105,6 +119,10 @@ export default function ProjectPlannerAssistant({
       formData.append("messages", JSON.stringify(payloadMessages));
       formData.append("phase", phase);
       formData.append("includeConceptImage", includeConceptImage ? "true" : "false");
+      formData.append(
+        "priorTurnHadConceptImage",
+        priorTurnHadConceptImage ? "true" : "false",
+      );
       imagesToSend.forEach((image) => formData.append("images", image));
 
       const response = await fetch("/api/project-assistant", {
@@ -124,11 +142,13 @@ export default function ProjectPlannerAssistant({
         dataUrl: `data:${img.mimeType};base64,${img.data}`,
       }));
 
+      const safeReply = stripPlannerPhaseMarkers(data.reply);
+
       setMessages((prev) => [
         ...prev,
         {
           role: "assistant",
-          content: data.reply,
+          content: safeReply,
           ...(assistantImages?.length ? { images: assistantImages } : {}),
         },
       ]);
@@ -178,7 +198,7 @@ export default function ProjectPlannerAssistant({
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         title: ideaTitle,
-        notes: latestAssistantIdea.content,
+        notes: stripPlannerPhaseMarkers(latestAssistantIdea.content),
       }),
     });
 
@@ -205,7 +225,9 @@ export default function ProjectPlannerAssistant({
       <p className="mt-3 text-[#55337b]">
         Short, conversational guidance for finish carpentry and installs.{" "}
         {PLANNER_ASSISTANT_NAME} asks a few questions first (budget is important early),
-        then offers directions — no walls of text or shopping lists. Share photos anytime.
+        then offers directions — no walls of text or shopping lists. Share photos anytime, or check
+        &quot;concept sketch&quot; (or ask to show a visual) for an optional illustration — exploratory
+        early on, more directional once you&apos;ve narrowed scope.
       </p>
 
       <div className="mt-6 max-h-[min(520px,70vh)] space-y-3 overflow-y-auto rounded-2xl border border-[#ecdefe] bg-[#fcf9ff] p-4">
@@ -218,7 +240,11 @@ export default function ProjectPlannerAssistant({
                 : "ml-auto max-w-[90%] bg-[#6e3eb2] text-white"
             }`}
           >
-            <div className="whitespace-pre-wrap">{message.content}</div>
+            <div className="whitespace-pre-wrap">
+              {message.role === "assistant"
+                ? stripPlannerPhaseMarkers(message.content)
+                : message.content}
+            </div>
             {message.images?.length ? (
               <div className="mt-3 grid gap-2 sm:grid-cols-2">
                 {message.images.map((img, i) => (
@@ -246,7 +272,7 @@ export default function ProjectPlannerAssistant({
         <div className="mt-6">
           <BookingCheckout
             embedded
-            initialProjectDetails={latestAssistantIdea.content}
+            initialProjectDetails={stripPlannerPhaseMarkers(latestAssistantIdea.content)}
           />
         </div>
       ) : null}
@@ -315,23 +341,22 @@ export default function ProjectPlannerAssistant({
           </div>
         ) : null}
 
-        {(phase === "recommend" || phase === "refine") ? (
-          <label className="flex cursor-pointer items-start gap-3 rounded-2xl border border-[#e8d9ff] bg-[#faf6ff] px-4 py-3">
-            <input
-              type="checkbox"
-              checked={includeConceptImage}
-              onChange={(event) => setIncludeConceptImage(event.target.checked)}
-              className="mt-1 h-4 w-4 rounded border-[#6e3eb2] text-[#6e3eb2]"
-            />
-            <span className="text-sm text-[#4d2e70]">
-              <span className="font-semibold text-[#2f1748]">
-                Optional concept sketch
-              </span>
-              — adds a simple visualization with your next reply (slower). You can also ask
-              to &quot;show me&quot; in your message.
+        <label className="flex cursor-pointer items-start gap-3 rounded-2xl border border-[#e8d9ff] bg-[#faf6ff] px-4 py-3">
+          <input
+            type="checkbox"
+            checked={includeConceptImage}
+            onChange={(event) => setIncludeConceptImage(event.target.checked)}
+            className="mt-1 h-4 w-4 rounded border-[#6e3eb2] text-[#6e3eb2]"
+          />
+          <span className="text-sm text-[#4d2e70]">
+            <span className="font-semibold text-[#2f1748]">
+              Include a concept sketch
             </span>
-          </label>
-        ) : null}
+            — generates an illustration with your next reply to help picture the space or idea (slower,
+            uses extra AI). Works anytime; early chats are labeled exploratory. You can also write
+            things like &quot;show me&quot; or &quot;sketch it&quot;.
+          </span>
+        </label>
 
         <label className="block">
           <span className="text-sm font-semibold text-[#4a2381]">Your message</span>
