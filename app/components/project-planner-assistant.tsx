@@ -2,7 +2,6 @@
 
 import Image from "next/image";
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
-import BookingCheckout from "./booking-checkout";
 import {
   type PlannerPhaseTag,
   stripPlannerPhaseMarkers,
@@ -23,16 +22,86 @@ type AssistantResponse = {
 };
 
 type ProjectPlannerAssistantProps = {
+  /** When set (logged-in visitor), shown at the top of the planner section. */
+  welcomeDisplayName?: string;
   onRequireCreateAccount?: () => void;
 };
 
 const MAX_IMAGES = 4;
 const MAX_IMAGE_MB = 5;
+const MAX_IMAGE_BYTES = MAX_IMAGE_MB * 1024 * 1024;
+
+/** Target max bytes per image after compression (keeps multipart body under typical platform limits). */
+const PLANNER_COMPRESSED_TARGET_BYTES = 1_350_000;
 
 /** Assistant turns that included a concept image; sent to API for long-loop guidance. */
 const MAX_SKETCH_ROUNDS_TRACKED = 99;
 
+function isLikelyImageFile(file: File): boolean {
+  const t = (file.type || "").toLowerCase();
+  if (t.startsWith("image/")) return true;
+  return /\.(heic|heif|jpg|jpeg|png|webp|gif)$/i.test(file.name);
+}
+
+/**
+ * Shrinks large gallery photos before upload so POST bodies stay under edge/server limits
+ * (full-resolution phone photos often exceed ~4.5MB total and surface as "Failed to fetch").
+ */
+async function compressImageForPlannerUpload(file: File): Promise<File> {
+  if (!isLikelyImageFile(file)) return file;
+
+  const baseName = file.name.replace(/\.[^/.]+$/, "") || "photo";
+
+  if (
+    file.size <= 650 * 1024 &&
+    (file.type === "image/jpeg" || file.type === "image/png" || file.type === "image/webp")
+  ) {
+    return file;
+  }
+
+  let bitmap: ImageBitmap;
+  try {
+    bitmap = await createImageBitmap(file);
+  } catch {
+    return file;
+  }
+
+  try {
+    let scale = Math.min(1, 1920 / Math.max(bitmap.width, bitmap.height));
+    const canvas = document.createElement("canvas");
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return file;
+
+    let best: File | null = null;
+
+    for (let attempt = 0; attempt < 8; attempt++) {
+      const w = Math.max(1, Math.round(bitmap.width * scale));
+      const h = Math.max(1, Math.round(bitmap.height * scale));
+      canvas.width = w;
+      canvas.height = h;
+      ctx.drawImage(bitmap, 0, 0, w, h);
+
+      const blob: Blob | null = await new Promise((resolve) => {
+        canvas.toBlob((b) => resolve(b), "image/jpeg", 0.82);
+      });
+
+      if (blob) {
+        best = new File([blob], `${baseName}.jpg`, { type: "image/jpeg" });
+        if (blob.size <= PLANNER_COMPRESSED_TARGET_BYTES || scale <= 0.28) {
+          return best;
+        }
+      }
+      scale *= 0.82;
+    }
+
+    return best ?? file;
+  } finally {
+    bitmap.close();
+  }
+}
+
 export default function ProjectPlannerAssistant({
+  welcomeDisplayName,
   onRequireCreateAccount,
 }: ProjectPlannerAssistantProps) {
   const [messages, setMessages] = useState<ChatMessage[]>([
@@ -54,6 +123,8 @@ export default function ProjectPlannerAssistant({
   const galleryInputRef = useRef<HTMLInputElement>(null);
   const cameraInputRef = useRef<HTMLInputElement>(null);
   const scrollAnchorRef = useRef<HTMLDivElement>(null);
+  /** Compressed uploads from earlier turns — re-sent so refinement sketches stay anchored to their room. */
+  const sketchSpacePhotosRef = useRef<File[]>([]);
 
   const previews = useMemo(
     () => images.map((file) => ({ file, url: URL.createObjectURL(file) })),
@@ -82,11 +153,6 @@ export default function ProjectPlannerAssistant({
     .reverse()
     .find((message) => message.role === "assistant");
 
-  const showSecureBooking =
-    (phase === "recommend" || phase === "refine") &&
-    Boolean(latestAssistantIdea) &&
-    messages.some((message) => message.role === "user");
-
   const canSaveIdea = phase === "recommend" || phase === "refine";
 
   async function handleSubmit(event: FormEvent) {
@@ -100,6 +166,8 @@ export default function ProjectPlannerAssistant({
     setError(null);
     setSaveStatus(null);
     setShowCreateAccountPrompt(false);
+
+    const draftBefore = draft;
 
     const userMessage =
       draft.trim() ||
@@ -139,7 +207,26 @@ export default function ProjectPlannerAssistant({
         "sketchRoundsDelivered",
         String(Math.min(MAX_SKETCH_ROUNDS_TRACKED, sketchRoundsDelivered)),
       );
-      imagesToSend.forEach((image) => formData.append("images", image));
+
+      const compressedImages = await Promise.all(
+        imagesToSend.map((image) => compressImageForPlannerUpload(image)),
+      );
+
+      let uploadTotalBytes = 0;
+      for (const image of sketchSpacePhotosRef.current) {
+        uploadTotalBytes += image.size;
+        formData.append("sketchReferenceImages", image);
+      }
+      for (const image of compressedImages) {
+        uploadTotalBytes += image.size;
+        formData.append("images", image);
+      }
+
+      if (uploadTotalBytes > 4 * 1024 * 1024) {
+        throw new Error(
+          "Those photos are still too large to send at once. Try one or two images, or use Take photo for smaller files.",
+        );
+      }
 
       const response = await fetch("/api/project-assistant", {
         method: "POST",
@@ -175,11 +262,34 @@ export default function ProjectPlannerAssistant({
           Math.min(MAX_SKETCH_ROUNDS_TRACKED, n + 1),
         );
       }
+
+      if (compressedImages.length > 0) {
+        sketchSpacePhotosRef.current = [
+          ...sketchSpacePhotosRef.current,
+          ...compressedImages,
+        ].slice(-MAX_IMAGES);
+      }
     } catch (submitError) {
-      const message =
+      setMessages((prev) =>
+        prev.length && prev[prev.length - 1]?.role === "user"
+          ? prev.slice(0, -1)
+          : prev,
+      );
+      setDraft(draftBefore);
+      setImages(imagesToSend);
+
+      let message =
         submitError instanceof Error
           ? submitError.message
           : "Something went wrong while sending your message.";
+      if (
+        submitError instanceof TypeError &&
+        (submitError.message === "Failed to fetch" ||
+          submitError.message === "Load failed")
+      ) {
+        message =
+          "Could not upload — usually caused by very large gallery photos or a weak connection. Try again after we resized your images, use Take photo, or send fewer pictures at once.";
+      }
       setError(message);
     } finally {
       setIsLoading(false);
@@ -191,15 +301,36 @@ export default function ProjectPlannerAssistant({
 
     const nextFiles = Array.from(fileList);
     const validFiles: File[] = [];
+    let skippedType = 0;
+    let skippedSize = 0;
 
     for (const file of nextFiles) {
-      if (!file.type.startsWith("image/")) continue;
-      if (file.size > MAX_IMAGE_MB * 1024 * 1024) continue;
+      if (!isLikelyImageFile(file)) {
+        skippedType += 1;
+        continue;
+      }
+      if (file.size > MAX_IMAGE_BYTES) {
+        skippedSize += 1;
+        continue;
+      }
       validFiles.push(file);
     }
 
     const merged = [...images, ...validFiles].slice(0, MAX_IMAGES);
     setImages(merged);
+
+    if (skippedSize > 0) {
+      setError(
+        `${skippedSize} file(s) skipped — max ${MAX_IMAGE_MB} MB each. Pick “Medium” / “Large” if your phone asks for export size.`,
+      );
+    } else if (skippedType > 0 && merged.length === images.length) {
+      setError("Those files don’t look like supported images (JPEG, PNG, HEIC, WebP…).");
+    } else if (skippedType > 0) {
+      setError(`${skippedType} non-image file(s) skipped.`);
+    } else if (validFiles.length > 0) {
+      setError(null);
+    }
+
     galleryInputRef.current && (galleryInputRef.current.value = "");
     cameraInputRef.current && (cameraInputRef.current.value = "");
   }
@@ -240,15 +371,28 @@ export default function ProjectPlannerAssistant({
     setSaveStatus("Saved to your Client Portal.");
   }
 
+  const welcome = welcomeDisplayName?.trim();
+
   return (
     <section className="mt-8 rounded-3xl border border-[#dac6fb] bg-white p-6 shadow-[0_10px_30px_-20px_rgba(91,33,182,0.55)] sm:p-8">
+      {welcome ? (
+        <div className="mb-6 rounded-2xl border border-[#c9e8d4] bg-gradient-to-br from-[#f4fcf7] to-[#eefaf3] px-5 py-4 sm:px-6">
+          <p className="text-lg font-semibold text-[#1a4d2e] sm:text-xl">
+            Welcome, {welcome}
+          </p>
+          <p className="mt-2 text-sm leading-relaxed text-[#2d6a45]">
+            You&apos;re signed in — continue your project plan with{" "}
+            {PLANNER_ASSISTANT_NAME} below.
+          </p>
+        </div>
+      ) : null}
       <h2 className="text-2xl font-semibold text-[#2d1546] sm:text-3xl">
         Meet {PLANNER_ASSISTANT_NAME}, your planning consultant
       </h2>
       <p className="mt-3 text-[#55337b]">
         Short, conversational guidance for finish carpentry and installs.{" "}
         {PLANNER_ASSISTANT_NAME} asks a few questions first (budget is important early),
-        then invites photos of your space so we can sketch a concept together — refinements happen in chat until the direction feels right. No walls of text or shopping lists.
+        then invites photos of your space so we can sketch a concept together — refinements happen in chat until the direction feels right. When you like the rendering, {PLANNER_ASSISTANT_NAME} walks through securing next steps right here in chat (no checkout form in this planner); our team then reaches out to confirm details and phone. No walls of text or shopping lists.
       </p>
 
       <div className="mt-6 max-h-[min(520px,70vh)] space-y-3 overflow-y-auto rounded-2xl border border-[#ecdefe] bg-[#fcf9ff] p-4">
@@ -289,16 +433,7 @@ export default function ProjectPlannerAssistant({
         <div ref={scrollAnchorRef} />
       </div>
 
-      {showSecureBooking && latestAssistantIdea ? (
-        <div className="mt-6">
-          <BookingCheckout
-            embedded
-            initialProjectDetails={stripPlannerPhaseMarkers(latestAssistantIdea.content)}
-          />
-        </div>
-      ) : null}
-
-      <form className="mt-5 space-y-4" onSubmit={handleSubmit}>
+      <form id="levelup-planner-form" className="mt-5 space-y-4" onSubmit={handleSubmit}>
         {photoInviteActive ? (
           <div className="space-y-3 rounded-2xl border border-[#e8d9ff] bg-[#faf6ff] p-4">
             <p className="text-sm text-[#4d2e70]">
@@ -307,6 +442,12 @@ export default function ProjectPlannerAssistant({
               </span>{" "}
               Upload from your gallery or use your phone camera — they&apos;ll be sent with your next message (
               up to {MAX_IMAGES} photos, {MAX_IMAGE_MB}MB each).
+            </p>
+            <p className="text-xs leading-relaxed text-[#6a4a8f]">
+              Choose photos, preview them below, then tap{" "}
+              <strong className="text-[#4d2e70]">Send photos</strong> here or{" "}
+              <strong className="text-[#4d2e70]">Send</strong> under your message — both finalize the upload.
+              Large gallery shots are resized automatically so they send reliably.
             </p>
             <div className="flex flex-wrap gap-2">
               <button
@@ -327,7 +468,7 @@ export default function ProjectPlannerAssistant({
                 ref={galleryInputRef}
                 type="file"
                 multiple
-                accept="image/*"
+                accept="image/*,.heic,.heif"
                 className="hidden"
                 onChange={(event) => handleFilesChange(event.target.files)}
               />
@@ -365,6 +506,21 @@ export default function ProjectPlannerAssistant({
                     </button>
                   </div>
                 ))}
+              </div>
+            ) : null}
+
+            {previews.length > 0 ? (
+              <div className="flex flex-col gap-2 border-t border-[#e8d9ff] pt-3 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
+                <button
+                  type="submit"
+                  disabled={isLoading}
+                  className="inline-flex items-center justify-center rounded-full bg-[#6e3eb2] px-6 py-3 text-sm font-semibold text-white transition hover:bg-[#5b3292] disabled:cursor-not-allowed disabled:opacity-65"
+                >
+                  {isLoading ? "Sending…" : `Send ${previews.length} photo${previews.length === 1 ? "" : "s"}`}
+                </button>
+                <p className="text-xs text-[#6a4a8f] sm:max-w-[280px]">
+                  Same as the main <strong className="text-[#4d2e70]">Send</strong> button under your message — use whichever is easier on your device.
+                </p>
               </div>
             ) : null}
           </div>

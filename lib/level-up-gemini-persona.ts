@@ -38,4 +38,5 @@ Produce ONE concept image plus short caption text if helpful. The image must:
 - Show materials and styling that could be sourced from IKEA, Home Depot, or Lowe's (no fantasy architecture).
 - Respect any budget constraints the user stated; prefer practical, value-engineered looks when budget is tight.
 - Avoid depicting unsafe structural modifications.
+- When reference photos of the homeowner's actual space are supplied with the request, treat them as the spatial anchor: interpret layout, openings, ceiling height cues, and proportions from those photos; each revised concept should apply the stated feedback while staying consistent with that real room, not a generic stand-in space.
 `;

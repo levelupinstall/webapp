@@ -1,10 +1,9 @@
 "use client";
 
 import Image from "next/image";
-import { useSearchParams } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useState } from "react";
 import ClientPortal from "./components/client-portal";
-import FloatingAgentChat from "./components/floating-agent-chat";
 import ProjectPlannerAssistant from "./components/project-planner-assistant";
 import { PLANNER_ASSISTANT_NAME } from "@/lib/planner-brand";
 import ReviewsGallery from "./components/reviews-gallery";
@@ -15,9 +14,16 @@ type AuthUser = {
   id: string;
   username: string;
   fullName: string;
+  email: string;
 };
 
+function portalWelcomeName(user: AuthUser): string {
+  return user.fullName?.trim() || user.email?.trim() || user.username;
+}
+
 function HomeContent() {
+  const router = useRouter();
+  const pathname = usePathname();
   const [activeSection, setActiveSection] = useState<SectionKey>("overview");
   const [portalMode, setPortalMode] = useState<"login" | "register">("login");
   const [accountView, setAccountView] = useState<AccountMenuView>("saved-projects");
@@ -43,9 +49,14 @@ function HomeContent() {
         return;
       }
       const data = (await response.json()) as {
-        user: { id: string; username: string; fullName: string };
+        user: { id: string; username: string; fullName: string; email: string };
       };
-      setAuthUser(data.user);
+      setAuthUser({
+        id: data.user.id,
+        username: data.user.username,
+        fullName: data.user.fullName,
+        email: data.user.email ?? "",
+      });
     }
     void loadAuthState();
   }, []);
@@ -105,7 +116,7 @@ function HomeContent() {
           {authUser ? (
             <div className="relative flex shrink-0 items-center gap-2 sm:gap-3">
               <p className="text-xs font-semibold text-[#5b3292] sm:text-sm">
-                {authUser.fullName?.trim() || authUser.username}
+                {portalWelcomeName(authUser)}
               </p>
               <button
                 type="button"
@@ -405,37 +416,6 @@ function HomeContent() {
                     </p>
                   </div>
                 </li>
-                <li className="flex flex-col overflow-hidden rounded-xl border border-[#eddfff] bg-white shadow-[0_8px_28px_-18px_rgba(91,33,182,0.35)]">
-                  <div
-                    className="relative aspect-[5/3] bg-gradient-to-br from-[#faf6ff] via-[#f0e8ff] to-[#e5d9ff]"
-                    aria-hidden
-                  >
-                    <svg className="absolute inset-2 h-[calc(100%-1rem)] w-[calc(100%-1rem)]" viewBox="0 0 280 168" fill="none">
-                      <rect x="16" y="16" width="248" height="136" rx="12" fill="#fff" stroke="#e8d9ff" strokeWidth="2" />
-                      <rect x="152" y="72" width="112" height="72" rx="12" fill="#6e3eb2" stroke="#5b3292" strokeWidth="2" />
-                      <circle cx="174" cy="96" r="8" fill="#fff" opacity="0.95" />
-                      <path d="M172 96 L173 97 L177 93" stroke="#6e3eb2" strokeWidth="1.5" strokeLinecap="round" />
-                      <rect x="166" y="108" width="84" height="6" rx="2" fill="#fff" opacity="0.35" />
-                      <rect x="166" y="120" width="64" height="6" rx="2" fill="#fff" opacity="0.25" />
-                      <circle cx="236" cy="96" r="4" fill="#c4b5fd" />
-                      <circle cx="246" cy="96" r="4" fill="#c4b5fd" opacity="0.6" />
-                      <circle cx="256" cy="96" r="4" fill="#c4b5fd" opacity="0.35" />
-                      <rect x="36" y="44" width="88" height="6" rx="2" fill="#ede4ff" />
-                      <rect x="36" y="56" width="72" height="6" rx="2" fill="#f5efff" />
-                      <rect x="36" y="68" width="80" height="6" rx="2" fill="#f5efff" />
-                    </svg>
-                    <span className="absolute left-3 top-3 rounded-full bg-white/90 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-[#6e3eb2] shadow-sm">
-                      Chat
-                    </span>
-                  </div>
-                  <div className="p-4">
-                    <p className="font-semibold text-[#31184a]">Floating chat agent</p>
-                    <p className="mt-2">
-                      Ask follow-ups anytime from the corner bubble for pricing prep, scope wording,
-                      or next steps toward booking.
-                    </p>
-                  </div>
-                </li>
               </ul>
               <div className="mt-6 flex flex-wrap items-center gap-3">
                 <button
@@ -592,8 +572,9 @@ function HomeContent() {
                   Create an account to save AI project ideas, track your
                   booking and progress photos from the crew, chat with our
                   agent anytime, and keep invoices in one place. When you are
-                  ready, booking your call-out starts from the planner after you and{" "}
-                  {PLANNER_ASSISTANT_NAME} have a direction.
+                  ready, {PLANNER_ASSISTANT_NAME} can walk through booking next steps in chat in the planner,
+                  and our team follows up to confirm visit details, collect your phone number if needed, and
+                  coordinate payment—no checkout form inside the planner itself.
                 </p>
                 <ul className="mt-5 grid gap-2 text-sm text-[#55337b] sm:grid-cols-2 sm:text-[15px]">
                   <li className="flex gap-2">
@@ -744,13 +725,13 @@ function HomeContent() {
                 <li className="flex gap-3">
                   <span className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-[#6e3eb2]" />
                   <span>
-                    <span className="font-semibold text-[#31184a]">Booking checkout:</span> From the planner,
-                    after you and {PLANNER_ASSISTANT_NAME} have a planning direction, the{" "}
-                    <span className="font-semibold text-[#31184a]">Secure your booking</span> section sends
-                    you to{" "}
-                    <span className="font-semibold text-[#31184a]">Stripe Checkout</span>. Completing payment
-                    charges your card for the{" "}
-                    <span className="font-semibold text-[#31184a]">$150 call-out fee</span> (CAD).
+                    <span className="font-semibold text-[#31184a]">Call-out fee payment:</span> After you and{" "}
+                    {PLANNER_ASSISTANT_NAME} align on a direction in the planner chat, you confirm booking intent
+                    there—then our team reaches out to finalize details and sends{" "}
+                    <span className="font-semibold text-[#31184a]">Stripe Checkout</span> (or another agreed
+                    method) for the{" "}
+                    <span className="font-semibold text-[#31184a]">$150 call-out fee</span> (CAD) when it&apos;s
+                    time to pay.
                   </span>
                 </li>
                 <li className="flex gap-3">
@@ -794,8 +775,8 @@ function HomeContent() {
                 insurer asks for it.
               </p>
               <p className="mt-4 text-sm leading-relaxed text-[#55337b]">
-                By booking and paying the call-out fee, you acknowledge that service is provided under
-                these arrangements as described in our Terms of Service at checkout.
+                Call-out payment and any acknowledgements are handled when our team coordinates booking with
+                you—we keep formal policy review tied to that step rather than inside the AI planner chat.
               </p>
             </div>
 
@@ -803,8 +784,8 @@ function HomeContent() {
               <h3 className="text-lg font-semibold text-[#230f35]">Ready to book?</h3>
               <p className="mt-2 text-sm leading-relaxed text-[#4d2e70] sm:text-[15px]">
                 Chat with <span className="font-semibold text-[#31184a]">{PLANNER_ASSISTANT_NAME}</span> in the
-                planner — then use <span className="font-semibold text-[#31184a]">Secure your booking</span>{" "}
-                right below the conversation to pay the call-out fee and send your details to our team.
+                planner — when you&apos;re happy with the direction, they&apos;ll walk through securing next steps
+                in the conversation; our team then reaches out to confirm details and arrange the call-out payment.
               </p>
               <button
                 type="button"
@@ -820,6 +801,9 @@ function HomeContent() {
         {currentSection === "planner" ? (
           <div>
             <ProjectPlannerAssistant
+              welcomeDisplayName={
+                authUser ? portalWelcomeName(authUser) : undefined
+              }
               onRequireCreateAccount={() => {
                 openAuth("register");
               }}
@@ -835,21 +819,27 @@ function HomeContent() {
             onAuthChange={(user) => {
               setAuthUser(
                 user
-                  ? { id: user.id, username: user.username, fullName: user.fullName }
+                  ? {
+                      id: user.id,
+                      username: user.username,
+                      fullName: user.fullName,
+                      email: user.email ?? "",
+                    }
                   : null,
               );
+            }}
+            onLoginSuccess={() => {
+              setActiveSection("planner");
+              const params = new URLSearchParams(searchParams.toString());
+              params.set("section", "planner");
+              const qs = params.toString();
+              router.replace(qs ? `${pathname}?${qs}` : `${pathname}?section=planner`, {
+                scroll: false,
+              });
             }}
           />
         ) : null}
       </section>
-      <FloatingAgentChat
-        onRequireLogin={() => {
-          openAuth("login");
-        }}
-        onRequireCreateAccount={() => {
-          openAuth("register");
-        }}
-      />
     </main>
   );
 }

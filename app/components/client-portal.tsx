@@ -43,12 +43,15 @@ type ClientPortalProps = {
   initialMode?: "login" | "register";
   selectedView?: PortalView;
   onAuthChange?: (user: PortalUser | null) => void;
+  /** Called only after a successful login or registration session (not on session restore). */
+  onLoginSuccess?: (user: PortalUser) => void;
 };
 
 export default function ClientPortal({
   initialMode = "login",
   selectedView = "saved-projects",
   onAuthChange,
+  onLoginSuccess,
 }: ClientPortalProps) {
   const [mode, setMode] = useState<"login" | "register">(initialMode);
   const [user, setUser] = useState<PortalUser | null>(null);
@@ -82,12 +85,12 @@ export default function ClientPortal({
   const savedProjectsTrackRef = useRef(false);
   const spacePhotosTrackRef = useRef(false);
 
-  const loadMe = useCallback(async () => {
+  const loadMe = useCallback(async (): Promise<PortalUser | null> => {
     const response = await fetch("/api/portal/me");
     if (!response.ok) {
       setUser(null);
       onAuthChange?.(null);
-      return;
+      return null;
     }
     const data = (await response.json()) as { user: PortalUser };
     setUser(data.user);
@@ -95,6 +98,7 @@ export default function ClientPortal({
     setProfileName(data.user.fullName || "");
     setProfileServiceAddress(data.user.serviceAddress || "");
     setProfileAvatar(data.user.avatarDataUrl || "");
+    return data.user;
   }, [onAuthChange]);
 
   useEffect(() => {
@@ -221,8 +225,11 @@ export default function ClientPortal({
         router.push(`/portal/signup-pending?channel=${channel}${hintQs}`);
         return;
       }
-      await loadMe();
+      const loggedInUser = await loadMe();
       setPassword("");
+      if (loggedInUser) {
+        onLoginSuccess?.(loggedInUser);
+      }
     } catch (authError) {
       setError(authError instanceof Error ? authError.message : "Auth failed.");
     } finally {

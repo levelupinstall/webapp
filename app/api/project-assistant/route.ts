@@ -17,6 +17,16 @@ import { appendAiPlannerActivity } from "@/lib/client-portal-store";
 /** After this many assistant turns that included a concept sketch, steer toward in-person consult. */
 const SKETCH_ROUNDS_BEFORE_IN_PERSON_NUDGE = 5;
 
+/** Gallery uploads sometimes omit MIME type (e.g. HEIC); match client-side acceptance. */
+function isPlannerImageUpload(file: File): boolean {
+  const t = (file.type || "").toLowerCase();
+  if (t.startsWith("image/")) return true;
+  const n = file.name.toLowerCase();
+  return /\.(heic|heif|jpg|jpeg|png|webp|gif)$/i.test(n);
+}
+
+export const maxDuration = 120;
+
 function buildMorganSystemInstruction(params: {
   priorTurnHadConceptImage: boolean;
   sketchLikelyAfterReply: boolean;
@@ -49,13 +59,13 @@ The homeowner attached **real photos of their space** with this message—thank 
     const n = params.sketchRoundsDelivered;
     chunks.push(`
 ## Session hint (platform)
-The homeowner has already received **${n} rounds** with AI concept sketches in this chat. If they still sound unhappy or keep asking for big visual swings, **set expectations kindly**: this planner is a **tool to help** with ideas—not a substitute for walking the actual space. Recommend **booking an in-person consultation** with one of Level Up's carpenters **for the best results** (tie naturally to **Secure your booking** / the call-out when appropriate). Stay brief; it's okay to offer smaller tweaks, but be honest about what remote renders can't capture.`);
+The homeowner has already received **${n} rounds** with AI concept sketches in this chat. If they still sound unhappy or keep asking for big visual swings, **set expectations kindly**: this planner is a **tool to help** with ideas—not a substitute for walking the actual space. Recommend **moving toward an on-site visit** — explain someone from Level Up can **follow up** after they confirm booking intent **here in chat** (no forms or terms in this UI). Stay brief; it's okay to offer smaller tweaks, but be honest about what remote renders can't capture.`);
   }
 
   if (params.advanceTowardSiteVisit) {
     chunks.push(`
 ## Session hint (platform)
-The homeowner sounds **happy with the direction** or **ready to move forward**. Guide them to the **next stage of your sales flow**: use **Secure your booking** below this chat to arrange a **site visit / call-out** so a carpenter can **verify measurements**, confirm conditions in person, and help turn today's ideas into a **clearer, job-ready plan** toward completing the work (still accurate: firm quotes follow after that visit—not here). Sound genuinely pleased for them; keep it one warm invitation, not a hard sell.`);
+The homeowner sounds **happy with the direction** or **ready to move forward**. Continue **entirely in chat**: shift to **booking-intent** questions—confirm they'd like Level Up to **follow up** for a **call-out / site visit**, gather **one helpful detail at a time** (timing, neighbourhood, etc.). Do **not** mention forms, checkout, or Terms of Service. Close by confirming **intent is noted** and our **team will reach out** to confirm details and **collect a phone number** for coordination (firm quotes still follow after someone sees the space—not here). Sound genuinely pleased for them; keep it warm, not a hard sell.`);
   }
 
   return chunks.join("\n");
@@ -182,7 +192,14 @@ export async function POST(request: Request) {
       .filter((value): value is File => value instanceof File);
 
     const imageFiles = files.filter(
-      (file) => file.type.startsWith("image/") && file.size <= 5 * 1024 * 1024,
+      (file) => isPlannerImageUpload(file) && file.size <= 5 * 1024 * 1024,
+    );
+
+    const sketchRefRaw = formData
+      .getAll("sketchReferenceImages")
+      .filter((value): value is File => value instanceof File);
+    const sketchReferenceFiles = sketchRefRaw.filter(
+      (file) => isPlannerImageUpload(file) && file.size <= 5 * 1024 * 1024,
     );
 
     const lastUserText =
@@ -216,6 +233,8 @@ export async function POST(request: Request) {
           Boolean(lastUserText.trim())));
 
     const latestImageParts = await loadLatestImageParts(imageFiles);
+    const sketchReferenceParts = await loadLatestImageParts(sketchReferenceFiles);
+    const conceptReferenceParts = [...sketchReferenceParts, ...latestImageParts];
 
     const contents = buildGeminiContents(messages, latestImageParts);
     if (!contents) {
@@ -282,12 +301,15 @@ export async function POST(request: Request) {
           ? "\n\n(Context: early consultation — visualization is exploratory only.)"
           : phase === "consultation" && userAttachedPhotosThisTurn
             ? "\n\n(Context: homeowner shared real room photos during consultation — anchor the sketch to their space and stated goals; still not a final quote.)"
-            : "\n\n(Context: refining direction from prior chat + any photos — adjust the sketch to match their feedback.)";
+            : conceptReferenceParts.length > 0
+              ? "\n\n(Context: homeowner reference photos are attached — produce an updated concept that applies their latest feedback while preserving their actual room's layout, openings, and proportions.)"
+              : "\n\n(Context: refining direction from prior chat — adjust the sketch to match their feedback.)";
 
       const visual = await geminiGenerateConceptImage({
         promptContext: `${transcript}\n\nMorgan reply:\n${cleanReply.slice(0, 6000)}${exploratoryNote}`,
         userGoal: lastUserText.slice(0, 4000) || cleanReply.slice(0, 1200),
-        referenceImageParts: userAttachedPhotosThisTurn ? latestImageParts : undefined,
+        referenceImageParts:
+          conceptReferenceParts.length > 0 ? conceptReferenceParts : undefined,
       });
 
       if (!("error" in visual) && visual.images.length > 0) {
@@ -304,7 +326,10 @@ export async function POST(request: Request) {
           promptPreview: lastUserText.slice(0, 280) || "(photo)",
           replyPreview: cleanReply.slice(0, 480),
           intakeSummary: `phase:${phase};turns:${messages.length}`,
-          imageCount: imageFiles.length + responseImages.length,
+          imageCount:
+            imageFiles.length +
+            sketchReferenceFiles.length +
+            responseImages.length,
         });
       } catch {
         /* Activity logging must not break planner responses */
