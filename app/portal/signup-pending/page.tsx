@@ -23,7 +23,7 @@ export default async function PortalSignupPendingPage({ searchParams }: Props) {
       <div className="mx-auto w-full max-w-lg">
         <div className="mb-8 flex justify-center">
           <Image
-            src="/level-up-install-logo.png"
+            src="/level-up-install-logo.jpg"
             alt="Level Up Install"
             width={480}
             height={160}

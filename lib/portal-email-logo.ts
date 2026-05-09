@@ -1,6 +1,13 @@
 import { readFile } from "fs/promises";
 import { join } from "path";
 
+/**
+ * Verification emails embed the logo from disk (CID attachment). Add your asset at:
+ *   public/level-up-install-logo.jpg   (or .png / .jpeg / .webp)
+ * then commit and redeploy. Same path is used by the site header in app/page.tsx.
+ * Override with env PORTAL_EMAIL_LOGO_PATH if the file lives elsewhere on the server.
+ */
+
 /** Must match `Content-ID` / `cid:` in verification email HTML (letters, numbers, underscore). */
 export const PORTAL_EMAIL_LOGO_CID = "levelup_logo";
 

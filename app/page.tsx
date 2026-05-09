@@ -93,7 +93,7 @@ function HomeContent() {
             className="flex w-[30%] min-w-[104px] max-w-[320px] shrink-0 items-center justify-start py-0.5 sm:py-1"
           >
             <Image
-              src="/level-up-install-logo.png"
+              src="/level-up-install-logo.jpg"
               alt="Level Up Install logo"
               width={1024}
               height={576}
@@ -211,7 +211,7 @@ function HomeContent() {
           <div className="rounded-3xl border border-white/60 bg-white/70 p-6 shadow-[0_15px_50px_-20px_rgba(91,33,182,0.45)] backdrop-blur-sm sm:p-10">
             <div className="mb-6 overflow-hidden rounded-2xl border border-[#e6d7ff] bg-white p-2 shadow-[0_8px_24px_-16px_rgba(91,33,182,0.6)]">
               <Image
-                src="/level-up-install-logo.png"
+                src="/level-up-install-logo.jpg"
                 alt="Level Up Install logo"
                 width={1024}
                 height={576}
