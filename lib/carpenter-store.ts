@@ -250,31 +250,6 @@ function rowToCarpenterUser(row: CarpenterAccountRow): CarpenterUser {
   });
 }
 
-/** Removes CRM link between carpenter jobs and a deleted portal user (jobs retain client name/contact). */
-export async function unlinkPortalUserFromAllCarpenterJobs(
-  portalUserId: string,
-): Promise<number> {
-  const rows = await prisma.carpenterAccount.findMany();
-  let accountsUpdated = 0;
-
-  for (const row of rows) {
-    const user = rowToCarpenterUser(row);
-    let dirty = false;
-    for (const job of user.jobs) {
-      if (job.clientPortalUserId === portalUserId) {
-        delete job.clientPortalUserId;
-        dirty = true;
-      }
-    }
-    if (dirty) {
-      await persistCarpenterAccount(user);
-      accountsUpdated += 1;
-    }
-  }
-
-  return accountsUpdated;
-}
-
 async function persistCarpenterAccount(user: CarpenterUser) {
   await prisma.carpenterAccount.update({
     where: { id: user.id },
@@ -303,6 +278,31 @@ async function persistCarpenterAccount(user: CarpenterUser) {
       jobs: user.jobs as unknown as Prisma.InputJsonValue,
     },
   });
+}
+
+/** Removes CRM link between carpenter jobs and a deleted portal user (jobs retain client name/contact). */
+export async function unlinkPortalUserFromAllCarpenterJobs(
+  portalUserId: string,
+): Promise<number> {
+  const rows = await prisma.carpenterAccount.findMany();
+  let accountsUpdated = 0;
+
+  for (const row of rows) {
+    const user = rowToCarpenterUser(row);
+    let dirty = false;
+    for (const job of user.jobs) {
+      if (job.clientPortalUserId === portalUserId) {
+        delete job.clientPortalUserId;
+        dirty = true;
+      }
+    }
+    if (dirty) {
+      await persistCarpenterAccount(user);
+      accountsUpdated += 1;
+    }
+  }
+
+  return accountsUpdated;
 }
 
 export async function findCarpenterByUsername(username: string) {
