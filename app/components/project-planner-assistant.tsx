@@ -18,6 +18,7 @@ type ChatMessage = {
 type AssistantResponse = {
   reply: string;
   phase: PlannerPhaseTag;
+  showPhotoUploader?: boolean;
   images?: { mimeType: string; data: string }[];
 };
 
@@ -27,6 +28,9 @@ type ProjectPlannerAssistantProps = {
 
 const MAX_IMAGES = 4;
 const MAX_IMAGE_MB = 5;
+
+/** Assistant turns that included a concept image; sent to API for long-loop guidance. */
+const MAX_SKETCH_ROUNDS_TRACKED = 99;
 
 export default function ProjectPlannerAssistant({
   onRequireCreateAccount,
@@ -44,7 +48,8 @@ export default function ProjectPlannerAssistant({
   const [error, setError] = useState<string | null>(null);
   const [saveStatus, setSaveStatus] = useState<string | null>(null);
   const [showCreateAccountPrompt, setShowCreateAccountPrompt] = useState(false);
-  const [includeConceptImage, setIncludeConceptImage] = useState(false);
+  const [photoInviteActive, setPhotoInviteActive] = useState(false);
+  const [sketchRoundsDelivered, setSketchRoundsDelivered] = useState(0);
 
   const galleryInputRef = useRef<HTMLInputElement>(null);
   const cameraInputRef = useRef<HTMLInputElement>(null);
@@ -64,6 +69,14 @@ export default function ProjectPlannerAssistant({
   useEffect(() => {
     scrollAnchorRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
   }, [messages, isLoading]);
+
+  useEffect(() => {
+    if (!photoInviteActive) {
+      setImages([]);
+      if (galleryInputRef.current) galleryInputRef.current.value = "";
+      if (cameraInputRef.current) cameraInputRef.current.value = "";
+    }
+  }, [photoInviteActive]);
 
   const latestAssistantIdea = [...messages]
     .reverse()
@@ -118,10 +131,13 @@ export default function ProjectPlannerAssistant({
       const formData = new FormData();
       formData.append("messages", JSON.stringify(payloadMessages));
       formData.append("phase", phase);
-      formData.append("includeConceptImage", includeConceptImage ? "true" : "false");
       formData.append(
         "priorTurnHadConceptImage",
         priorTurnHadConceptImage ? "true" : "false",
+      );
+      formData.append(
+        "sketchRoundsDelivered",
+        String(Math.min(MAX_SKETCH_ROUNDS_TRACKED, sketchRoundsDelivered)),
       );
       imagesToSend.forEach((image) => formData.append("images", image));
 
@@ -136,6 +152,7 @@ export default function ProjectPlannerAssistant({
 
       const data = (await response.json()) as AssistantResponse;
       setPhase(data.phase);
+      setPhotoInviteActive(Boolean(data.showPhotoUploader));
 
       const assistantImages = data.images?.map((img) => ({
         mimeType: img.mimeType,
@@ -152,6 +169,12 @@ export default function ProjectPlannerAssistant({
           ...(assistantImages?.length ? { images: assistantImages } : {}),
         },
       ]);
+
+      if (assistantImages?.length) {
+        setSketchRoundsDelivered((n) =>
+          Math.min(MAX_SKETCH_ROUNDS_TRACKED, n + 1),
+        );
+      }
     } catch (submitError) {
       const message =
         submitError instanceof Error
@@ -225,9 +248,7 @@ export default function ProjectPlannerAssistant({
       <p className="mt-3 text-[#55337b]">
         Short, conversational guidance for finish carpentry and installs.{" "}
         {PLANNER_ASSISTANT_NAME} asks a few questions first (budget is important early),
-        then offers directions — no walls of text or shopping lists. Share photos anytime, or check
-        &quot;concept sketch&quot; (or ask to show a visual) for an optional illustration — exploratory
-        early on, more directional once you&apos;ve narrowed scope.
+        then invites photos of your space so we can sketch a concept together — refinements happen in chat until the direction feels right. No walls of text or shopping lists.
       </p>
 
       <div className="mt-6 max-h-[min(520px,70vh)] space-y-3 overflow-y-auto rounded-2xl border border-[#ecdefe] bg-[#fcf9ff] p-4">
@@ -278,85 +299,76 @@ export default function ProjectPlannerAssistant({
       ) : null}
 
       <form className="mt-5 space-y-4" onSubmit={handleSubmit}>
-        <div className="flex flex-wrap gap-2">
-          <button
-            type="button"
-            onClick={() => galleryInputRef.current?.click()}
-            className="rounded-full border border-[#dcc6fb] bg-[#faf6ff] px-4 py-2 text-xs font-semibold text-[#4a2381] transition hover:bg-[#f0e6ff] sm:text-sm"
-          >
-            Upload photo
-          </button>
-          <button
-            type="button"
-            onClick={() => cameraInputRef.current?.click()}
-            className="rounded-full border border-[#dcc6fb] bg-[#faf6ff] px-4 py-2 text-xs font-semibold text-[#4a2381] transition hover:bg-[#f0e6ff] sm:text-sm"
-          >
-            Take photo
-          </button>
-          <input
-            ref={galleryInputRef}
-            type="file"
-            multiple
-            accept="image/*"
-            className="hidden"
-            onChange={(event) => handleFilesChange(event.target.files)}
-          />
-          <input
-            ref={cameraInputRef}
-            type="file"
-            accept="image/*"
-            capture="environment"
-            className="hidden"
-            onChange={(event) => handleFilesChange(event.target.files)}
-          />
-          <span className="self-center text-xs text-[#6a4a8f]">
-            Up to {MAX_IMAGES} photos, {MAX_IMAGE_MB}MB each (sent with your next message).
-          </span>
-        </div>
-
-        {previews.length > 0 ? (
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-            {previews.map((preview, index) => (
-              <div
-                key={`${preview.file.name}-${index}`}
-                className="relative overflow-hidden rounded-xl border border-[#dcc6fb]"
+        {photoInviteActive ? (
+          <div className="space-y-3 rounded-2xl border border-[#e8d9ff] bg-[#faf6ff] p-4">
+            <p className="text-sm text-[#4d2e70]">
+              <span className="font-semibold text-[#2f1748]">
+                {PLANNER_ASSISTANT_NAME} asked for pictures of your space.
+              </span>{" "}
+              Upload from your gallery or use your phone camera — they&apos;ll be sent with your next message (
+              up to {MAX_IMAGES} photos, {MAX_IMAGE_MB}MB each).
+            </p>
+            <div className="flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={() => galleryInputRef.current?.click()}
+                className="rounded-full border border-[#dcc6fb] bg-white px-4 py-2 text-xs font-semibold text-[#4a2381] transition hover:bg-[#f0e6ff] sm:text-sm"
               >
-                <Image
-                  src={preview.url}
-                  alt={preview.file.name}
-                  width={320}
-                  height={160}
-                  unoptimized
-                  className="h-24 w-full object-cover"
-                />
-                <button
-                  type="button"
-                  onClick={() => removeImage(index)}
-                  className="absolute right-1 top-1 rounded-full bg-black/60 px-2 py-1 text-xs text-white"
-                >
-                  Remove
-                </button>
+                Upload photo
+              </button>
+              <button
+                type="button"
+                onClick={() => cameraInputRef.current?.click()}
+                className="rounded-full border border-[#dcc6fb] bg-white px-4 py-2 text-xs font-semibold text-[#4a2381] transition hover:bg-[#f0e6ff] sm:text-sm"
+              >
+                Take photo
+              </button>
+              <input
+                ref={galleryInputRef}
+                type="file"
+                multiple
+                accept="image/*"
+                className="hidden"
+                onChange={(event) => handleFilesChange(event.target.files)}
+              />
+              <input
+                ref={cameraInputRef}
+                type="file"
+                accept="image/*"
+                capture="environment"
+                className="hidden"
+                onChange={(event) => handleFilesChange(event.target.files)}
+              />
+            </div>
+
+            {previews.length > 0 ? (
+              <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+                {previews.map((preview, index) => (
+                  <div
+                    key={`${preview.file.name}-${index}`}
+                    className="relative overflow-hidden rounded-xl border border-[#dcc6fb]"
+                  >
+                    <Image
+                      src={preview.url}
+                      alt={preview.file.name}
+                      width={320}
+                      height={160}
+                      unoptimized
+                      className="h-24 w-full object-cover"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => removeImage(index)}
+                      className="absolute right-1 top-1 rounded-full bg-black/60 px-2 py-1 text-xs text-white"
+                    >
+                      Remove
+                    </button>
+                  </div>
+                ))}
               </div>
-            ))}
+            ) : null}
           </div>
         ) : null}
-
-        <label className="flex cursor-pointer items-start gap-3 rounded-2xl border border-[#e8d9ff] bg-[#faf6ff] px-4 py-3">
-          <input
-            type="checkbox"
-            checked={includeConceptImage}
-            onChange={(event) => setIncludeConceptImage(event.target.checked)}
-            className="mt-1 h-4 w-4 rounded border-[#6e3eb2] text-[#6e3eb2]"
-          />
-          <span className="text-sm text-[#4d2e70]">
-            <span className="font-semibold text-[#2f1748]">
-              Include a concept sketch
-            </span>
-            — generates an illustration with your next reply to help picture the space or idea (slower,
-            uses extra AI). Works anytime; early chats are labeled exploratory. You can also write
-            things like &quot;show me&quot; or &quot;sketch it&quot;.
-          </span>
-        </label>
 
         <label className="block">
           <span className="text-sm font-semibold text-[#4a2381]">Your message</span>

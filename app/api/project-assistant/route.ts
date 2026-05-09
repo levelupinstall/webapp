@@ -3,29 +3,59 @@ import { getSessionFromCookie } from "@/lib/client-portal-auth";
 import {
   geminiGenerateConceptImage,
   geminiPlannerMultiTurn,
+  homeownerPureEnthusiasmAfterSketch,
+  homeownerSignalsHappyOrReady,
   isGeminiConfigured,
-  userRequestedImageGeneration,
 } from "@/lib/gemini-client";
-import { extractPlannerPhase } from "@/lib/planner-phase-utils";
+import {
+  extractPlannerPhase,
+  type PlannerPhaseTag,
+} from "@/lib/planner-phase-utils";
 import { MORGAN_PLANNER_SYSTEM } from "@/lib/morgan-planner-prompt";
 import { appendAiPlannerActivity } from "@/lib/client-portal-store";
 
+/** After this many assistant turns that included a concept sketch, steer toward in-person consult. */
+const SKETCH_ROUNDS_BEFORE_IN_PERSON_NUDGE = 5;
+
 function buildMorganSystemInstruction(params: {
   priorTurnHadConceptImage: boolean;
-  willAttachConceptImageThisTurn: boolean;
+  sketchLikelyAfterReply: boolean;
+  userAttachedPhotosThisTurn: boolean;
+  sketchRoundsDelivered: number;
+  suggestInPersonAfterManySketches: boolean;
+  advanceTowardSiteVisit: boolean;
 }): string {
   const chunks: string[] = [MORGAN_PLANNER_SYSTEM];
 
   if (params.priorTurnHadConceptImage) {
     chunks.push(`
 ## Session hint (platform)
-Your immediately previous assistant turn included a **concept visualization** the homeowner saw. Their latest message may react to that image—prioritize understanding what they **like** vs want **changed**. Adjust your guidance across turns until they sound satisfied or ask for another sketch; keep questions focused and short. Once you're giving directional ideas (not still purely filling intake), prefer staying in refine-phase behavior and tagging accordingly.`);
+Your immediately previous assistant turn included a **concept visualization** the homeowner saw. Their latest message may react to that image—prioritize what they **like** vs want **changed**. A **revised sketch will usually be generated** after your reply when they give feedback, so keep your text concise and end by checking if the direction feels closer (still no materials lists).`);
   }
 
-  if (params.willAttachConceptImageThisTurn) {
+  if (params.sketchLikelyAfterReply) {
     chunks.push(`
 ## Session hint (platform)
-This reply will likely be shown **together with a new concept sketch**. Acknowledge that it's a draft for discussion. Close by inviting quick reactions—what appeals and what they'd tweak—so the **next** message can narrow or pivot (still short; no materials lists).`);
+The platform will likely attach a **new concept sketch** after this reply (either because they just shared space photos, or they are refining an earlier sketch). Thank them briefly when photos are new; otherwise acknowledge you're adjusting visually. Ask whether this direction matches what they had in mind and what they'd still tweak.`);
+  }
+
+  if (params.userAttachedPhotosThisTurn) {
+    chunks.push(`
+## Session hint (platform)
+The homeowner attached **real photos of their space** with this message—thank them warmly. Stay short; the system will generate a first-pass sketch from the consultation + their pictures. Prefer moving to \`[PHASE:refine]\` after this turn so you can iterate on the visualization together.`);
+  }
+
+  if (params.suggestInPersonAfterManySketches) {
+    const n = params.sketchRoundsDelivered;
+    chunks.push(`
+## Session hint (platform)
+The homeowner has already received **${n} rounds** with AI concept sketches in this chat. If they still sound unhappy or keep asking for big visual swings, **set expectations kindly**: this planner is a **tool to help** with ideas—not a substitute for walking the actual space. Recommend **booking an in-person consultation** with one of Level Up's carpenters **for the best results** (tie naturally to **Secure your booking** / the call-out when appropriate). Stay brief; it's okay to offer smaller tweaks, but be honest about what remote renders can't capture.`);
+  }
+
+  if (params.advanceTowardSiteVisit) {
+    chunks.push(`
+## Session hint (platform)
+The homeowner sounds **happy with the direction** or **ready to move forward**. Guide them to the **next stage of your sales flow**: use **Secure your booking** below this chat to arrange a **site visit / call-out** so a carpenter can **verify measurements**, confirm conditions in person, and help turn today's ideas into a **clearer, job-ready plan** toward completing the work (still accurate: firm quotes follow after that visit—not here). Sound genuinely pleased for them; keep it one warm invitation, not a hard sell.`);
   }
 
   return chunks.join("\n");
@@ -43,6 +73,12 @@ type ContentPart =
   | { inline_data: { mime_type: string; data: string } };
 
 const MAX_MESSAGES = 28;
+
+function parseClientPhase(raw: string): PlannerPhaseTag {
+  const p = raw.trim().toLowerCase();
+  if (p === "recommend" || p === "refine") return p;
+  return "consultation";
+}
 
 function buildGeminiContents(
   messages: PlannerClientMessage[],
@@ -126,13 +162,20 @@ export async function POST(request: Request) {
       );
     }
 
-    const includeConceptImage =
-      String(formData.get("includeConceptImage") ?? "").toLowerCase() === "true" ||
-      String(formData.get("includeConceptImage") ?? "") === "1";
+    const clientPhase = parseClientPhase(String(formData.get("phase") ?? ""));
 
     const priorTurnHadConceptImage =
       String(formData.get("priorTurnHadConceptImage") ?? "").toLowerCase() === "true" ||
       String(formData.get("priorTurnHadConceptImage") ?? "") === "1";
+
+    const sketchRoundsDeliveredRaw = String(formData.get("sketchRoundsDelivered") ?? "");
+    const sketchRoundsDelivered = Math.min(
+      99,
+      Math.max(0, parseInt(sketchRoundsDeliveredRaw, 10) || 0),
+    );
+
+    const suggestInPersonAfterManySketches =
+      sketchRoundsDelivered >= SKETCH_ROUNDS_BEFORE_IN_PERSON_NUDGE;
 
     const files = formData
       .getAll("images")
@@ -145,9 +188,6 @@ export async function POST(request: Request) {
     const lastUserText =
       [...messages].reverse().find((m) => m.role === "user")?.content?.trim() ?? "";
 
-    const willAttachConceptImageThisTurn =
-      includeConceptImage || userRequestedImageGeneration(lastUserText);
-
     if (!lastUserText && imageFiles.length === 0) {
       return NextResponse.json(
         { error: "Add a message or attach at least one photo." },
@@ -155,7 +195,29 @@ export async function POST(request: Request) {
       );
     }
 
-    const contents = buildGeminiContents(messages, await loadLatestImageParts(imageFiles));
+    const userAttachedPhotosThisTurn = imageFiles.length > 0;
+
+    const pureEnthusiasmAfterSketch =
+      priorTurnHadConceptImage &&
+      !userAttachedPhotosThisTurn &&
+      homeownerPureEnthusiasmAfterSketch(lastUserText);
+
+    const advanceTowardSiteVisit =
+      homeownerSignalsHappyOrReady(lastUserText) &&
+      (clientPhase === "recommend" ||
+        clientPhase === "refine" ||
+        priorTurnHadConceptImage);
+
+    const sketchLikelyAfterReply =
+      !pureEnthusiasmAfterSketch &&
+      (userAttachedPhotosThisTurn ||
+        (priorTurnHadConceptImage &&
+          clientPhase !== "consultation" &&
+          Boolean(lastUserText.trim())));
+
+    const latestImageParts = await loadLatestImageParts(imageFiles);
+
+    const contents = buildGeminiContents(messages, latestImageParts);
     if (!contents) {
       return NextResponse.json(
         { error: "Conversation must end with your latest message." },
@@ -171,7 +233,11 @@ export async function POST(request: Request) {
         const result = await geminiPlannerMultiTurn({
           systemInstruction: buildMorganSystemInstruction({
             priorTurnHadConceptImage,
-            willAttachConceptImageThisTurn,
+            sketchLikelyAfterReply,
+            userAttachedPhotosThisTurn,
+            sketchRoundsDelivered,
+            suggestInPersonAfterManySketches,
+            advanceTowardSiteVisit,
           }),
           contents,
         });
@@ -192,26 +258,36 @@ export async function POST(request: Request) {
       replyRaw = buildFallbackReply(imageFiles.length);
     }
 
-    const { cleanReply, phase } = extractPlannerPhase(replyRaw);
+    const { cleanReply, phase, showPhotoUploader } = extractPlannerPhase(replyRaw);
 
-    const allowConceptImage = willAttachConceptImageThisTurn;
+    const allowConceptImage =
+      isGeminiConfigured() &&
+      plannerInlineImages.length === 0 &&
+      !pureEnthusiasmAfterSketch &&
+      (userAttachedPhotosThisTurn ||
+        (priorTurnHadConceptImage &&
+          Boolean(lastUserText.trim()) &&
+          phase !== "consultation"));
 
     const responseImages: { mimeType: string; data: string }[] = [...plannerInlineImages];
 
-    if (allowConceptImage && isGeminiConfigured() && responseImages.length === 0) {
+    if (allowConceptImage && responseImages.length === 0) {
       const transcript = messages
         .slice(-12)
         .map((m) => `${m.role === "user" ? "Homeowner" : "Morgan"}: ${m.content}`)
         .join("\n");
 
       const exploratoryNote =
-        phase === "consultation"
-          ? "\n\n(Context: early consultation — any visualization is exploratory/inspirational only, not a committed design or quote.)"
-          : "";
+        phase === "consultation" && !userAttachedPhotosThisTurn
+          ? "\n\n(Context: early consultation — visualization is exploratory only.)"
+          : phase === "consultation" && userAttachedPhotosThisTurn
+            ? "\n\n(Context: homeowner shared real room photos during consultation — anchor the sketch to their space and stated goals; still not a final quote.)"
+            : "\n\n(Context: refining direction from prior chat + any photos — adjust the sketch to match their feedback.)";
 
       const visual = await geminiGenerateConceptImage({
         promptContext: `${transcript}\n\nMorgan reply:\n${cleanReply.slice(0, 6000)}${exploratoryNote}`,
         userGoal: lastUserText.slice(0, 4000) || cleanReply.slice(0, 1200),
+        referenceImageParts: userAttachedPhotosThisTurn ? latestImageParts : undefined,
       });
 
       if (!("error" in visual) && visual.images.length > 0) {
@@ -238,6 +314,7 @@ export async function POST(request: Request) {
     return NextResponse.json({
       reply: cleanReply,
       phase,
+      showPhotoUploader,
       ...(responseImages.length ? { images: responseImages } : {}),
     });
   } catch {

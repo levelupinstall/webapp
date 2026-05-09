@@ -4,7 +4,8 @@ export type PlannerPhaseTag = "consultation" | "recommend" | "refine";
 
 /** Remove every `[PHASE:…]` marker (any casing/spacing, any suffix) from user-visible copy. */
 export function stripPlannerPhaseMarkers(text: string): string {
-  const noBracketTags = text.replace(/\[PHASE:\s*[^\]]+\]/gi, "");
+  const noPhotoPrompt = text.replace(/\[PHOTO_PROMPT\]/gi, "");
+  const noBracketTags = noPhotoPrompt.replace(/\[PHASE:\s*[^\]]+\]/gi, "");
   const lines = noBracketTags.split(/\r?\n/).filter((line) => {
     const t = line.trim();
     if (!t) return true;
@@ -24,11 +25,18 @@ export function stripPlannerPhaseMarkers(text: string): string {
  * Parse phase from the **last** recognized tag; strip **all** phase tags from the reply.
  * Accepts common model typos (e.g. recomend → recommend).
  */
+/** Morgan asks the UI to offer camera/upload for space photos (stripped from chat display). */
+export function plannerRequestedPhotoUpload(reply: string): boolean {
+  return /\[PHOTO_PROMPT\]/i.test(reply);
+}
+
 export function extractPlannerPhase(reply: string): {
   cleanReply: string;
   phase: PlannerPhaseTag;
+  showPhotoUploader: boolean;
 } {
   const trimmed = reply.trim();
+  const showPhotoUploader = plannerRequestedPhotoUpload(trimmed);
   let phase: PlannerPhaseTag = "consultation";
 
   const tagRegex =
@@ -46,5 +54,5 @@ export function extractPlannerPhase(reply: string): {
   }
 
   const cleanReply = stripPlannerPhaseMarkers(trimmed);
-  return { cleanReply, phase };
+  return { cleanReply, phase, showPhotoUploader };
 }

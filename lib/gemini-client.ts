@@ -48,6 +48,51 @@ export function userRequestedImageGeneration(message: string): boolean {
   );
 }
 
+/** Homeowner sounds pleased or ready to move forward (used for booking / pipeline hints). */
+export function homeownerSignalsHappyOrReady(message: string): boolean {
+  const p = message.toLowerCase().trim();
+  if (p.length < 4) return false;
+  if (
+    /\b(not\s+happy|unhappy|don'?t\s+like|doesn'?t\s+look\s+good|hate|awful|terrible|not\s+quite)\b/i.test(
+      p,
+    )
+  ) {
+    return false;
+  }
+
+  if (
+    /\b(love\s+it|love\s+this|loving\s+it|looks\s+great|looks\s+amazing|looks\s+perfect|looks\s+good|looks\s+fantastic|perfect|exactly\s+what|that'?s\s+exactly|nailed\s+it|couldn'?t\s+be\s+better|so\s+happy|really\s+happy|really\s+pleased|happy\s+with|pleased\s+with|works\s+for\s+me|i'?m\s+sold|super\s+excited|really\s+excited|let'?s\s+(do\s+it|move\s+forward|book)|ready\s+to\s+book|book\s+(you|this|a\s+visit)|come\s+out|have\s+someone\s+out|schedule\s+(a\s+)?(visit|appointment)|next\s+step|move\s+forward\s+with)\b/i.test(
+      p,
+    )
+  ) {
+    return true;
+  }
+
+  if (/\b(i\s+really\s+like|i\s+love\s+it|i\s+like\s+it|this\s+is\s+(great|perfect|awesome))\b/i.test(p)) {
+    return true;
+  }
+
+  if (
+    /\b(yes|yeah|yep)\b/i.test(p) &&
+    /\b(love|perfect|great|awesome|amazing|exactly)\b/i.test(p)
+  ) {
+    return true;
+  }
+
+  return false;
+}
+
+/**
+ * Strong positive reaction without contrast words — usually no new refinement sketch needed.
+ */
+export function homeownerPureEnthusiasmAfterSketch(message: string): boolean {
+  const t = message.trim();
+  if (!homeownerSignalsHappyOrReady(t)) return false;
+  const p = t.toLowerCase();
+  if (/\b(but|except|however|although|though|only\s+issue)\b/.test(p)) return false;
+  return true;
+}
+
 function extractParts(json: unknown): GeminiGenerateResult {
   const root = json as {
     candidates?: Array<{
@@ -230,6 +275,8 @@ export async function geminiGenerateConceptImage(params: {
   promptContext: string;
   /** Short user-facing goal line */
   userGoal: string;
+  /** Space photos from the homeowner — improves sketch grounding when present. */
+  referenceImageParts?: ContentPart[];
 }): Promise<GeminiGenerateResult | { error: string }> {
   const model = defaultGeminiImageModel();
 
@@ -243,12 +290,17 @@ ${params.promptContext.slice(0, 12000)}
 Specific visualization request:
 ${params.userGoal.slice(0, 4000)}`;
 
+  const parts: ContentPart[] = [
+    { text: fullPrompt },
+    ...(params.referenceImageParts ?? []),
+  ];
+
   const result = await geminiGenerateContent({
     model,
     contents: [
       {
         role: "user",
-        parts: [{ text: fullPrompt }],
+        parts,
       },
     ],
     generationConfig: {
