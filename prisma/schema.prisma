@@ -19,6 +19,8 @@ model PortalUser {
   signupVerificationCodeHash String    @default("") @map("signup_verification_code_hash")
   signupVerificationExpiresAt DateTime? @map("signup_verification_expires_at")
   accountVerifiedAt          DateTime? @map("account_verified_at")
+  passwordResetTokenHash     String    @default("") @map("password_reset_token_hash")
+  passwordResetExpiresAt     DateTime? @map("password_reset_expires_at")
   fullName                   String    @default("") @map("full_name")
   serviceAddress             String    @default("") @map("service_address") @db.Text
   avatarDataUrl              String    @default("") @map("avatar_data_url") @db.Text
@@ -32,6 +34,8 @@ model PortalUser {
   aiPlannerActivity Json @default("[]") @map("ai_planner_activity")
   portalAnalytics   Json @default("{}") @map("portal_analytics")
   communicationLog  Json @default("[]") @map("communication_log")
+  /// Snapshot from request at registration (IP/geo headers when available).
+  signupLocationLog Json? @map("signup_location_log")
 
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
@@ -65,6 +69,10 @@ model CarpenterAccount {
   profilePictureDataUrl          String   @default("") @map("profile_picture_data_url") @db.Text
 
   jobs Json @default("[]")
+  /// Snapshot from request at registration (IP/geo headers when available).
+  signupLocationLog Json? @map("signup_location_log")
+  passwordResetTokenHash String @default("") @map("password_reset_token_hash")
+  passwordResetExpiresAt  DateTime? @map("password_reset_expires_at")
 
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")

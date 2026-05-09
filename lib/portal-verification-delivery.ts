@@ -72,6 +72,187 @@ ${logoBlock}
 </html>`;
 }
 
+function buildPasswordResetEmailHtml(params: {
+  username: string;
+  resetLink: string;
+  logoCid: string | null;
+}): string {
+  const firstName = params.username.trim().split(/\s+/)[0] ?? "";
+  const greeting = firstName ? `Hi ${escapeHtml(firstName)},` : "Hi there,";
+  const safeLink = escapeHtml(params.resetLink);
+
+  const logoBlock = params.logoCid
+    ? `<img src="cid:${escapeHtml(params.logoCid)}" alt="Level Up Install" width="200" style="display:block;margin:0 auto;max-width:200px;height:auto;border:0;outline:none;text-decoration:none;"/>`
+    : `<div role="presentation" style="font-size:22px;font-weight:700;color:#6e3eb2;letter-spacing:-0.02em;line-height:1.2;">Level Up Install</div>`;
+
+  return `<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="utf-8"/><meta name="viewport" content="width=device-width"/></head>
+<body style="margin:0;padding:0;background-color:#f6f1ff;font-family:Georgia,'Times New Roman',serif;">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color:#f6f1ff;padding:24px 12px;">
+<tr><td align="center">
+<table role="presentation" width="100%" style="max-width:520px;background:#ffffff;border-radius:16px;overflow:hidden;border:1px solid #e8d9ff;box-shadow:0 8px 28px rgba(47,23,72,0.08);">
+<tr><td style="padding:28px 28px 12px;text-align:center;background:linear-gradient(180deg,#faf6ff 0%,#ffffff 100%);">
+${logoBlock}
+</td></tr>
+<tr><td style="padding:8px 28px 28px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;color:#2f1748;font-size:16px;line-height:1.55;">
+<p style="margin:0 0 16px;font-size:17px;">${greeting}</p>
+<p style="margin:0 0 16px;">We received a request to reset the password for your <strong>Level Up Install</strong> client portal account.</p>
+<p style="margin:0 0 20px;">Use the button below to choose a new password. This link expires in <strong>one hour</strong>.</p>
+<table role="presentation" cellpadding="0" cellspacing="0" style="margin:0 auto 24px;">
+<tr><td style="border-radius:999px;background:#6e3eb2;">
+<a href="${safeLink}" style="display:inline-block;padding:14px 28px;font-weight:600;font-size:15px;color:#ffffff;text-decoration:none;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;">Reset my password</a>
+</td></tr>
+</table>
+<p style="margin:0 0 12px;font-size:13px;color:#6a4a8f;">If the button does not work, copy and paste this link into your browser:</p>
+<p style="margin:0 0 24px;font-size:12px;word-break:break-all;color:#5b3292;">${safeLink}</p>
+<p style="margin:0;font-size:14px;color:#6a4a8f;">If you did not ask for a reset, you can ignore this email — your password will stay the same.</p>
+<p style="margin:20px 0 0;font-size:14px;color:#2f1748;">Warm regards,<br/><strong>Level Up Install</strong></p>
+</td></tr>
+</table>
+</td></tr>
+</table>
+</body>
+</html>`;
+}
+
+/** Password reset link email (Gmail service account, same config as signup verification). */
+export async function sendPortalPasswordResetEmail(params: {
+  username: string;
+  email: string;
+  resetLink: string;
+}): Promise<{ sent: boolean; error?: string }> {
+  const subject = "Reset your Level Up Install password";
+  const link = params.resetLink.trim();
+  if (!link) {
+    return { sent: false, error: "Missing reset link." };
+  }
+
+  const greet = params.username.trim() ? `, ${params.username.trim()}` : "";
+
+  const text = `Hello${greet},
+
+We received a request to reset your Level Up Install client portal password.
+
+Open this link to choose a new password (valid for one hour):
+${link}
+
+If you did not request this, you can ignore this email.
+
+— Level Up Install`;
+
+  const logoAsset = await loadPortalEmailLogo();
+  const logoCid = logoAsset ? PORTAL_EMAIL_LOGO_CID : null;
+  const html = buildPasswordResetEmailHtml({
+    username: params.username,
+    resetLink: link,
+    logoCid,
+  });
+
+  const inlineImages =
+    logoAsset ?
+      [
+        {
+          cid: PORTAL_EMAIL_LOGO_CID,
+          contentType: logoAsset.contentType,
+          content: logoAsset.buffer,
+        },
+      ]
+    : undefined;
+
+  return sendSignupEmail(params.email, subject, text, html, inlineImages);
+}
+
+function buildCarpenterPasswordResetEmailHtml(params: {
+  displayName: string;
+  resetLink: string;
+  logoCid: string | null;
+}): string {
+  const firstName = params.displayName.trim().split(/\s+/)[0] ?? "";
+  const greeting = firstName ? `Hi ${escapeHtml(firstName)},` : "Hi there,";
+  const safeLink = escapeHtml(params.resetLink);
+
+  const logoBlock = params.logoCid
+    ? `<img src="cid:${escapeHtml(params.logoCid)}" alt="Level Up Install" width="200" style="display:block;margin:0 auto;max-width:200px;height:auto;border:0;outline:none;text-decoration:none;"/>`
+    : `<div role="presentation" style="font-size:22px;font-weight:700;color:#6e3eb2;letter-spacing:-0.02em;line-height:1.2;">Level Up Install</div>`;
+
+  return `<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="utf-8"/><meta name="viewport" content="width=device-width"/></head>
+<body style="margin:0;padding:0;background-color:#f6f1ff;font-family:Georgia,'Times New Roman',serif;">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color:#f6f1ff;padding:24px 12px;">
+<tr><td align="center">
+<table role="presentation" width="100%" style="max-width:520px;background:#ffffff;border-radius:16px;overflow:hidden;border:1px solid #e8d9ff;box-shadow:0 8px 28px rgba(47,23,72,0.08);">
+<tr><td style="padding:28px 28px 12px;text-align:center;background:linear-gradient(180deg,#faf6ff 0%,#ffffff 100%);">
+${logoBlock}
+</td></tr>
+<tr><td style="padding:8px 28px 28px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;color:#2f1748;font-size:16px;line-height:1.55;">
+<p style="margin:0 0 16px;font-size:17px;">${greeting}</p>
+<p style="margin:0 0 16px;">We received a request to reset your password for the <strong>Level Up Install carpenter app</strong>.</p>
+<p style="margin:0 0 20px;">Use the button below to choose a new password. This link expires in <strong>one hour</strong>.</p>
+<table role="presentation" cellpadding="0" cellspacing="0" style="margin:0 auto 24px;">
+<tr><td style="border-radius:999px;background:#6e3eb2;">
+<a href="${safeLink}" style="display:inline-block;padding:14px 28px;font-weight:600;font-size:15px;color:#ffffff;text-decoration:none;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;">Reset my password</a>
+</td></tr>
+</table>
+<p style="margin:0 0 12px;font-size:13px;color:#6a4a8f;">If the button does not work, copy and paste this link into your browser:</p>
+<p style="margin:0 0 24px;font-size:12px;word-break:break-all;color:#5b3292;">${safeLink}</p>
+<p style="margin:0;font-size:14px;color:#6a4a8f;">If you did not ask for a reset, you can ignore this email.</p>
+<p style="margin:20px 0 0;font-size:14px;color:#2f1748;">Warm regards,<br/><strong>Level Up Install</strong></p>
+</td></tr>
+</table>
+</td></tr>
+</table>
+</body>
+</html>`;
+}
+
+export async function sendCarpenterPasswordResetEmail(params: {
+  displayName: string;
+  email: string;
+  resetLink: string;
+}): Promise<{ sent: boolean; error?: string }> {
+  const subject = "Reset your Level Up carpenter app password";
+  const link = params.resetLink.trim();
+  if (!link) {
+    return { sent: false, error: "Missing reset link." };
+  }
+
+  const greet = params.displayName.trim() ? `, ${params.displayName.trim()}` : "";
+
+  const text = `Hello${greet},
+
+We received a request to reset your Level Up Install carpenter app password.
+
+Open this link to choose a new password (valid for one hour):
+${link}
+
+If you did not request this, you can ignore this email.
+
+— Level Up Install`;
+
+  const logoAsset = await loadPortalEmailLogo();
+  const logoCid = logoAsset ? PORTAL_EMAIL_LOGO_CID : null;
+  const html = buildCarpenterPasswordResetEmailHtml({
+    displayName: params.displayName,
+    resetLink: link,
+    logoCid,
+  });
+
+  const inlineImages =
+    logoAsset ?
+      [
+        {
+          cid: PORTAL_EMAIL_LOGO_CID,
+          contentType: logoAsset.contentType,
+          content: logoAsset.buffer,
+        },
+      ]
+    : undefined;
+
+  return sendSignupEmail(params.email, subject, text, html, inlineImages);
+}
+
 export function normalizePhoneE164(raw: string): string | null {
   const trimmed = raw.trim();
   if (!trimmed) return null;

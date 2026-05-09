@@ -73,6 +73,11 @@ export default function ClientPortal({
     contactHint: string;
   }>(null);
   const [resendBusy, setResendBusy] = useState(false);
+  const [forgotPasswordOpen, setForgotPasswordOpen] = useState(false);
+  const [forgotEmail, setForgotEmail] = useState("");
+  const [forgotBusy, setForgotBusy] = useState(false);
+  const [forgotMessage, setForgotMessage] = useState<string | null>(null);
+  const [forgotError, setForgotError] = useState<string | null>(null);
   const router = useRouter();
   const savedProjectsTrackRef = useRef(false);
   const spacePhotosTrackRef = useRef(false);
@@ -101,6 +106,9 @@ export default function ClientPortal({
 
   useEffect(() => {
     setAuthGate(null);
+    setForgotPasswordOpen(false);
+    setForgotMessage(null);
+    setForgotError(null);
   }, [mode]);
 
   useEffect(() => {
@@ -153,6 +161,9 @@ export default function ClientPortal({
     event.preventDefault();
     setError(null);
     setAuthGate(null);
+    if (mode === "login" && forgotPasswordOpen) {
+      return;
+    }
     setLoading(true);
     try {
       const endpoint = mode === "login" ? "/api/portal/login" : "/api/portal/register";
@@ -212,6 +223,39 @@ export default function ClientPortal({
       setError(authError instanceof Error ? authError.message : "Auth failed.");
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function handleForgotPassword() {
+    setForgotError(null);
+    setForgotMessage(null);
+    const em = forgotEmail.trim().toLowerCase();
+    if (!em || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(em)) {
+      setForgotError("Enter the email address on your account.");
+      return;
+    }
+    setForgotBusy(true);
+    try {
+      const response = await fetch("/api/portal/forgot-password", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: em }),
+      });
+      const data = (await response.json()) as { error?: string; message?: string };
+      if (!response.ok) {
+        throw new Error(data.error || "Could not send reset email.");
+      }
+      setForgotMessage(
+        data.message ??
+          "If an account exists for that email, we sent instructions to reset your password.",
+      );
+      setForgotEmail("");
+    } catch (forgotErr) {
+      setForgotError(
+        forgotErr instanceof Error ? forgotErr.message : "Could not send reset email.",
+      );
+    } finally {
+      setForgotBusy(false);
     }
   }
 
@@ -408,13 +452,15 @@ export default function ClientPortal({
           </button>
         </div>
         <form className="mt-5 space-y-3" onSubmit={handleAuth}>
-          <input
-            required
-            value={username}
-            onChange={(event) => setUsername(event.target.value)}
-            placeholder="Username"
-            className="w-full rounded-xl border border-[#dcbef9] bg-white px-3 py-2 text-sm text-[#32174f]"
-          />
+          {(mode === "register" || (mode === "login" && !forgotPasswordOpen)) && (
+            <input
+              required
+              value={username}
+              onChange={(event) => setUsername(event.target.value)}
+              placeholder="Username"
+              className="w-full rounded-xl border border-[#dcbef9] bg-white px-3 py-2 text-sm text-[#32174f]"
+            />
+          )}
           {mode === "register" ? (
             <input
               required
@@ -425,16 +471,78 @@ export default function ClientPortal({
               className="w-full rounded-xl border border-[#dcbef9] bg-white px-3 py-2 text-sm text-[#32174f]"
             />
           ) : null}
-          <input
-            required
-            type="password"
-            value={password}
-            onChange={(event) => setPassword(event.target.value)}
-            placeholder="Password (min 8 characters)"
-            className="w-full rounded-xl border border-[#dcbef9] bg-white px-3 py-2 text-sm text-[#32174f]"
-          />
+          {(mode === "register" || (mode === "login" && !forgotPasswordOpen)) && (
+            <input
+              required
+              type="password"
+              value={password}
+              onChange={(event) => setPassword(event.target.value)}
+              placeholder="Password (min 8 characters)"
+              className="w-full rounded-xl border border-[#dcbef9] bg-white px-3 py-2 text-sm text-[#32174f]"
+            />
+          )}
+          {mode === "login" && !forgotPasswordOpen ? (
+            <div className="flex justify-end">
+              <button
+                type="button"
+                onClick={() => {
+                  setForgotPasswordOpen(true);
+                  setForgotMessage(null);
+                  setForgotError(null);
+                  setError(null);
+                  setAuthGate(null);
+                }}
+                className="text-sm font-semibold text-[#5b3292] underline decoration-[#c9a5f1] underline-offset-4 hover:text-[#4a2381]"
+              >
+                Forgot password?
+              </button>
+            </div>
+          ) : null}
+          {mode === "login" && forgotPasswordOpen ? (
+            <div className="rounded-2xl border border-[#e8d9ff] bg-[#faf6ff] px-4 py-4 space-y-3">
+              <p className="text-sm text-[#4d2e70]">
+                Enter the email address on your account. We&apos;ll send a link to reset your
+                password if the account exists and is verified.
+              </p>
+              <input
+                type="email"
+                value={forgotEmail}
+                onChange={(event) => setForgotEmail(event.target.value)}
+                placeholder="Your email"
+                autoComplete="email"
+                className="w-full rounded-xl border border-[#dcbef9] bg-white px-3 py-2 text-sm text-[#32174f]"
+              />
+              {forgotError ? <p className="text-sm text-[#a2175d]">{forgotError}</p> : null}
+              {forgotMessage ? (
+                <p className="text-sm font-medium text-[#2f7a32]">{forgotMessage}</p>
+              ) : null}
+              <div className="flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  disabled={forgotBusy}
+                  onClick={() => void handleForgotPassword()}
+                  className="rounded-full bg-[#6e3eb2] px-5 py-2 text-sm font-semibold text-white disabled:opacity-60"
+                >
+                  {forgotBusy ? "Sending…" : "Send reset link"}
+                </button>
+                <button
+                  type="button"
+                  disabled={forgotBusy}
+                  onClick={() => {
+                    setForgotPasswordOpen(false);
+                    setForgotEmail("");
+                    setForgotMessage(null);
+                    setForgotError(null);
+                  }}
+                  className="rounded-full border border-[#6e3eb2] px-5 py-2 text-sm font-semibold text-[#5b3292]"
+                >
+                  Back to login
+                </button>
+              </div>
+            </div>
+          ) : null}
           {error ? <p className="text-sm text-[#a2175d]">{error}</p> : null}
-          {authGate ? (
+          {authGate && !(mode === "login" && forgotPasswordOpen) ? (
             <div className="rounded-2xl border border-[#e8d9ff] bg-[#faf6ff] px-4 py-4">
               <p className="text-sm text-[#4d2e70]">
                 {authGate.contactHint ? (
@@ -463,13 +571,15 @@ export default function ClientPortal({
               </button>
             </div>
           ) : null}
-          <button
-            type="submit"
-            disabled={loading}
-            className="rounded-full bg-[#6e3eb2] px-5 py-2 text-sm font-semibold text-white"
-          >
-            {loading ? "Please wait..." : mode === "login" ? "Login" : "Create Account"}
-          </button>
+          {!(mode === "login" && forgotPasswordOpen) ? (
+            <button
+              type="submit"
+              disabled={loading}
+              className="rounded-full bg-[#6e3eb2] px-5 py-2 text-sm font-semibold text-white"
+            >
+              {loading ? "Please wait..." : mode === "login" ? "Login" : "Create Account"}
+            </button>
+          ) : null}
         </form>
       </section>
     );

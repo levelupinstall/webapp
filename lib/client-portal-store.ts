@@ -1,9 +1,10 @@
 import type { PortalUser as PortalUserRow } from "@prisma/client";
 import { Prisma } from "@prisma/client";
-import { randomInt, randomUUID } from "crypto";
+import { randomBytes, randomInt, randomUUID } from "crypto";
 import bcrypt from "bcryptjs";
 
 import { unlinkPortalUserFromAllCarpenterJobs } from "@/lib/carpenter-store";
+import { hashPasswordResetToken } from "@/lib/password-reset-token";
 import { prisma } from "@/lib/prisma";
 
 export type Idea = {
@@ -216,12 +217,86 @@ export async function findPortalUserByEmail(email: string) {
   return row ? rowToUserRecord(row) : undefined;
 }
 
+/**
+ * Verified portal accounts only. Saves hashed token + expiry; returns plaintext token for the email link.
+ */
+export async function beginPortalPasswordReset(
+  email: string,
+): Promise<{
+  plainToken: string;
+  username: string;
+  toEmail: string;
+  userId: string;
+} | null> {
+  const normalized = email.trim().toLowerCase();
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalized)) return null;
+
+  const row = await prisma.portalUser.findUnique({ where: { email: normalized } });
+  if (!row || row.signupVerificationPending) return null;
+
+  const plainToken = randomBytes(32).toString("base64url");
+  const hash = hashPasswordResetToken(plainToken);
+
+  await prisma.portalUser.update({
+    where: { id: row.id },
+    data: {
+      passwordResetTokenHash: hash,
+      passwordResetExpiresAt: new Date(Date.now() + 60 * 60 * 1000),
+    },
+  });
+
+  return {
+    plainToken,
+    username: row.username,
+    toEmail: row.email,
+    userId: row.id,
+  };
+}
+
+export async function clearPortalPasswordResetChallenge(userId: string): Promise<void> {
+  await prisma.portalUser.update({
+    where: { id: userId },
+    data: {
+      passwordResetTokenHash: "",
+      passwordResetExpiresAt: null,
+    },
+  });
+}
+
+export async function finishPortalPasswordReset(
+  plainToken: string,
+  newPasswordHash: string,
+): Promise<boolean> {
+  const trimmed = plainToken.trim();
+  if (!trimmed) return false;
+  const hash = hashPasswordResetToken(trimmed);
+
+  const row = await prisma.portalUser.findFirst({
+    where: {
+      passwordResetTokenHash: hash,
+      passwordResetExpiresAt: { gt: new Date() },
+    },
+  });
+  if (!row) return false;
+
+  await prisma.portalUser.update({
+    where: { id: row.id },
+    data: {
+      passwordHash: newPasswordHash,
+      passwordResetTokenHash: "",
+      passwordResetExpiresAt: null,
+    },
+  });
+  return true;
+}
+
 export async function createUser(params: {
   username: string;
   email: string;
   passwordHash: string;
   phone: string;
   verificationChannel: "email" | "sms";
+  signupLocationLog?: Prisma.InputJsonValue;
 }): Promise<{ user: UserRecord; verificationCode: string | null }> {
   const existingUsername = await prisma.portalUser.findFirst({
     where: { username: { equals: params.username, mode: "insensitive" } },
@@ -279,6 +354,9 @@ export async function createUser(params: {
         aiPlannerActivity: [],
         portalAnalytics: portalAnalyticsPayload,
         communicationLog: [],
+        ...(params.signupLocationLog !== undefined
+          ? { signupLocationLog: params.signupLocationLog }
+          : {}),
       },
     });
     return { user: rowToUserRecord(row), verificationCode };
@@ -706,6 +784,7 @@ export async function listPortalUsersForAdmin() {
         spacePhotosSectionOpens: 0,
       },
       communicationLog: user.communicationLog ?? [],
+      signupLocationLog: row.signupLocationLog ?? null,
     };
   });
 }

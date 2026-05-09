@@ -3,6 +3,7 @@ import bcrypt from "bcryptjs";
 import { createCarpenterUser } from "@/lib/carpenter-store";
 import { validateCarpenterEmergencyAndSkills } from "@/lib/carpenter-profile-rules";
 import { setCarpenterSession } from "@/lib/carpenter-auth";
+import { captureSignupLocationFromRequest } from "@/lib/signup-location-log";
 
 export async function POST(request: Request) {
   try {
@@ -95,6 +96,7 @@ export async function POST(request: Request) {
     }
 
     const passwordHash = await bcrypt.hash(password, 10);
+    const signupLocationLog = captureSignupLocationFromRequest(request);
     const user = await createCarpenterUser({
       username,
       passwordHash,
@@ -112,6 +114,7 @@ export async function POST(request: Request) {
       hasWsib,
       wsibDetails,
       profilePictureDataUrl: body.profilePictureDataUrl || "",
+      signupLocationLog,
     });
     await setCarpenterSession({ carpenterId: user.id, username: user.username });
     return NextResponse.json({ success: true });

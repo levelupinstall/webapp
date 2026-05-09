@@ -14,6 +14,7 @@ import {
   sendPortalSignupVerification,
 } from "@/lib/portal-verification-delivery";
 import { signPortalSignupVerificationTicket } from "@/lib/portal-verification-ticket";
+import { captureSignupLocationFromRequest } from "@/lib/signup-location-log";
 
 export async function POST(request: Request) {
   try {
@@ -164,12 +165,14 @@ export async function POST(request: Request) {
     }
 
     const passwordHash = await bcrypt.hash(password, 10);
+    const signupLocationLog = captureSignupLocationFromRequest(request);
     const { user, verificationCode } = await createUser({
       username,
       email,
       passwordHash,
       phone: phoneE164 ?? "",
       verificationChannel,
+      signupLocationLog,
     });
 
     const ticket = signPortalSignupVerificationTicket(user.id);

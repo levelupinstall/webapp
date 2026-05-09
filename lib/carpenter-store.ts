@@ -1,7 +1,8 @@
-import { randomUUID } from "crypto";
+import { randomBytes, randomUUID } from "crypto";
 import type { CarpenterAccount as CarpenterAccountRow } from "@prisma/client";
 import { Prisma } from "@prisma/client";
 
+import { hashPasswordResetToken } from "@/lib/password-reset-token";
 import { prisma } from "@/lib/prisma";
 import type { CarpenterCalendarDay } from "./carpenter-calendar-types";
 
@@ -312,6 +313,80 @@ export async function findCarpenterByUsername(username: string) {
   return row ? rowToCarpenterUser(row) : undefined;
 }
 
+export async function beginCarpenterPasswordReset(
+  email: string,
+): Promise<{
+  plainToken: string;
+  displayName: string;
+  toEmail: string;
+  userId: string;
+} | null> {
+  const normalized = email.trim().toLowerCase();
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalized)) return null;
+
+  const row = await prisma.carpenterAccount.findFirst({
+    where: { email: { equals: normalized, mode: "insensitive" } },
+  });
+  if (!row || !row.email.trim()) return null;
+
+  const plainToken = randomBytes(32).toString("base64url");
+  const hash = hashPasswordResetToken(plainToken);
+
+  await prisma.carpenterAccount.update({
+    where: { id: row.id },
+    data: {
+      passwordResetTokenHash: hash,
+      passwordResetExpiresAt: new Date(Date.now() + 60 * 60 * 1000),
+    },
+  });
+
+  const displayName = row.fullName.trim() || row.username;
+
+  return {
+    plainToken,
+    displayName,
+    toEmail: row.email.trim().toLowerCase(),
+    userId: row.id,
+  };
+}
+
+export async function clearCarpenterPasswordResetChallenge(userId: string): Promise<void> {
+  await prisma.carpenterAccount.update({
+    where: { id: userId },
+    data: {
+      passwordResetTokenHash: "",
+      passwordResetExpiresAt: null,
+    },
+  });
+}
+
+export async function finishCarpenterPasswordReset(
+  plainToken: string,
+  newPasswordHash: string,
+): Promise<boolean> {
+  const trimmed = plainToken.trim();
+  if (!trimmed) return false;
+  const hash = hashPasswordResetToken(trimmed);
+
+  const row = await prisma.carpenterAccount.findFirst({
+    where: {
+      passwordResetTokenHash: hash,
+      passwordResetExpiresAt: { gt: new Date() },
+    },
+  });
+  if (!row) return false;
+
+  await prisma.carpenterAccount.update({
+    where: { id: row.id },
+    data: {
+      passwordHash: newPasswordHash,
+      passwordResetTokenHash: "",
+      passwordResetExpiresAt: null,
+    },
+  });
+  return true;
+}
+
 export async function createCarpenterUser(params: {
   username: string;
   passwordHash: string;
@@ -330,6 +405,7 @@ export async function createCarpenterUser(params: {
   wsibDetails: string;
   availabilityNotes?: string;
   profilePictureDataUrl: string;
+  signupLocationLog?: Prisma.InputJsonValue;
 }) {
   const exists = await prisma.carpenterAccount.findFirst({
     where: { username: { equals: params.username, mode: "insensitive" } },
@@ -424,6 +500,9 @@ export async function createCarpenterUser(params: {
         googleCalendarRefreshToken: "",
         profilePictureDataUrl: params.profilePictureDataUrl,
         jobs: jobsPayload as unknown as Prisma.InputJsonValue,
+        ...(params.signupLocationLog !== undefined
+          ? { signupLocationLog: params.signupLocationLog }
+          : {}),
       },
     });
     return rowToCarpenterUser(row);
@@ -735,6 +814,7 @@ export async function listCarpentersForAdmin() {
       activeJobCount: c.jobs.filter((j) => j.status === "active").length,
       upcomingJobCount: c.jobs.filter((j) => j.status === "upcoming").length,
       jobs: c.jobs,
+      signupLocationLog: row.signupLocationLog ?? null,
     };
   });
 }

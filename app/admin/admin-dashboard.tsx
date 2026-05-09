@@ -1,6 +1,13 @@
 "use client";
 
-import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
+import {
+  Fragment,
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+  type ReactNode,
+} from "react";
 import { JobCompletionSocialPanel } from "./job-completion-social-panel";
 
 type AiPlannerActivity = {
@@ -45,6 +52,8 @@ type PortalClient = {
     sentAt: string;
     recordedBy?: string;
   }>;
+  /** Request/geo snapshot at portal registration (when captured). */
+  signupLocationLog?: unknown;
 };
 
 type CarpenterRow = {
@@ -59,6 +68,7 @@ type CarpenterRow = {
   activeJobCount: number;
   upcomingJobCount: number;
   jobs: JobRow[];
+  signupLocationLog?: unknown;
 };
 
 type Receipt = {
@@ -214,6 +224,65 @@ function communicationChannelLabel(channel: "email" | "sms" | "app_notice") {
     default:
       return "Email";
   }
+}
+
+function SignupLocationReadout(props: { log: unknown }): ReactNode {
+  if (
+    props.log === null ||
+    props.log === undefined ||
+    typeof props.log !== "object" ||
+    Array.isArray(props.log)
+  ) {
+    return (
+      <p className="mt-4 border-t border-zinc-800 pt-4 text-xs text-zinc-600">
+        No signup location captured yet (account created before logging was enabled, or the server had
+        no geo/IP headers — common on local development).
+      </p>
+    );
+  }
+
+  const o = props.log as Record<string, unknown>;
+  const keys = [
+    "recordedAt",
+    "city",
+    "region",
+    "country",
+    "latitude",
+    "longitude",
+    "ip",
+    "source",
+  ] as const;
+
+  const rows: { label: string; value: string }[] = [];
+  for (const key of keys) {
+    const v = o[key];
+    if (v === undefined || v === null || String(v).trim() === "") continue;
+    rows.push({ label: key, value: String(v) });
+  }
+  for (const key of Object.keys(o)) {
+    if ((keys as readonly string[]).includes(key)) continue;
+    rows.push({ label: key, value: String(o[key]) });
+  }
+
+  return (
+    <div className="mt-4 border-t border-zinc-800 pt-4">
+      <h5 className="text-xs font-semibold uppercase text-zinc-500">
+        Signup location snapshot
+      </h5>
+      <p className="mt-1 text-[11px] leading-relaxed text-zinc-600">
+        Captured from the HTTP request when they registered (edge geo + forwarded IP when
+        available — approximate, not GPS).
+      </p>
+      <dl className="mt-3 grid gap-2 text-sm text-zinc-300 sm:grid-cols-2">
+        {rows.map((row) => (
+          <div key={row.label}>
+            <dt className="text-xs text-zinc-500 capitalize">{row.label}</dt>
+            <dd className="font-medium text-white break-all">{row.value}</dd>
+          </div>
+        ))}
+      </dl>
+    </div>
+  );
 }
 
 export default function AdminDashboard() {
@@ -1703,6 +1772,7 @@ export default function AdminDashboard() {
                           </p>
                         </div>
                       </dl>
+                      <SignupLocationReadout log={c.signupLocationLog} />
                     </div>
 
                     <div className="rounded-lg border border-zinc-700 bg-zinc-950/60 p-4">
@@ -1987,6 +2057,7 @@ export default function AdminDashboard() {
                 <p className="mt-2 text-xs text-zinc-500">
                   {c.jobs.length} job{c.jobs.length === 1 ? "" : "s"} on record
                 </p>
+                <SignupLocationReadout log={c.signupLocationLog} />
               </div>
             ))}
             {carpenters.length === 0 ? (
