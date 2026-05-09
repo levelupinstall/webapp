@@ -11,7 +11,8 @@ import {
   extractPlannerPhase,
   type PlannerPhaseTag,
 } from "@/lib/planner-phase-utils";
-import { MORGAN_PLANNER_SYSTEM } from "@/lib/morgan-planner-prompt";
+import { PLANNER_ASSISTANT_SYSTEM } from "@/lib/planner-assistant-prompt";
+import { PLANNER_ASSISTANT_NAME } from "@/lib/planner-brand";
 import { appendAiPlannerActivity } from "@/lib/client-portal-store";
 
 /** After this many assistant turns that included a concept sketch, steer toward in-person consult. */
@@ -27,7 +28,7 @@ function isPlannerImageUpload(file: File): boolean {
 
 export const maxDuration = 120;
 
-function buildMorganSystemInstruction(params: {
+function buildPlannerSystemInstruction(params: {
   priorTurnHadConceptImage: boolean;
   sketchLikelyAfterReply: boolean;
   userAttachedPhotosThisTurn: boolean;
@@ -35,7 +36,7 @@ function buildMorganSystemInstruction(params: {
   suggestInPersonAfterManySketches: boolean;
   advanceTowardSiteVisit: boolean;
 }): string {
-  const chunks: string[] = [MORGAN_PLANNER_SYSTEM];
+  const chunks: string[] = [PLANNER_ASSISTANT_SYSTEM];
 
   if (params.priorTurnHadConceptImage) {
     chunks.push(`
@@ -250,7 +251,7 @@ export async function POST(request: Request) {
     try {
       if (isGeminiConfigured()) {
         const result = await geminiPlannerMultiTurn({
-          systemInstruction: buildMorganSystemInstruction({
+          systemInstruction: buildPlannerSystemInstruction({
             priorTurnHadConceptImage,
             sketchLikelyAfterReply,
             userAttachedPhotosThisTurn,
@@ -293,7 +294,10 @@ export async function POST(request: Request) {
     if (allowConceptImage && responseImages.length === 0) {
       const transcript = messages
         .slice(-12)
-        .map((m) => `${m.role === "user" ? "Homeowner" : "Morgan"}: ${m.content}`)
+        .map(
+          (m) =>
+            `${m.role === "user" ? "Homeowner" : PLANNER_ASSISTANT_NAME}: ${m.content}`,
+        )
         .join("\n");
 
       const exploratoryNote =
@@ -306,7 +310,7 @@ export async function POST(request: Request) {
               : "\n\n(Context: refining direction from prior chat — adjust the sketch to match their feedback.)";
 
       const visual = await geminiGenerateConceptImage({
-        promptContext: `${transcript}\n\nMorgan reply:\n${cleanReply.slice(0, 6000)}${exploratoryNote}`,
+        promptContext: `${transcript}\n\n${PLANNER_ASSISTANT_NAME} reply:\n${cleanReply.slice(0, 6000)}${exploratoryNote}`,
         userGoal: lastUserText.slice(0, 4000) || cleanReply.slice(0, 1200),
         referenceImageParts:
           conceptReferenceParts.length > 0 ? conceptReferenceParts : undefined,

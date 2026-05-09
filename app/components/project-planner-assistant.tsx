@@ -25,6 +25,8 @@ type ProjectPlannerAssistantProps = {
   /** When set (logged-in visitor), shown at the top of the planner section. */
   welcomeDisplayName?: string;
   onRequireCreateAccount?: () => void;
+  /** Saved projects in the portal when signed in; sign-in when guest. */
+  onViewSavedIdeas?: () => void;
 };
 
 const MAX_IMAGES = 4;
@@ -103,6 +105,7 @@ async function compressImageForPlannerUpload(file: File): Promise<File> {
 export default function ProjectPlannerAssistant({
   welcomeDisplayName,
   onRequireCreateAccount,
+  onViewSavedIdeas,
 }: ProjectPlannerAssistantProps) {
   const [messages, setMessages] = useState<ChatMessage[]>([
     {
@@ -554,6 +557,15 @@ export default function ProjectPlannerAssistant({
               className="inline-flex items-center justify-center rounded-full border-2 border-[#6e3eb2] bg-white px-6 py-3 text-sm font-semibold text-[#5b3292] transition hover:bg-[#f5efff]"
             >
               Save summary
+            </button>
+          ) : null}
+          {onViewSavedIdeas ? (
+            <button
+              type="button"
+              onClick={onViewSavedIdeas}
+              className="inline-flex items-center justify-center rounded-full border border-[#dcc6fb] bg-white px-6 py-3 text-sm font-semibold text-[#5b3292] transition hover:bg-[#f3ebff]"
+            >
+              View saved ideas
             </button>
           ) : null}
         </div>

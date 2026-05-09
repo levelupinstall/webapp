@@ -41,6 +41,15 @@ function HomeContent() {
       ? querySection
       : activeSection;
 
+  /** Section tabs must update the URL — `currentSection` prefers `?section=` over React state (e.g. after login). */
+  function navigateToSection(section: SectionKey) {
+    setActiveSection(section);
+    const params = new URLSearchParams(searchParams.toString());
+    params.set("section", section);
+    const qs = params.toString();
+    router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
+  }
+
   useEffect(() => {
     async function loadAuthState() {
       const response = await fetch("/api/portal/me");
@@ -65,27 +74,27 @@ function HomeContent() {
     if (queryPortalView !== "invoices") return undefined;
     const timer = window.setTimeout(() => {
       setAccountView("invoices");
-      setActiveSection("account");
+      navigateToSection("account");
     }, 0);
     return () => window.clearTimeout(timer);
   }, [queryPortalView]);
 
   function openAuth(mode: "login" | "register") {
     setPortalMode(mode);
-    setActiveSection("account");
+    navigateToSection("account");
     setMenuOpen(false);
   }
 
   function openAccountView(view: AccountMenuView) {
     setAccountView(view);
-    setActiveSection("account");
+    navigateToSection("account");
     setMenuOpen(false);
   }
 
   async function handleHeaderLogout() {
     await fetch("/api/portal/logout", { method: "POST" });
     setAuthUser(null);
-    setActiveSection("overview");
+    navigateToSection("overview");
     setMenuOpen(false);
   }
 
@@ -190,28 +199,28 @@ function HomeContent() {
           <div className="flex flex-wrap gap-2">
             <button
               type="button"
-              onClick={() => setActiveSection("overview")}
+              onClick={() => navigateToSection("overview")}
               className={sectionButtonClass("overview")}
             >
               Overview
             </button>
             <button
               type="button"
-              onClick={() => setActiveSection("reviews")}
+              onClick={() => navigateToSection("reviews")}
               className={sectionButtonClass("reviews")}
             >
               Reviews
             </button>
             <button
               type="button"
-              onClick={() => setActiveSection("rates")}
+              onClick={() => navigateToSection("rates")}
               className={sectionButtonClass("rates")}
             >
               Rates
             </button>
             <button
               type="button"
-              onClick={() => setActiveSection("planner")}
+              onClick={() => navigateToSection("planner")}
               className={sectionButtonClass("planner")}
             >
               Planner
@@ -420,7 +429,7 @@ function HomeContent() {
               <div className="mt-6 flex flex-wrap items-center gap-3">
                 <button
                   type="button"
-                  onClick={() => setActiveSection("planner")}
+                  onClick={() => navigateToSection("planner")}
                   className="inline-flex items-center justify-center rounded-full bg-[#6e3eb2] px-6 py-3 text-sm font-semibold text-white shadow-[0_10px_26px_-12px_rgba(110,62,178,0.85)] transition hover:-translate-y-0.5 hover:bg-[#5b3292]"
                 >
                   Create a plan for my space
@@ -614,7 +623,7 @@ function HomeContent() {
                   Prefer to browse pricing first?{" "}
                   <button
                     type="button"
-                    onClick={() => setActiveSection("rates")}
+                    onClick={() => navigateToSection("rates")}
                     className="font-semibold text-[#4a2381] underline decoration-[#c9a5f1] underline-offset-4 hover:text-[#3f1d70]"
                   >
                     View rates & open planner
@@ -789,7 +798,7 @@ function HomeContent() {
               </p>
               <button
                 type="button"
-                onClick={() => setActiveSection("planner")}
+                onClick={() => navigateToSection("planner")}
                 className="mt-4 inline-flex rounded-full bg-[#6e3eb2] px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-[#5b3292]"
               >
                 Open planner
@@ -806,6 +815,13 @@ function HomeContent() {
               }
               onRequireCreateAccount={() => {
                 openAuth("register");
+              }}
+              onViewSavedIdeas={() => {
+                if (authUser) {
+                  openAccountView("saved-projects");
+                } else {
+                  openAuth("login");
+                }
               }}
             />
           </div>
@@ -829,13 +845,7 @@ function HomeContent() {
               );
             }}
             onLoginSuccess={() => {
-              setActiveSection("planner");
-              const params = new URLSearchParams(searchParams.toString());
-              params.set("section", "planner");
-              const qs = params.toString();
-              router.replace(qs ? `${pathname}?${qs}` : `${pathname}?section=planner`, {
-                scroll: false,
-              });
+              navigateToSection("planner");
             }}
           />
         ) : null}

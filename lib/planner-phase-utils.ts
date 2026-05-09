@@ -1,4 +1,4 @@
-/** Internal Morgan phase markers — stripped before any client-visible text. */
+/** Internal planner phase markers — stripped before any client-visible text. */
 
 export type PlannerPhaseTag = "consultation" | "recommend" | "refine";
 
@@ -25,7 +25,7 @@ export function stripPlannerPhaseMarkers(text: string): string {
  * Parse phase from the **last** recognized tag; strip **all** phase tags from the reply.
  * Accepts common model typos (e.g. recomend → recommend).
  */
-/** Morgan asks the UI to offer camera/upload for space photos (stripped from chat display). */
+/** Planner asks the UI to offer camera/upload for space photos (stripped from chat display). */
 export function plannerRequestedPhotoUpload(reply: string): boolean {
   return /\[PHOTO_PROMPT\]/i.test(reply);
 }
