@@ -249,6 +249,7 @@ export default function AdminDashboard() {
   const [feedCarpenterFilter, setFeedCarpenterFilter] = useState("all");
   const [feedSearch, setFeedSearch] = useState("");
   const [expandedClientId, setExpandedClientId] = useState<string | null>(null);
+  const [deleteClientBusyId, setDeleteClientBusyId] = useState<string | null>(null);
   const [expandedJobId, setExpandedJobId] = useState<string | null>(null);
   const [balanceInvoiceDraft, setBalanceInvoiceDraft] = useState({
     title: "",
@@ -487,6 +488,37 @@ export default function AdminDashboard() {
     setCarpenters([]);
     setJobs([]);
     setActivityFeed([]);
+  }
+
+  async function handleDeletePortalClient(client: PortalClient) {
+    const label = `${client.fullName || client.username} (${client.email})`;
+    const msg1 =
+      `Delete portal account for ${label}?\n\n` +
+      `This permanently removes their login and ALL portal data (ideas, photos, uploads, invoices in the portal, planner history, communication log).\n\n` +
+      `Paid booking records in this CRM that are tied only to this portal login will be removed.\n` +
+      `Assigned carpenter jobs stay on file; the link to this portal account is removed.\n\n` +
+      `This cannot be undone.`;
+    if (!globalThis.confirm(msg1)) return;
+
+    const msg2 = `FINAL CONFIRM: permanently delete ${client.email}?`;
+    if (!globalThis.confirm(msg2)) return;
+
+    setDeleteClientBusyId(client.id);
+    try {
+      const res = await fetch(
+        `/api/admin/portal-users/${encodeURIComponent(client.id)}`,
+        { method: "DELETE" },
+      );
+      const data = (await res.json().catch(() => ({}))) as { error?: string };
+      if (!res.ok) {
+        globalThis.alert(data.error || "Could not delete account.");
+        return;
+      }
+      setExpandedClientId(null);
+      await refreshOverview();
+    } finally {
+      setDeleteClientBusyId(null);
+    }
   }
 
   const carpentersByWorkload = useMemo(() => {
@@ -1917,6 +1949,24 @@ export default function AdminDashboard() {
                           ))}
                         </ul>
                       )}
+                    </div>
+
+                    <div className="rounded-lg border border-rose-900/50 bg-rose-950/25 p-4">
+                      <h4 className="text-xs font-semibold uppercase text-rose-400">
+                        Danger zone
+                      </h4>
+                      <p className="mt-2 text-xs leading-relaxed text-zinc-500">
+                        Delete this client&apos;s portal login and everything stored in their portal
+                        account. You will be asked to confirm twice so nothing is removed by mistake.
+                      </p>
+                      <button
+                        type="button"
+                        disabled={deleteClientBusyId === c.id}
+                        onClick={() => void handleDeletePortalClient(c)}
+                        className="mt-3 rounded-lg border border-rose-600 bg-rose-950/90 px-4 py-2 text-xs font-semibold text-rose-100 hover:bg-rose-900 disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        {deleteClientBusyId === c.id ? "Deleting…" : "Delete portal account"}
+                      </button>
                     </div>
                   </div>
                 ) : null}

@@ -3,6 +3,7 @@ import { Prisma } from "@prisma/client";
 import { randomInt, randomUUID } from "crypto";
 import bcrypt from "bcryptjs";
 
+import { unlinkPortalUserFromAllCarpenterJobs } from "@/lib/carpenter-store";
 import { prisma } from "@/lib/prisma";
 
 export type Idea = {
@@ -386,6 +387,13 @@ export async function deletePortalUserById(userId: string): Promise<boolean> {
     }
     throw error;
   }
+}
+
+/** Admin-only: portal login row + CRM-linked booking rows + job portal links; carpenter jobs stay with anonymized link. */
+export async function deletePortalUserAccountFully(portalUserId: string): Promise<boolean> {
+  await prisma.adminWorkRequest.deleteMany({ where: { portalUserId } });
+  await unlinkPortalUserFromAllCarpenterJobs(portalUserId);
+  return deletePortalUserById(portalUserId);
 }
 
 export async function addPaidInvoiceByEmail(params: {
