@@ -1,6 +1,7 @@
 "use client";
 
 import Image from "next/image";
+import { useRouter } from "next/navigation";
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import {
   type PlannerPhaseTag,
@@ -122,8 +123,15 @@ export default function ProjectPlannerAssistant({
   const [showCreateAccountPrompt, setShowCreateAccountPrompt] = useState(false);
   const [photoInviteActive, setPhotoInviteActive] = useState(false);
   const [sketchRoundsDelivered, setSketchRoundsDelivered] = useState(0);
-  const [proposalBusy, setProposalBusy] = useState(false);
+  const [submitDesignBusy, setSubmitDesignBusy] = useState(false);
   const [saveBusy, setSaveBusy] = useState(false);
+  const [ideaNameModalOpen, setIdeaNameModalOpen] = useState(false);
+  const [ideaNameDraft, setIdeaNameDraft] = useState("");
+  const [ideaNameModalIntent, setIdeaNameModalIntent] = useState<"save" | "submit" | null>(null);
+  const [ideaNameModalError, setIdeaNameModalError] = useState<string | null>(null);
+
+  const router = useRouter();
+  const ideaNameInputRef = useRef<HTMLInputElement>(null);
 
   const galleryInputRef = useRef<HTMLInputElement>(null);
   const cameraInputRef = useRef<HTMLInputElement>(null);
@@ -158,6 +166,15 @@ export default function ProjectPlannerAssistant({
 
   /** Sign-in required — at least one homeowner message exists (including photo-only sends). */
   const canSaveConversation = messages.some((m) => m.role === "user");
+
+  const welcome = welcomeDisplayName?.trim();
+
+  function defaultIdeaTitle(kind: "save" | "submit"): string {
+    const stamp = new Date().toLocaleString();
+    return kind === "submit"
+      ? `${PLANNER_ASSISTANT_NAME} · Design submitted (${stamp})`
+      : `${PLANNER_ASSISTANT_NAME} · Design conversation (${stamp})`;
+  }
 
   function buildConversationNotes(): string {
     const chunks: string[] = [];
@@ -361,10 +378,7 @@ export default function ProjectPlannerAssistant({
     setImages((prev) => prev.filter((_, current) => current !== index));
   }
 
-  async function handleRequestFormalProposal() {
-    setError(null);
-    setSaveStatus(null);
-
+  async function createWorkProposalFormData(): Promise<FormData> {
     const transcript = messages
       .map((m) => {
         const label = m.role === "user" ? "Homeowner" : PLANNER_ASSISTANT_NAME;
@@ -402,42 +416,89 @@ export default function ProjectPlannerAssistant({
     for (const file of compressedSpace) {
       formData.append("spacePhotos", file);
     }
+    return formData;
+  }
 
-    setProposalBusy(true);
+  function requestSubmitDesignForReview() {
+    setError(null);
+    setSaveStatus(null);
+
+    if (!welcome) {
+      setShowCreateAccountPrompt(true);
+      setError("Sign in to submit your design for review.");
+      return;
+    }
+
+    if (!canSaveConversation) {
+      setError("Send at least one message in the planner before submitting your design.");
+      return;
+    }
+
+    setIdeaNameDraft(defaultIdeaTitle("submit"));
+    setIdeaNameModalError(null);
+    setIdeaNameModalIntent("submit");
+    setIdeaNameModalOpen(true);
+  }
+
+  /** Saves the conversation to Saved Ideas, creates the formal proposal draft for admin, then redirects. */
+  async function executeSubmitDesignForReview(ideaTitle: string) {
+    setSubmitDesignBusy(true);
     try {
-      const response = await fetch("/api/portal/work-proposals/request", {
-        method: "POST",
-        body: formData,
-      });
-      const data = (await response.json().catch(() => ({}))) as {
-        error?: string;
-        message?: string;
-      };
+      const notes = buildConversationNotes();
 
-      if (response.status === 401) {
+      const saveResponse = await fetch("/api/portal/ideas", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          title: ideaTitle.trim().slice(0, 200),
+          notes,
+        }),
+      });
+
+      if (saveResponse.status === 401) {
         setShowCreateAccountPrompt(true);
-        setError("Sign in to request a formal proposal.");
+        setError("Sign in to submit your design.");
         return;
       }
 
-      if (!response.ok) {
-        setError(data.error || "Could not submit proposal request.");
+      if (!saveResponse.ok) {
+        setError("Could not save your design. Please try again.");
+        return;
+      }
+
+      const formData = await createWorkProposalFormData();
+      const proposalResponse = await fetch("/api/portal/work-proposals/request", {
+        method: "POST",
+        body: formData,
+      });
+      const proposalData = (await proposalResponse.json().catch(() => ({}))) as {
+        error?: string;
+      };
+
+      if (proposalResponse.status === 401) {
+        setShowCreateAccountPrompt(true);
+        setError("Your session may have expired — sign in again and try submitting.");
+        return;
+      }
+
+      if (!proposalResponse.ok) {
+        setError(
+          proposalData.error ||
+            "Your design was saved, but we could not start the proposal. Try again or contact Level Up.",
+        );
         return;
       }
 
       setShowCreateAccountPrompt(false);
-      setSaveStatus(
-        data.message ||
-          "Proposal draft created — Level Up will review it and email you when it is ready.",
-      );
+      router.push("/planner/design-submitted");
     } catch {
-      setError("Could not submit proposal request.");
+      setError("Something went wrong while submitting. Please try again.");
     } finally {
-      setProposalBusy(false);
+      setSubmitDesignBusy(false);
     }
   }
 
-  async function handleSaveConversation() {
+  function requestSaveConversation() {
     setError(null);
     setSaveStatus(null);
 
@@ -446,7 +507,13 @@ export default function ProjectPlannerAssistant({
       return;
     }
 
-    const ideaTitle = `${PLANNER_ASSISTANT_NAME} · Design conversation (${new Date().toLocaleString()})`;
+    setIdeaNameDraft(defaultIdeaTitle("save"));
+    setIdeaNameModalError(null);
+    setIdeaNameModalIntent("save");
+    setIdeaNameModalOpen(true);
+  }
+
+  async function executeSaveConversation(ideaTitle: string) {
     const notes = buildConversationNotes();
 
     setSaveBusy(true);
@@ -455,7 +522,7 @@ export default function ProjectPlannerAssistant({
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          title: ideaTitle.slice(0, 200),
+          title: ideaTitle.trim().slice(0, 200),
           notes,
         }),
       });
@@ -478,7 +545,29 @@ export default function ProjectPlannerAssistant({
     }
   }
 
-  const welcome = welcomeDisplayName?.trim();
+  async function confirmIdeaNameModal() {
+    const trimmed = ideaNameDraft.trim();
+    if (!trimmed) {
+      setIdeaNameModalError("Enter a name for this idea.");
+      return;
+    }
+    setIdeaNameModalError(null);
+    const intent = ideaNameModalIntent;
+    setIdeaNameModalOpen(false);
+    setIdeaNameModalIntent(null);
+
+    if (intent === "save") {
+      await executeSaveConversation(trimmed);
+    } else if (intent === "submit") {
+      await executeSubmitDesignForReview(trimmed);
+    }
+  }
+
+  useEffect(() => {
+    if (!ideaNameModalOpen) return;
+    const id = window.setTimeout(() => ideaNameInputRef.current?.focus(), 0);
+    return () => window.clearTimeout(id);
+  }, [ideaNameModalOpen]);
 
   return (
     <section className="mt-8 rounded-3xl border border-[#dac6fb] bg-white p-6 shadow-[0_10px_30px_-20px_rgba(91,33,182,0.55)] sm:p-8">
@@ -491,8 +580,11 @@ export default function ProjectPlannerAssistant({
             You&apos;re signed in — continue your project plan with{" "}
             {PLANNER_ASSISTANT_NAME} below.
             <span className="mt-2 block text-[#256038]">
-              Use <strong className="font-semibold">Save design &amp; conversation</strong> anytime to store this chat in{" "}
-              <strong className="font-semibold">Saved Ideas</strong> in your portal.
+              When you&apos;re happy with the direction, use{" "}
+              <strong className="font-semibold">Submit design for review</strong> below — we&apos;ll save your
+              conversation, start your formal proposal, and take you to a confirmation page. You can still use{" "}
+              <strong className="font-semibold">Save design &amp; conversation</strong> to store a copy in{" "}
+              <strong className="font-semibold">Saved Ideas</strong> (you&apos;ll name it first).
             </span>
           </p>
         </div>
@@ -640,6 +732,17 @@ export default function ProjectPlannerAssistant({
           </div>
         ) : null}
 
+        {welcome ? (
+          <div className="rounded-2xl border border-[#c9e8d4] bg-gradient-to-br from-[#f4fcf7] to-[#eefaf3] px-4 py-4 sm:px-5">
+            <p className="text-sm font-semibold text-[#1a4d2e]">Committed to this design?</p>
+            <p className="mt-2 text-sm leading-relaxed text-[#2d6a45]">
+              Tap <strong className="text-[#174028]">Submit design for review</strong> — you&apos;ll name this design,
+              we&apos;ll save your chat to Saved Ideas, send everything to our team to build your proposal, then show
+              you a thank-you page. You can return to the design tool anytime.
+            </p>
+          </div>
+        ) : null}
+
         <label className="block">
           <span className="text-sm font-semibold text-[#4a2381]">Your message</span>
           <textarea
@@ -662,19 +765,34 @@ export default function ProjectPlannerAssistant({
             {isLoading ? "Sending…" : "Send"}
           </button>
           {welcome ? (
-            <button
-              type="button"
-              disabled={saveBusy || isLoading || !canSaveConversation}
-              onClick={() => void handleSaveConversation()}
-              title={
-                canSaveConversation
-                  ? "Save full transcript to Saved Ideas"
-                  : "Send a message first to enable saving"
-              }
-              className="inline-flex items-center justify-center rounded-full border-2 border-[#6e3eb2] bg-white px-6 py-3 text-sm font-semibold text-[#5b3292] transition hover:bg-[#f5efff] disabled:cursor-not-allowed disabled:border-[#cbb8e8] disabled:text-[#9b87b5]"
-            >
-              {saveBusy ? "Saving…" : "Save design & conversation"}
-            </button>
+            <>
+              <button
+                type="button"
+                disabled={submitDesignBusy || saveBusy || isLoading || !canSaveConversation}
+                onClick={() => requestSubmitDesignForReview()}
+                title={
+                  canSaveConversation
+                    ? "Save to Saved Ideas and send to Level Up for proposal creation"
+                    : "Send a message first"
+                }
+                className="inline-flex items-center justify-center rounded-full border border-[#2f7a32] bg-[#f4fcf7] px-6 py-3 text-sm font-semibold text-[#1a4d2e] transition hover:bg-[#dff5e8] disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {submitDesignBusy ? "Submitting…" : "Submit design for review"}
+              </button>
+              <button
+                type="button"
+                disabled={saveBusy || submitDesignBusy || isLoading || !canSaveConversation}
+                onClick={() => requestSaveConversation()}
+                title={
+                  canSaveConversation
+                    ? "Save full transcript to Saved Ideas"
+                    : "Send a message first to enable saving"
+                }
+                className="inline-flex items-center justify-center rounded-full border-2 border-[#6e3eb2] bg-white px-6 py-3 text-sm font-semibold text-[#5b3292] transition hover:bg-[#f5efff] disabled:cursor-not-allowed disabled:border-[#cbb8e8] disabled:text-[#9b87b5]"
+              >
+                {saveBusy ? "Saving…" : "Save design & conversation"}
+              </button>
+            </>
           ) : onRequireCreateAccount ? (
             <button
               type="button"
@@ -683,16 +801,6 @@ export default function ProjectPlannerAssistant({
               className="inline-flex items-center justify-center rounded-full border-2 border-[#6e3eb2] bg-white px-6 py-3 text-sm font-semibold text-[#5b3292] transition hover:bg-[#f5efff] disabled:opacity-65"
             >
               Save to portal — sign in
-            </button>
-          ) : null}
-          {welcome ? (
-            <button
-              type="button"
-              disabled={proposalBusy || isLoading}
-              onClick={() => void handleRequestFormalProposal()}
-              className="inline-flex items-center justify-center rounded-full border border-[#2f7a32] bg-[#f4fcf7] px-6 py-3 text-sm font-semibold text-[#1a4d2e] transition hover:bg-[#dff5e8] disabled:cursor-not-allowed disabled:opacity-60"
-            >
-              {proposalBusy ? "Submitting…" : "Request formal proposal"}
             </button>
           ) : null}
           {onViewSavedIdeas ? (
@@ -723,6 +831,76 @@ export default function ProjectPlannerAssistant({
           </div>
         ) : null}
       </form>
+
+      {ideaNameModalOpen ? (
+        <div
+          className="fixed inset-0 z-[100] flex items-center justify-center bg-black/45 px-4 py-8"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="idea-name-modal-title"
+        >
+          <div className="w-full max-w-md rounded-2xl border border-[#dcc6fb] bg-white p-6 shadow-[0_20px_50px_-20px_rgba(45,21,70,0.45)]">
+            <h3
+              id="idea-name-modal-title"
+              className="text-lg font-semibold text-[#2d1546]"
+            >
+              {ideaNameModalIntent === "submit" ? "Name this design" : "Name your saved idea"}
+            </h3>
+            <p className="mt-2 text-sm leading-relaxed text-[#55337b]">
+              {ideaNameModalIntent === "submit"
+                ? "Choose a title for this submission — it will appear in Saved Ideas and helps our team recognize your project."
+                : "Pick a title so you can find this conversation later under Saved Ideas in your portal."}
+            </p>
+            <label className="mt-4 block">
+              <span className="text-sm font-semibold text-[#4a2381]">Idea name</span>
+              <input
+                ref={ideaNameInputRef}
+                type="text"
+                value={ideaNameDraft}
+                maxLength={200}
+                onChange={(e) => {
+                  setIdeaNameDraft(e.target.value);
+                  setIdeaNameModalError(null);
+                }}
+                className="mt-2 w-full rounded-xl border border-[#dcbef9] bg-white px-4 py-3 text-[#32174f] outline-none ring-[#c9a0f8] transition focus:ring-2"
+                placeholder="e.g. Kitchen built-ins — walnut mood"
+              />
+            </label>
+            {ideaNameModalError ? (
+              <p className="mt-2 text-sm text-[#a2175d]">{ideaNameModalError}</p>
+            ) : null}
+            <p className="mt-2 text-xs text-[#8b7aa8]">{ideaNameDraft.length}/200 characters</p>
+            <div className="mt-6 flex flex-wrap justify-end gap-3">
+              <button
+                type="button"
+                disabled={saveBusy || submitDesignBusy}
+                onClick={() => {
+                  setIdeaNameModalOpen(false);
+                  setIdeaNameModalIntent(null);
+                  setIdeaNameModalError(null);
+                }}
+                className="rounded-full border border-[#dcc6fb] bg-white px-5 py-2.5 text-sm font-semibold text-[#5b3292] transition hover:bg-[#f3ebff] disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={saveBusy || submitDesignBusy}
+                onClick={() => void confirmIdeaNameModal()}
+                className="rounded-full bg-[#6e3eb2] px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-[#5b3292] disabled:opacity-50"
+              >
+                {ideaNameModalIntent === "submit"
+                  ? submitDesignBusy
+                    ? "Working…"
+                    : "Continue"
+                  : saveBusy
+                    ? "Saving…"
+                    : "Save idea"}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </section>
   );
 }

@@ -72,10 +72,17 @@ function HomeContent() {
 
   useEffect(() => {
     const view = queryPortalView?.trim().toLowerCase();
-    if (view !== "invoices" && view !== "proposals") return undefined;
+    if (
+      view !== "invoices" &&
+      view !== "proposals" &&
+      view !== "saved-projects"
+    ) {
+      return undefined;
+    }
     const timer = window.setTimeout(() => {
       if (view === "invoices") setAccountView("invoices");
       if (view === "proposals") setAccountView("proposals");
+      if (view === "saved-projects") setAccountView("saved-projects");
       navigateToSection("account");
     }, 0);
     return () => window.clearTimeout(timer);
