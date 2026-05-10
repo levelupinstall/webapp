@@ -46,6 +46,14 @@ const PLANNER_COMPRESSED_TARGET_BYTES = 1_350_000;
 /** Assistant turns that included a concept image; sent to API for long-loop guidance. */
 const MAX_SKETCH_ROUNDS_TRACKED = 99;
 
+/** Opening turn — upload-first; server-side first-render rules unchanged. */
+function initialPlannerAssistantMessage(): ChatMessage {
+  return {
+    role: "assistant",
+    content: `Hi — I'm ${PLANNER_ASSISTANT_NAME}, Level Up's planning consultant. Could you upload a few photos of the space you'd like help with (wide shots of the room help most)? Once I can see it, I'll ask about what you're building and the style direction — nothing overwhelming. Prefer to describe things first? Tell me which room or wall you're focused on and add pictures whenever you're ready.`,
+  };
+}
+
 function isLikelyImageFile(file: File): boolean {
   const t = (file.type || "").toLowerCase();
   if (t.startsWith("image/")) return true;
@@ -114,12 +122,9 @@ export default function ProjectPlannerAssistant({
   onRequireCreateAccount,
   onViewSavedIdeas,
 }: ProjectPlannerAssistantProps) {
-  const [messages, setMessages] = useState<ChatMessage[]>([
-    {
-      role: "assistant",
-      content: `Hi — I'm ${PLANNER_ASSISTANT_NAME}, Level Up's planning consultant. I'll ask a few quick questions about your project before suggesting directions — nothing overwhelming. Want to start by telling me which space you're thinking about?`,
-    },
-  ]);
+  const [messages, setMessages] = useState<ChatMessage[]>(
+    () => [initialPlannerAssistantMessage()],
+  );
   const [draft, setDraft] = useState("");
   const [images, setImages] = useState<File[]>([]);
   const [phase, setPhase] = useState<PlannerPhaseTag>("consultation");
@@ -127,7 +132,8 @@ export default function ProjectPlannerAssistant({
   const [error, setError] = useState<string | null>(null);
   const [saveStatus, setSaveStatus] = useState<string | null>(null);
   const [showCreateAccountPrompt, setShowCreateAccountPrompt] = useState(false);
-  const [photoInviteActive, setPhotoInviteActive] = useState(false);
+  /** Upload-first opener: show picker until first space photos are sent (then match API gate). */
+  const [photoInviteActive, setPhotoInviteActive] = useState(true);
   /** Phase 1 — populated from homeowner messages (display); upload UI follows `hasEarlyPhotoInviteContext`. */
   const [workCategory, setWorkCategory] = useState<string | null>(null);
   const [stylePreference, setStylePreference] = useState<string | null>(null);
@@ -317,9 +323,12 @@ export default function ProjectPlannerAssistant({
         .join("\n");
 
       setPhase(data.phase);
-      setPhotoInviteActive(
-        Boolean(data.showPhotoUploader && hasEarlyPhotoInviteContext(userMessagesBlob)),
+      const serverPhotoInvite = Boolean(
+        data.showPhotoUploader && hasEarlyPhotoInviteContext(userMessagesBlob),
       );
+      const noSpacePhotosSentYet =
+        sketchSpacePhotosRef.current.length === 0 && compressedImages.length === 0;
+      setPhotoInviteActive(serverPhotoInvite || noSpacePhotosSentYet);
 
       const assistantImages = data.images?.map((img) => ({
         mimeType: img.mimeType,
@@ -729,6 +738,7 @@ export default function ProjectPlannerAssistant({
         const aiWithImages = parsed.filter((m) => m.role === "assistant" && (m.images?.length ?? 0) > 0)
           .length;
         setSketchRoundsDelivered(Math.min(MAX_SKETCH_ROUNDS_TRACKED, aiWithImages));
+        setPhotoInviteActive(false);
       })
       .catch(() => {});
     return () => {
