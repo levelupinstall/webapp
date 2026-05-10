@@ -13,12 +13,14 @@ type ChatMessage = {
   role: "user" | "assistant";
   content: string;
   images?: { mimeType: string; dataUrl: string }[];
+  showSubmitDesignCta?: boolean;
 };
 
 type AssistantResponse = {
   reply: string;
   phase: PlannerPhaseTag;
   showPhotoUploader?: boolean;
+  showSubmitDesignCta?: boolean;
   images?: { mimeType: string; data: string }[];
 };
 
@@ -312,6 +314,7 @@ export default function ProjectPlannerAssistant({
         {
           role: "assistant",
           content: safeReply,
+          ...(data.showSubmitDesignCta ? { showSubmitDesignCta: true } : {}),
           ...(assistantImages?.length ? { images: assistantImages } : {}),
         },
       ]);
@@ -689,15 +692,9 @@ export default function ProjectPlannerAssistant({
             Welcome, {welcome}
           </p>
           <p className="mt-2 text-sm leading-relaxed text-[#2d6a45]">
-            You&apos;re signed in — continue your project plan with{" "}
-            {PLANNER_ASSISTANT_NAME} below.
-            <span className="mt-2 block text-[#256038]">
-              When you&apos;re happy with the direction, use{" "}
-              <strong className="font-semibold">Submit design for review</strong> below — we&apos;ll save your
-              conversation, start your formal proposal, and take you to a confirmation page. You can still use{" "}
-              <strong className="font-semibold">Save design &amp; conversation</strong> to store a copy in{" "}
-              <strong className="font-semibold">Saved Ideas</strong> (you&apos;ll name it first).
-            </span>
+            You&apos;re signed in — continue your project plan with {PLANNER_ASSISTANT_NAME}. When the assistant
+            confirms your design and asks if you&apos;re ready for the next stage, you&apos;ll see an in-chat{" "}
+            <strong className="font-semibold">Submit design for review</strong> button.
           </p>
         </div>
       ) : null}
@@ -738,6 +735,18 @@ export default function ProjectPlannerAssistant({
                     className="max-h-56 w-full rounded-xl border border-[#e8d9ff] object-contain"
                   />
                 ))}
+              </div>
+            ) : null}
+            {message.role === "assistant" && message.showSubmitDesignCta && welcome ? (
+              <div className="mt-3 border-t border-[#eadbff] pt-3">
+                <button
+                  type="button"
+                  disabled={submitDesignBusy || saveBusy || isLoading || !canSaveConversation}
+                  onClick={() => requestSubmitDesignForReview()}
+                  className="inline-flex items-center justify-center rounded-full border border-[#2f7a32] bg-[#f4fcf7] px-4 py-2 text-xs font-semibold text-[#1a4d2e] transition hover:bg-[#dff5e8] disabled:cursor-not-allowed disabled:opacity-60 sm:text-sm"
+                >
+                  {submitDesignBusy ? "Submitting…" : "Submit design for review"}
+                </button>
               </div>
             ) : null}
           </div>
@@ -844,17 +853,6 @@ export default function ProjectPlannerAssistant({
           </div>
         ) : null}
 
-        {welcome ? (
-          <div className="rounded-2xl border border-[#c9e8d4] bg-gradient-to-br from-[#f4fcf7] to-[#eefaf3] px-4 py-4 sm:px-5">
-            <p className="text-sm font-semibold text-[#1a4d2e]">Committed to this design?</p>
-            <p className="mt-2 text-sm leading-relaxed text-[#2d6a45]">
-              Tap <strong className="text-[#174028]">Submit design for review</strong> — you&apos;ll name this design,
-              we&apos;ll save your chat to Saved Ideas, send everything to our team to build your proposal, then show
-              you a thank-you page. You can return to the design tool anytime.
-            </p>
-          </div>
-        ) : null}
-
         <label className="block">
           <span className="text-sm font-semibold text-[#4a2381]">Your message</span>
           <textarea
@@ -878,19 +876,6 @@ export default function ProjectPlannerAssistant({
           </button>
           {welcome ? (
             <>
-              <button
-                type="button"
-                disabled={submitDesignBusy || saveBusy || isLoading || !canSaveConversation}
-                onClick={() => requestSubmitDesignForReview()}
-                title={
-                  canSaveConversation
-                    ? "Save to Saved Ideas and send to Level Up for proposal creation"
-                    : "Send a message first"
-                }
-                className="inline-flex items-center justify-center rounded-full border border-[#2f7a32] bg-[#f4fcf7] px-6 py-3 text-sm font-semibold text-[#1a4d2e] transition hover:bg-[#dff5e8] disabled:cursor-not-allowed disabled:opacity-60"
-              >
-                {submitDesignBusy ? "Submitting…" : "Submit design for review"}
-              </button>
               <button
                 type="button"
                 disabled={saveBusy || submitDesignBusy || isLoading || !canSaveConversation}

@@ -53,6 +53,29 @@ function conceptImagesForAdminCrm(
 
 export const maxDuration = 120;
 
+function shouldShowSubmitDesignCta(params: {
+  cleanReply: string;
+  phase: PlannerPhaseTag;
+  advanceTowardSiteVisit: boolean;
+  hasBudgetContext: boolean;
+  hasPhone: boolean;
+  hasCallWindow: boolean;
+}) {
+  const intakeComplete =
+    params.hasBudgetContext && params.hasPhone && params.hasCallWindow;
+  if (!intakeComplete) return false;
+  if (params.advanceTowardSiteVisit) return true;
+  const text = params.cleanReply.toLowerCase();
+  const asksReadiness =
+    /ready/.test(text) &&
+    (text.includes("next stage") ||
+      text.includes("move forward") ||
+      text.includes("proposal") ||
+      text.includes("review"));
+  if (asksReadiness && (params.phase === "recommend" || params.phase === "refine")) return true;
+  return false;
+}
+
 function buildPlannerSystemInstruction(params: {
   priorTurnHadConceptImage: boolean;
   sketchLikelyAfterReply: boolean;
@@ -60,6 +83,9 @@ function buildPlannerSystemInstruction(params: {
   sketchRoundsDelivered: number;
   suggestInPersonAfterManySketches: boolean;
   advanceTowardSiteVisit: boolean;
+  hasBudgetContext: boolean;
+  hasPhone: boolean;
+  hasCallWindow: boolean;
 }): string {
   const chunks: string[] = [PLANNER_ASSISTANT_SYSTEM];
 
@@ -94,7 +120,53 @@ The homeowner has already received **${n} rounds** with AI concept sketches in t
 The homeowner sounds **happy with the design direction** or **ready to move forward having the work done**. Continue **entirely in chat**: warmly explain that **Level Up will review what you've explored together here** (including the visuals) and **will reach out with a more detailed proposal for your approval** before work is scheduled — **no shopping lists, prices, or store names** in this planner. Do **not** mention checkout, deposits, or Terms of Service here. Optional **one light planning question** (e.g. rough timing or area of town) if helpful—still end with a **question** when natural.`);
   }
 
+  if (!params.hasBudgetContext) {
+    chunks.push(`
+## Session hint (required intake)
+Budget context is missing or unclear. Ask for a realistic budget target before deeper recommendations and tailor the direction to that budget.`);
+  }
+  if (!params.hasPhone) {
+    chunks.push(`
+## Session hint (required intake)
+Before final handoff, ask for the best phone number to reach the homeowner.`);
+  }
+  if (!params.hasCallWindow) {
+    chunks.push(`
+## Session hint (required intake)
+Before final handoff, ask what days/times are ideal for a callback (e.g. weekday evenings, mornings, etc.).`);
+  }
+
   return chunks.join("\n");
+}
+
+function hasBudgetContext(text: string): boolean {
+  const t = text.toLowerCase();
+  return (
+    /\$+\s*\d/.test(text) ||
+    /\b\d+\s*k\b/i.test(text) ||
+    t.includes("budget") ||
+    t.includes("spend") ||
+    t.includes("investment")
+  );
+}
+
+function hasPhoneNumber(text: string): boolean {
+  return /(?:\+?1[\s\-]?)?(?:\(?\d{3}\)?[\s\-]?)\d{3}[\s\-]?\d{4}/.test(text);
+}
+
+function hasCallWindow(text: string): boolean {
+  const t = text.toLowerCase();
+  return (
+    t.includes("morning") ||
+    t.includes("afternoon") ||
+    t.includes("evening") ||
+    t.includes("weekend") ||
+    t.includes("weekday") ||
+    t.includes("after ") ||
+    t.includes("between ") ||
+    t.includes("anytime") ||
+    /\b\d{1,2}\s?(am|pm)\b/i.test(t)
+  );
 }
 
 type PlainChatRole = "user" | "assistant";
@@ -230,6 +302,13 @@ export async function POST(request: Request) {
 
     const lastUserText =
       [...messages].reverse().find((m) => m.role === "user")?.content?.trim() ?? "";
+    const allUserText = messages
+      .filter((m) => m.role === "user")
+      .map((m) => m.content)
+      .join("\n");
+    const intakeHasBudget = hasBudgetContext(allUserText);
+    const intakeHasPhone = hasPhoneNumber(allUserText);
+    const intakeHasCallWindow = hasCallWindow(allUserText);
 
     if (!lastUserText && imageFiles.length === 0) {
       return NextResponse.json(
@@ -293,6 +372,9 @@ export async function POST(request: Request) {
             sketchRoundsDelivered,
             suggestInPersonAfterManySketches,
             advanceTowardSiteVisit,
+            hasBudgetContext: intakeHasBudget,
+            hasPhone: intakeHasPhone,
+            hasCallWindow: intakeHasCallWindow,
           }),
           contents,
         });
@@ -410,6 +492,14 @@ export async function POST(request: Request) {
       reply: cleanReply,
       phase,
       showPhotoUploader,
+      showSubmitDesignCta: shouldShowSubmitDesignCta({
+        cleanReply,
+        phase,
+        advanceTowardSiteVisit,
+        hasBudgetContext: intakeHasBudget,
+        hasPhone: intakeHasPhone,
+        hasCallWindow: intakeHasCallWindow,
+      }),
       ...(responseImages.length ? { images: responseImages } : {}),
     });
   } catch {
