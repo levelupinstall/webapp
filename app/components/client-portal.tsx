@@ -129,7 +129,6 @@ export default function ClientPortal({
   const [expandedIdeaId, setExpandedIdeaId] = useState<string | null>(null);
   const router = useRouter();
   const savedProjectsTrackRef = useRef(false);
-  const spacePhotosTrackRef = useRef(false);
 
   const loadMe = useCallback(async (): Promise<PortalUser | null> => {
     const response = await fetch("/api/portal/me");
@@ -185,7 +184,6 @@ export default function ClientPortal({
 
   useEffect(() => {
     savedProjectsTrackRef.current = false;
-    spacePhotosTrackRef.current = false;
   }, [selectedView, user?.id]);
 
   useEffect(() => {
@@ -198,18 +196,6 @@ export default function ClientPortal({
       body: JSON.stringify({ kind: "saved_projects_section" }),
     }).catch(() => {});
   }, [user?.id, selectedView]);
-
-  useEffect(() => {
-    if (!user || selectedView !== "saved-projects") return;
-    if (!(user.spacePhotos?.length > 0)) return;
-    if (spacePhotosTrackRef.current) return;
-    spacePhotosTrackRef.current = true;
-    void fetch("/api/portal/track", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ kind: "space_photos_section" }),
-    }).catch(() => {});
-  }, [user?.id, selectedView, user?.spacePhotos?.length]);
 
   async function handleAuth(event: FormEvent) {
     event.preventDefault();
@@ -358,42 +344,6 @@ export default function ClientPortal({
     await fetch("/api/portal/logout", { method: "POST" });
     setUser(null);
     onAuthChange?.(null);
-  }
-
-  async function handleSpacePhotoUpload(fileList: FileList | null) {
-    if (!fileList?.length) return;
-    setError(null);
-    try {
-      for (const file of Array.from(fileList)) {
-        const isVideo = file.type.startsWith("video/");
-        const isImage = file.type.startsWith("image/");
-        if (!isVideo && !isImage) continue;
-        if (file.size > 12 * 1024 * 1024) {
-          setError(`"${file.name}" is too large (max 12 MB per file).`);
-          return;
-        }
-        const dataUrl = await new Promise<string>((resolve, reject) => {
-          const reader = new FileReader();
-          reader.onload = () => resolve(String(reader.result || ""));
-          reader.onerror = () => reject(new Error("Could not read file."));
-          reader.readAsDataURL(file);
-        });
-        const response = await fetch("/api/portal/space-photos", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            type: isVideo ? "video" : "image",
-            url: dataUrl,
-            caption: file.name,
-          }),
-        });
-        const data = (await response.json()) as { error?: string };
-        if (!response.ok) throw new Error(data.error || "Upload failed.");
-      }
-      await loadMe();
-    } catch (uploadErr) {
-      setError(uploadErr instanceof Error ? uploadErr.message : "Could not upload.");
-    }
   }
 
   async function handleAddIdea(event: FormEvent) {
@@ -776,46 +726,6 @@ export default function ClientPortal({
             )}
           </div>
 
-          <div className="mt-8 border-t border-[#e8d9ff] pt-6">
-            <h4 className="font-semibold text-[#2f1748]">Photos & videos of your space</h4>
-            <p className="mt-1 text-sm text-[#55337b]">
-              Upload current room photos or short clips so your carpenter sees real conditions and can
-              match expectations before arriving.
-            </p>
-            <label className="mt-3 block cursor-pointer rounded-xl border border-[#dcc6fb] bg-[#faf6ff] px-3 py-2 text-sm">
-              <span className="font-semibold text-[#31184a]">Add images or video</span>
-              <input
-                type="file"
-                accept="image/*,video/*"
-                multiple
-                className="mt-2 block w-full text-xs text-[#4a2a69] file:mr-3 file:rounded-full file:border-0 file:bg-[#ede0ff] file:px-3 file:py-2 file:font-semibold file:text-[#4a2381]"
-                onChange={(event) => void handleSpacePhotoUpload(event.target.files)}
-              />
-            </label>
-            <div className="mt-4 grid gap-3 sm:grid-cols-2">
-              {(user.spacePhotos ?? []).length ? (
-                (user.spacePhotos ?? []).map((photo) => (
-                  <div key={photo.id} className="overflow-hidden rounded-xl border border-[#eddfff]">
-                    {photo.type === "image" ? (
-                      // eslint-disable-next-line @next/next/no-img-element
-                      <img
-                        src={photo.url}
-                        alt={photo.caption}
-                        className="h-44 w-full object-cover"
-                      />
-                    ) : (
-                      <video controls className="h-44 w-full object-cover" src={photo.url} />
-                    )}
-                    <p className="border-t border-[#f0e8ff] px-2 py-1 text-xs text-[#4d2e70]">
-                      {photo.caption}
-                    </p>
-                  </div>
-                ))
-              ) : (
-                <p className="text-sm text-[#6a4a8f]">No uploads yet.</p>
-              )}
-            </div>
-          </div>
         </div>
       ) : null}
 

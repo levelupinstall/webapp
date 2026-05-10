@@ -241,6 +241,19 @@ function HomeContent() {
             >
               Planner
             </button>
+            <button
+              type="button"
+              onClick={() => {
+                if (authUser) {
+                  openAccountView("saved-projects");
+                } else {
+                  openAuth("login");
+                }
+              }}
+              className="inline-flex items-center justify-center rounded-full border border-[#6e3eb2] px-4 py-2 text-xs font-semibold text-[#5b3292] transition hover:bg-[#f3ebff] sm:text-sm"
+            >
+              Saved Designs
+            </button>
           </div>
         </div>
 
