@@ -601,6 +601,7 @@ export default function ProjectPlannerAssistant({
         const data = (await res.json()) as {
           ideas?: Array<{
             id: string;
+            notes?: string;
             conversation?: {
               messages?: Array<{
                 role?: "user" | "assistant";
@@ -611,28 +612,59 @@ export default function ProjectPlannerAssistant({
           }>;
         };
         const idea = (data.ideas ?? []).find((it) => it.id === id);
-        const msgs = idea?.conversation?.messages;
-        if (!idea || !Array.isArray(msgs) || msgs.length === 0) return null;
-        const parsed = msgs
+        if (!idea) return null;
+        const msgs = idea.conversation?.messages;
+        if (Array.isArray(msgs) && msgs.length > 0) {
+          const parsed = msgs
+            .map((m) => {
+              const role = m.role === "assistant" ? "assistant" : "user";
+              const content = String(m.content ?? "");
+              const images = Array.isArray(m.images)
+                ? m.images
+                    .map((img) => ({
+                      mimeType: String(img?.mimeType ?? "image/png"),
+                      dataUrl: String(img?.dataUrl ?? ""),
+                    }))
+                    .filter((img) => img.dataUrl.startsWith("data:"))
+                : [];
+              return {
+                role,
+                content,
+                ...(images.length ? { images } : {}),
+              } as ChatMessage;
+            })
+            .filter((m) => m.content.trim().length > 0 || (m.images?.length ?? 0) > 0);
+          return parsed.length ? parsed : null;
+        }
+
+        // Backward-compatible fallback for older ideas saved before structured conversation existed.
+        const notes = String(idea.notes ?? "").trim();
+        if (!notes) return null;
+        const blocks = notes
+          .split(/\n\s*\n/g)
+          .map((b) => b.trim())
+          .filter(Boolean);
+        const parsedFromNotes = blocks
           .map((m) => {
-            const role = m.role === "assistant" ? "assistant" : "user";
-            const content = String(m.content ?? "");
-            const images = Array.isArray(m.images)
-              ? m.images
-                  .map((img) => ({
-                    mimeType: String(img?.mimeType ?? "image/png"),
-                    dataUrl: String(img?.dataUrl ?? ""),
-                  }))
-                  .filter((img) => img.dataUrl.startsWith("data:"))
-              : [];
+            if (m.startsWith("You:")) {
+              return {
+                role: "user" as const,
+                content: m.replace(/^You:\s*/, "").trim(),
+              };
+            }
+            if (m.startsWith(`${PLANNER_ASSISTANT_NAME}:`)) {
+              return {
+                role: "assistant" as const,
+                content: m.replace(new RegExp(`^${PLANNER_ASSISTANT_NAME}:\\s*`), "").trim(),
+              };
+            }
             return {
-              role,
-              content,
-              ...(images.length ? { images } : {}),
+              role: "assistant" as const,
+              content: m,
             } as ChatMessage;
           })
-          .filter((m) => m.content.trim().length > 0 || (m.images?.length ?? 0) > 0);
-        return parsed.length ? parsed : null;
+          .filter((m) => m.content.trim().length > 0);
+        return parsedFromNotes.length ? parsedFromNotes : null;
       })
       .then((parsed) => {
         if (cancelled || !parsed) return;
