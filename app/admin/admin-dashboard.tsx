@@ -767,7 +767,15 @@ export default function AdminDashboard() {
   }
 
   const filteredJobs = useMemo(() => {
-    if (tab === "pending_jobs") return jobs.filter((j) => j.status === "active");
+    if (tab === "pending_jobs") {
+      return jobs.filter(
+        (j) =>
+          j.status === "active" ||
+          (j.status === "upcoming" &&
+            Boolean(j.formalProposalIntake?.proposalId) &&
+            Boolean(j.formalProposalIntake?.portalUserId)),
+      );
+    }
     if (tab === "upcoming_jobs") return jobs.filter((j) => j.status === "upcoming");
     if (tab === "completed_jobs") return jobs.filter((j) => j.status === "completed");
     return [];

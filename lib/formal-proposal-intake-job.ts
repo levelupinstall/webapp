@@ -62,7 +62,7 @@ export async function createFormalProposalIntakeJob(params: {
   client: ClientProfile;
   spacePhotos: WorkProposalRendering[];
   renderings: WorkProposalRendering[];
-}): Promise<{ carpenterId: string; jobId: string } | null> {
+}): Promise<{ carpenterId: string; jobId: string }> {
   let carpenterId = pickIntakeCarpenterId();
   if (!carpenterId) {
     const row = await prisma.carpenterAccount.findFirst({
@@ -71,31 +71,31 @@ export async function createFormalProposalIntakeJob(params: {
     });
     carpenterId = row?.id ?? null;
   }
-  if (!carpenterId) return null;
+  if (!carpenterId) {
+    throw new Error(
+      "No carpenter account available for proposal intake. Create at least one carpenter account first.",
+    );
+  }
 
   const initialMedia = mediaRowsFromProposalAssets({
     spacePhotos: params.spacePhotos,
     renderings: params.renderings,
   });
 
-  try {
-    const job = await adminAssignJob({
-      carpenterId,
-      title: params.proposalTitle.trim().slice(0, 200) || "Formal proposal review",
-      designNotes: params.designNotes,
-      scopeOfWork: params.scopeOfWork,
-      client: params.client,
-      clientPortalUserId: params.portalUserId,
-      status: "upcoming",
-      availabilityReview: "pending",
-      formalProposalIntake: {
-        portalUserId: params.portalUserId,
-        proposalId: params.proposalId,
-      },
-      initialMedia,
-    });
-    return { carpenterId, jobId: job.id };
-  } catch {
-    return null;
-  }
+  const job = await adminAssignJob({
+    carpenterId,
+    title: params.proposalTitle.trim().slice(0, 200) || "Formal proposal review",
+    designNotes: params.designNotes,
+    scopeOfWork: params.scopeOfWork,
+    client: params.client,
+    clientPortalUserId: params.portalUserId,
+    status: "upcoming",
+    availabilityReview: "pending",
+    formalProposalIntake: {
+      portalUserId: params.portalUserId,
+      proposalId: params.proposalId,
+    },
+    initialMedia,
+  });
+  return { carpenterId, jobId: job.id };
 }

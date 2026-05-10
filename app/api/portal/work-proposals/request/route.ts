@@ -165,22 +165,28 @@ export async function POST(request: Request) {
     `Budget cues (from planner): ${budgetHint || "Not clearly stated — confirm with customer."}`,
   ].join("\n");
 
-  await createFormalProposalIntakeJob({
-    portalUserId: session.userId,
-    proposalId: proposal.id,
-    proposalTitle: `Proposal review — ${clientName}`,
-    scopeOfWork: transcript.trim().slice(0, 8000),
-    designNotes,
-    client: {
-      name: clientName,
-      email: portalProfile.email,
-      phone: portalProfile.phone ?? "",
-      address: portalProfile.serviceAddress || "",
-      avatarDataUrl: portalProfile.avatarDataUrl || "",
-    },
-    spacePhotos: proposal.spacePhotos ?? [],
-    renderings: proposal.renderings,
-  });
+  try {
+    await createFormalProposalIntakeJob({
+      portalUserId: session.userId,
+      proposalId: proposal.id,
+      proposalTitle: `Proposal review — ${clientName}`,
+      scopeOfWork: transcript.trim().slice(0, 8000),
+      designNotes,
+      client: {
+        name: clientName,
+        email: portalProfile.email,
+        phone: portalProfile.phone ?? "",
+        address: portalProfile.serviceAddress || "",
+        avatarDataUrl: portalProfile.avatarDataUrl || "",
+      },
+      spacePhotos: proposal.spacePhotos ?? [],
+      renderings: proposal.renderings,
+    });
+  } catch (err) {
+    const message =
+      err instanceof Error ? err.message : "Could not create pending intake job in CRM.";
+    return NextResponse.json({ error: message }, { status: 500 });
+  }
 
   return NextResponse.json({
     proposalId: proposal.id,
