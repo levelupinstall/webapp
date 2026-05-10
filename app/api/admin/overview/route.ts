@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getAdminSession } from "@/lib/admin-auth";
 import { listPortalUsersForAdmin } from "@/lib/client-portal-store";
 import { listCarpentersForAdmin, type CarpenterJob } from "@/lib/carpenter-store";
+import { prisma } from "@/lib/prisma";
 import { listWorkRequestsForAdmin } from "@/lib/work-requests-store";
 
 type ActivityItem = {
@@ -25,10 +26,34 @@ export async function GET() {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const [clients, carpenters, workRequests] = await Promise.all([
+  const [clients, carpenters, workRequests, structuredJobsPending] = await Promise.all([
     listPortalUsersForAdmin(),
     listCarpentersForAdmin(),
     listWorkRequestsForAdmin(),
+    prisma.job.findMany({
+      where: {
+        status: { in: ["PENDING_REVIEW", "APPROVED_PENDING_PAYMENT"] },
+      },
+      orderBy: { createdAt: "desc" },
+      take: 200,
+      select: {
+        id: true,
+        createdAt: true,
+        status: true,
+        customerPhone: true,
+        customerEmail: true,
+        portalUserId: true,
+        width: true,
+        height: true,
+        depth: true,
+        dwellingType: true,
+        immediateCharge: true,
+        paymentAmountCents: true,
+        guestPayToken: true,
+        stripeCheckoutSessionId: true,
+        assignedCarpenterId: true,
+      },
+    }),
   ]);
 
   const jobs = carpenters.flatMap((c) =>
@@ -104,5 +129,12 @@ export async function GET() {
     (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
   );
 
-  return NextResponse.json({ clients, carpenters, jobs, activityFeed, workRequests });
+  return NextResponse.json({
+    clients,
+    carpenters,
+    jobs,
+    activityFeed,
+    workRequests,
+    structuredJobsPending,
+  });
 }

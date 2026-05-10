@@ -6,6 +6,7 @@ import {
   adminUpdateJob,
   type ClientProfile,
 } from "@/lib/carpenter-store";
+import { createStructuredJobRow } from "@/lib/structured-job-db";
 
 function portalUserToClientProfile(user: NonNullable<Awaited<ReturnType<typeof getPortalUserById>>>): ClientProfile {
   return {
@@ -106,6 +107,25 @@ export async function POST(request: Request) {
       materialPrepNotes: body.materialPrepNotes,
       availabilityReview: body.availabilityReview,
     });
+
+    if (portalId) {
+      const materialDollars =
+        materialCostCents != null ? materialCostCents / 100 : 0;
+      await createStructuredJobRow({
+        id: job.id,
+        portalUserId: portalId,
+        assignedCarpenterId: carpenterId,
+        customerPhone: client.phone.trim(),
+        customerEmail: client.email.trim(),
+        pricing: {
+          materialCost: materialDollars,
+          estimatedHours: estimatedHours ?? 0,
+          totalLaborHold: 150,
+          immediateCharge: 150 + materialDollars,
+        },
+      });
+    }
+
     return NextResponse.json({ job });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Could not assign job.";

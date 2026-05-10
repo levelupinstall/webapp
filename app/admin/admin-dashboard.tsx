@@ -135,6 +135,24 @@ type JobRow = {
   receiptCount: number;
 };
 
+type StructuredJobPendingRow = {
+  id: string;
+  createdAt: string;
+  status: string;
+  customerPhone: string;
+  customerEmail: string;
+  portalUserId: string | null;
+  width: number;
+  height: number;
+  depth: number;
+  dwellingType: string;
+  immediateCharge: number;
+  paymentAmountCents: number | null;
+  guestPayToken: string | null;
+  stripeCheckoutSessionId: string | null;
+  assignedCarpenterId: string | null;
+};
+
 function splitJobChecklistLines(text: string): string[] {
   return [...new Set(text.split(/\r?\n/).map((line) => line.trim()).filter(Boolean))];
 }
@@ -208,6 +226,11 @@ function formatMoney(cents: number) {
   return new Intl.NumberFormat(undefined, { style: "currency", currency: "USD" }).format(
     cents / 100,
   );
+}
+
+function cadStructuredCharge(row: StructuredJobPendingRow) {
+  const cents = row.paymentAmountCents ?? Math.round(row.immediateCharge * 100);
+  return new Intl.NumberFormat("en-CA", { style: "currency", currency: "CAD" }).format(cents / 100);
 }
 
 type ReportRangeKind =
@@ -374,6 +397,15 @@ export default function AdminDashboard() {
   const [clients, setClients] = useState<PortalClient[]>([]);
   const [carpenters, setCarpenters] = useState<CarpenterRow[]>([]);
   const [jobs, setJobs] = useState<JobRow[]>([]);
+  const [structuredJobsPending, setStructuredJobsPending] = useState<StructuredJobPendingRow[]>(
+    [],
+  );
+  const [structuredCheckoutBusyId, setStructuredCheckoutBusyId] = useState<string | null>(null);
+  const [structuredCheckoutFlash, setStructuredCheckoutFlash] = useState<{
+    jobId: string;
+    url: string;
+    message?: string;
+  } | null>(null);
   const [activityFeed, setActivityFeed] = useState<ActivityRow[]>([]);
   const [overviewLoading, setOverviewLoading] = useState(false);
   const [overviewError, setOverviewError] = useState("");
@@ -471,10 +503,14 @@ export default function AdminDashboard() {
         carpenters: CarpenterRow[];
         jobs: JobRow[];
         activityFeed: ActivityRow[];
+        structuredJobsPending?: StructuredJobPendingRow[];
       };
       setClients(data.clients);
       setCarpenters(data.carpenters);
       setJobs(data.jobs);
+      setStructuredJobsPending(
+        Array.isArray(data.structuredJobsPending) ? data.structuredJobsPending : [],
+      );
       setActivityFeed(data.activityFeed);
     } catch {
       setOverviewError("Failed to load overview. Try again.");
@@ -1362,6 +1398,150 @@ export default function AdminDashboard() {
                                   {job.formalProposalIntake.proposalId.slice(0, 8)}…
                                 </p>
                               ) : null}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+            ) : null}
+
+            {tab === "pending_jobs" ? (
+              <div className="rounded-xl border border-teal-900/40 bg-teal-950/25 p-4">
+                <h2 className="text-sm font-semibold text-white">
+                  Structured jobs (database) — guest &amp; portal submits
+                </h2>
+                <p className="mt-1 text-xs text-zinc-500">
+                  Rows from <code className="text-zinc-400">POST /api/jobs/submit</code> or CRM-linked
+                  intake. Jobs without a portal account still appear here. Approve to generate a Stripe
+                  Checkout link — send it by email or SMS using the customer&apos;s phone.
+                </p>
+                {structuredCheckoutFlash ? (
+                  <div className="mt-3 rounded-lg border border-teal-800 bg-teal-950/60 px-3 py-2 text-[11px] text-teal-100">
+                    <p className="font-medium text-teal-50">Checkout link (copy and send)</p>
+                    <p className="mt-1 break-all font-mono text-teal-200/90">
+                      {structuredCheckoutFlash.url}
+                    </p>
+                    {structuredCheckoutFlash.message ? (
+                      <p className="mt-2 text-teal-200/80">{structuredCheckoutFlash.message}</p>
+                    ) : null}
+                    <button
+                      type="button"
+                      className="mt-2 rounded-lg border border-teal-600 px-2 py-1 text-[11px] text-teal-100 hover:bg-teal-900/80"
+                      onClick={() => {
+                        void navigator.clipboard.writeText(structuredCheckoutFlash.url);
+                      }}
+                    >
+                      Copy link
+                    </button>
+                  </div>
+                ) : null}
+                {structuredJobsPending.length === 0 ? (
+                  <p className="mt-4 text-sm text-zinc-500">
+                    No structured jobs awaiting review.
+                  </p>
+                ) : (
+                  <div className="mt-4 overflow-x-auto">
+                    <table className="w-full min-w-[840px] text-left text-sm">
+                      <thead className="border-b border-zinc-800 text-xs uppercase tracking-wider text-zinc-500">
+                        <tr>
+                          <th className="px-3 py-2 font-medium">Created</th>
+                          <th className="px-3 py-2 font-medium">Contact</th>
+                          <th className="px-3 py-2 font-medium">Portal</th>
+                          <th className="px-3 py-2 font-medium">Dims / type</th>
+                          <th className="px-3 py-2 font-medium">Charge (CAD)</th>
+                          <th className="px-3 py-2 font-medium">Status</th>
+                          <th className="px-3 py-2 font-medium">Stripe</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-zinc-800">
+                        {structuredJobsPending.map((sj) => (
+                          <tr key={sj.id} className="align-top text-zinc-300">
+                            <td className="px-3 py-2 text-xs">
+                              {new Date(sj.createdAt).toLocaleString()}
+                              <p className="mt-1 font-mono text-[10px] text-zinc-600">
+                                {sj.id.slice(0, 10)}…
+                              </p>
+                            </td>
+                            <td className="px-3 py-2 text-xs">
+                              <p className="text-zinc-200">{sj.customerEmail || "—"}</p>
+                              <p className="text-zinc-500">{sj.customerPhone || "—"}</p>
+                            </td>
+                            <td className="px-3 py-2 text-xs">
+                              {sj.portalUserId ? (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setTab("clients");
+                                    setExpandedClientId(sj.portalUserId);
+                                  }}
+                                  className="rounded border border-teal-700 px-2 py-1 text-[11px] text-teal-200 hover:bg-teal-900/50"
+                                >
+                                  Open client
+                                </button>
+                              ) : (
+                                <span className="text-amber-400/90">Guest (no portal)</span>
+                              )}
+                            </td>
+                            <td className="px-3 py-2 text-xs text-zinc-400">
+                              {sj.width}&quot; × {sj.height}&quot; × {sj.depth}&quot;
+                              <br />
+                              {sj.dwellingType}
+                            </td>
+                            <td className="px-3 py-2 text-xs tabular-nums">
+                              {cadStructuredCharge(sj)}
+                            </td>
+                            <td className="px-3 py-2 text-xs">{sj.status}</td>
+                            <td className="px-3 py-2">
+                              <button
+                                type="button"
+                                disabled={
+                                  structuredCheckoutBusyId === sj.id ||
+                                  !sj.customerEmail?.trim() ||
+                                  sj.status === "PAID"
+                                }
+                                title={
+                                  !sj.customerEmail?.trim()
+                                    ? "Customer email required on the job row for Stripe receipts."
+                                    : undefined
+                                }
+                                onClick={async () => {
+                                  setStructuredCheckoutBusyId(sj.id);
+                                  setStructuredCheckoutFlash(null);
+                                  try {
+                                    const res = await fetch(
+                                      `/api/admin/structured-jobs/${encodeURIComponent(sj.id)}/approve-checkout`,
+                                      { method: "POST" },
+                                    );
+                                    const data = (await res.json()) as {
+                                      error?: string;
+                                      url?: string;
+                                      message?: string;
+                                    };
+                                    if (!res.ok || !data.url) {
+                                      window.alert(data.error || "Could not create checkout.");
+                                      return;
+                                    }
+                                    setStructuredCheckoutFlash({
+                                      jobId: sj.id,
+                                      url: data.url,
+                                      message: data.message,
+                                    });
+                                    await refreshOverview();
+                                  } finally {
+                                    setStructuredCheckoutBusyId(null);
+                                  }
+                                }}
+                                className="rounded-lg border border-teal-700 bg-teal-950/80 px-3 py-1.5 text-[11px] font-medium text-teal-100 hover:bg-teal-900/80 disabled:cursor-not-allowed disabled:opacity-40"
+                              >
+                                {structuredCheckoutBusyId === sj.id
+                                  ? "Working…"
+                                  : sj.status === "APPROVED_PENDING_PAYMENT"
+                                    ? "Get pay link"
+                                    : "Approve & pay link"}
+                              </button>
                             </td>
                           </tr>
                         ))}

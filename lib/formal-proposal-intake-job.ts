@@ -4,6 +4,7 @@ import {
   type ClientProfile,
 } from "@/lib/carpenter-store";
 import type { WorkProposalRendering } from "@/lib/client-portal-store";
+import { createStructuredJobRow } from "@/lib/structured-job-db";
 
 function mediaRowsFromProposalAssets(params: {
   spacePhotos: WorkProposalRendering[];
@@ -97,5 +98,15 @@ export async function createFormalProposalIntakeJob(params: {
     },
     initialMedia,
   });
+
+  await createStructuredJobRow({
+    id: job.id,
+    portalUserId: params.portalUserId,
+    assignedCarpenterId: carpenterId,
+    customerPhone: params.client.phone?.trim() ?? "",
+    customerEmail: params.client.email?.trim() ?? "",
+    workProposalId: params.proposalId,
+  });
+
   return { carpenterId, jobId: job.id };
 }
