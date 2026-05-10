@@ -7,6 +7,7 @@ import {
   type PlannerPhaseTag,
   stripPlannerPhaseMarkers,
 } from "@/lib/planner-phase-utils";
+import { deriveNorthStarSessionFromUserMessages } from "@/lib/planner-intake-detect";
 import { PLANNER_ASSISTANT_NAME } from "@/lib/planner-brand";
 
 type ChatMessage = {
@@ -124,6 +125,9 @@ export default function ProjectPlannerAssistant({
   const [saveStatus, setSaveStatus] = useState<string | null>(null);
   const [showCreateAccountPrompt, setShowCreateAccountPrompt] = useState(false);
   const [photoInviteActive, setPhotoInviteActive] = useState(false);
+  /** Phase 1 — populated from homeowner messages; `[PHOTO_PROMPT]` UI only when both are set. */
+  const [workCategory, setWorkCategory] = useState<string | null>(null);
+  const [stylePreference, setStylePreference] = useState<string | null>(null);
   const [sketchRoundsDelivered, setSketchRoundsDelivered] = useState(0);
   const [submitDesignBusy, setSubmitDesignBusy] = useState(false);
   const [saveBusy, setSaveBusy] = useState(false);
@@ -299,8 +303,16 @@ export default function ProjectPlannerAssistant({
       }
 
       const data = (await response.json()) as AssistantResponse;
+      const northStar = deriveNorthStarSessionFromUserMessages(payloadMessages);
+      setWorkCategory(northStar.workCategory);
+      setStylePreference(northStar.stylePreference);
+
       setPhase(data.phase);
-      setPhotoInviteActive(Boolean(data.showPhotoUploader));
+      setPhotoInviteActive(
+        Boolean(
+          data.showPhotoUploader && northStar.workCategory && northStar.stylePreference,
+        ),
+      );
 
       const assistantImages = data.images?.map((img) => ({
         mimeType: img.mimeType,
@@ -696,6 +708,15 @@ export default function ProjectPlannerAssistant({
       .then((parsed) => {
         if (cancelled || !parsed) return;
         setMessages(parsed);
+        const payloadLike = parsed.map((m) => ({
+          role: m.role,
+          content:
+            m.role === "assistant" ? stripPlannerPhaseMarkers(m.content) : m.content,
+        }));
+        const resumedNorthStar = deriveNorthStarSessionFromUserMessages(payloadLike);
+        setWorkCategory(resumedNorthStar.workCategory);
+        setStylePreference(resumedNorthStar.stylePreference);
+
         setLoadedIdeaId(id);
         setSaveStatus("Resumed saved design conversation.");
         const aiWithImages = parsed.filter((m) => m.role === "assistant" && (m.images?.length ?? 0) > 0)
@@ -709,7 +730,11 @@ export default function ProjectPlannerAssistant({
   }, [resumedIdeaId, welcome, loadedIdeaId]);
 
   return (
-    <section className="mt-8 rounded-3xl border border-[#dac6fb] bg-white p-6 shadow-[0_10px_30px_-20px_rgba(91,33,182,0.55)] sm:p-8">
+    <section
+      className="mt-8 rounded-3xl border border-[#dac6fb] bg-white p-6 shadow-[0_10px_30px_-20px_rgba(91,33,182,0.55)] sm:p-8"
+      data-planner-work-category={workCategory ?? ""}
+      data-planner-style-preference={stylePreference ?? ""}
+    >
       {welcome ? (
         <div className="mb-6 rounded-2xl border border-[#c9e8d4] bg-gradient-to-br from-[#f4fcf7] to-[#eefaf3] px-5 py-4 sm:px-6">
           <p className="text-lg font-semibold text-[#1a4d2e] sm:text-xl">

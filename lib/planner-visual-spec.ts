@@ -9,17 +9,29 @@ export type PlannerVisualSpec = {
   depth: number | null;
   material: string | null;
   style: string | null;
+  /** Phase 1 — category label from transcript extraction (image prompt + CRM). */
+  designCategory: string | null;
+  /** Short intake narrative for CRM / prompts (optional). */
+  scopeNotes: string | null;
   /** Storey / finished-floor level when the homeowner stated it (e.g. 2 = second floor). */
   floor: number | null;
   /** Condo / apartment style dwelling when inferable from chat. */
   isCondo: boolean | null;
 };
 
+export type DesignCategoryBucket =
+  | "closet"
+  | "tv_wall"
+  | "shelving_builtin"
+  | "trim_millwork"
+  | "general";
+
 export type AdaptiveScaleOptions = {
   hasUserProvidedPhoto: boolean;
   isCloset: boolean;
   /** From transcript regex — used only when there are no reference photos (photo wins). */
   ceilingHeightFeet: number | null;
+  categoryBucket?: DesignCategoryBucket;
 };
 
 /** Adaptive scale language for the image model only (not Alex chat copy). */
@@ -40,13 +52,33 @@ export function buildAdaptiveScaleInjection(opts: AdaptiveScaleOptions): string 
     "Primary human-scale calibration: standard clothing hangers on a closet rod (believable rod height and hanger silhouette) — use this reference consistently so shelving and cabinets are never oversized relative to realistic residential proportions.",
   );
 
-  if (opts.isCloset) {
+  const bucket = opts.categoryBucket ?? "general";
+
+  if (opts.isCloset || bucket === "closet") {
     segments.push(
       "Closet context: align shelf depths and vertical stacking to that hanger-and-rod scale so cavity depth reads believably.",
     );
+  } else if (bucket === "tv_wall") {
+    segments.push(
+      "Category scale anchors — TV / media wall: reference a typical flat-panel TV module width (~42–65\") against an adjacent standard interior door frame (~28–36\" clear opening) and duplex outlet vertical placement (~12–18\" AFF to bottom of plate when inferring); keep bracket depth realistic.",
+    );
+    segments.push(
+      "Secondary anchors where visible: baseboard height and crown/ceiling line from the reference photo.",
+    );
+  } else if (bucket === "trim_millwork") {
+    segments.push(
+      "Category scale anchors — trim / millwork: preserve interior door casing proportions (~80–84\" strike zone to header typical), 3–6\" baseboard height bands, and crown depth consistent with residential norms.",
+    );
+  } else if (bucket === "shelving_builtin") {
+    segments.push(
+      "Category scale anchors — shelving / built-ins: use standard interior door leaf height (~80\") and hinge-side jamb as vertical calibration for bookcase stacks and spans.",
+    );
+    segments.push(
+      "Secondary anchors where visible: outlets at typical bedside/kitchen counter bands only when applicable.",
+    );
   } else {
     segments.push(
-      "Secondary room anchors where visible: standard electrical outlet height and baseboard trim relative to the floor.",
+      "Secondary room anchors where visible: standard electrical outlet height and baseboard trim relative to the floor; interior door frame proportions (~80\" leaf height) when doors appear.",
     );
   }
 
@@ -61,6 +93,18 @@ export function transcriptSuggestsCloset(text: string): boolean {
   return /\bclosets?\b|walk[\s-]?in|wardrobe|reach[\s-]?in|coat\s+closet|linen\s+closet|pantry\b/i.test(
     text,
   );
+}
+
+/** Map chat + category labels to scale-anchor bucket for image prompts. */
+export function inferDesignCategoryBucket(text: string): DesignCategoryBucket {
+  const t = text.toLowerCase();
+  if (/\btv\b|television|mount\b|media\s+wall/i.test(t)) return "tv_wall";
+  if (/\btrim\b|crown|baseboard|casing|wainscot/i.test(t)) return "trim_millwork";
+  if (transcriptSuggestsCloset(t)) return "closet";
+  if (/\bshelf|shelving|built[\s-]?ins?\b|built\s+in|bookcase|mudroom|pantry|cabinet\s+run/i.test(t)) {
+    return "shelving_builtin";
+  }
+  return "general";
 }
 
 export function parseInchesField(value: unknown): number | null {
@@ -156,12 +200,25 @@ export function normalizeVisualSpec(raw: Record<string, unknown>): PlannerVisual
   material = scrubPricing(material);
   style = scrubPricing(style);
 
+  let designCategory = str(raw.designCategory);
+  let scopeNotes = str(raw.scopeNotes);
+  designCategory = scrubPricing(designCategory);
+  scopeNotes = scrubPricing(scopeNotes);
+  if (designCategory && designCategory.length > 500) {
+    designCategory = designCategory.slice(0, 500);
+  }
+  if (scopeNotes && scopeNotes.length > 2000) {
+    scopeNotes = scopeNotes.slice(0, 2000);
+  }
+
   return {
     width: parseInchesField(raw.width),
     height: parseInchesField(raw.height),
     depth: parseInchesField(raw.depth),
     material,
     style,
+    designCategory,
+    scopeNotes,
     floor: parseFloorField(raw.floor),
     isCondo: parseBooleanLoose(raw.isCondo),
   };
@@ -227,6 +284,16 @@ export function buildExtractedVisualDirective(
   if (spec.style) {
     segments.push(`Style direction: ${spec.style}.`);
   }
+  if (spec.designCategory) {
+    segments.push(`Project category (North Star): ${spec.designCategory}.`);
+  }
+  if (spec.scopeNotes) {
+    segments.push(`Scope / survey notes (no pricing): ${spec.scopeNotes}`);
+  }
+
+  const categoryBucket = inferDesignCategoryBucket(
+    `${spec.designCategory ?? ""} ${ctx.extractionTranscript}`,
+  );
 
   if (spec.floor !== null) {
     segments.push(
@@ -246,6 +313,7 @@ export function buildExtractedVisualDirective(
       hasUserProvidedPhoto: ctx.hasUserProvidedPhoto,
       isCloset: ctx.isCloset,
       ceilingHeightFeet: ceilingFeet,
+      categoryBucket,
     }),
   );
 

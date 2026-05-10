@@ -15,10 +15,17 @@ import {
   type PlannerPhaseTag,
 } from "@/lib/planner-phase-utils";
 import {
+  assistantAskedFirstDesignGate,
+  hasNorthStarContext,
+  hasPhotoPromptNorthStarReady,
+  hasRoughDimensions,
+} from "@/lib/planner-intake-detect";
+import {
   applyFullCarpenterPipeline,
   buildAdaptiveScaleInjection,
   buildExtractedVisualDirective,
   extractCeilingHeightFeetFromTranscript,
+  inferDesignCategoryBucket,
   transcriptSuggestsCloset,
 } from "@/lib/planner-visual-spec";
 import { PLANNER_ASSISTANT_SYSTEM } from "@/lib/planner-assistant-prompt";
@@ -85,38 +92,12 @@ function shouldShowSubmitDesignCta(params: {
   return false;
 }
 
-function hasEnoughInfoForFirstRender(messages: PlannerClientMessage[]): boolean {
-  const userText = messages
-    .filter((m) => m.role === "user")
-    .map((m) => m.content.trim())
-    .filter(Boolean)
-    .join("\n")
-    .toLowerCase();
-  const hasSpaceType =
-    /(kitchen|bathroom|bedroom|closet|mudroom|laundry|entry|living|office|basement|hall)/i.test(
-      userText,
-    );
-  const hasPreferenceSignal =
-    /(style|modern|traditional|minimal|warm|bright|dark|storage|shelves|drawers|layout|colour|color|wood|trim|finish|look|feel)/i.test(
-      userText,
-    );
-  return userText.length >= 160 && hasSpaceType && hasPreferenceSignal;
-}
-
 function userApprovedFirstRender(text: string): boolean {
   const t = text.trim().toLowerCase();
   if (!t) return false;
   return (
     /\b(yes|yep|yeah|sure|ok|okay|go ahead|proceed|please do|render|create|generate)\b/.test(t) ||
     /\b(nothing else|that'?s all|all good|looks good|no more)\b/.test(t)
-  );
-}
-
-function assistantAskedFirstRenderCheck(messages: PlannerClientMessage[]): boolean {
-  return messages.some(
-    (m) =>
-      m.role === "assistant" &&
-      /anything else .*consider .*before creating our first rendering/i.test(m.content),
   );
 }
 
@@ -132,6 +113,8 @@ function buildPlannerSystemInstruction(params: {
   hasPhone: boolean;
   hasCallWindow: boolean;
   firstRenderCheckMode: "none" | "ask_now" | "awaiting_user_confirmation";
+  /** Category + style signals present — model may use `[PHOTO_PROMPT]`. */
+  northStarReadyForPhotoPrompt: boolean;
 }): string {
   const chunks: string[] = [PLANNER_ASSISTANT_SYSTEM];
 
@@ -149,13 +132,17 @@ The platform **may** attach a concept sketch after this reply—either tied to t
 
   if (params.userAttachedPhotosThisTurn) {
     chunks.push(`
-## Session hint (platform)
-The homeowner attached **photos** with this message—they may be **room shots**, **pictures of purchased materials/kits**, or both; interpret accordingly. Thank them warmly. Stay short; the system can generate a sketch from consultation + their pictures. Prefer moving to \`[PHASE:refine]\` after this turn when you're iterating visually. End with a **question**.`);
+## Phase 3 — Smart vision survey (photo just uploaded)
+They attached **space / material photos**. Thank them briefly, then perform a **category-aware site survey** aligned with **Phase 1** (North Star):
+- **Obstructions:** outlets, vents, switches that conflict with the install type you discussed.
+- **Architecture:** trim, baseboards, ceiling character — tie observations to their **style** direction.
+- **Removals:** ONLY ask about removing something **visible** in the image (e.g. wire rack); never invent off-photo clutter.
+Stay concise; end with **one** sharp **question**. Prefer \`[PHASE:refine]\` when iterating visually after photos exist.`);
   }
-  if (!params.hasPhotoContextInSession) {
+  if (!params.hasPhotoContextInSession && params.northStarReadyForPhotoPrompt) {
     chunks.push(`
-## Session hint (required intake)
-Ask for clear photos of the space early in consultation. Include \`[PHOTO_PROMPT]\` in your reply when asking. Explain that photos help Level Up tailor layout questions and recommendations to the real room.`);
+## Session hint (photo invite — Phase 1 complete)
+The homeowner has indicated **both** a **work category** and **style direction**. Invite clear photos of the space **now** when helpful. Include \`[PHOTO_PROMPT]\` in your reply when asking for uploads. Explain briefly that photos help tailor layout questions to the real room.`);
   }
 
   if (params.suggestInPersonAfterManySketches) {
@@ -189,16 +176,19 @@ Before final handoff, ask what days/times are ideal for a callback (e.g. weekday
 
   if (params.firstRenderCheckMode === "ask_now") {
     chunks.push(`
-## First rendering gate (required)
-Do NOT generate or imply an image yet.
-Apply **spatial logic**: tallest vertical = Height; shorter horizontal = Depth; remaining horizontal = Width. For closets, ~24" depth is typical — if numbers look swapped (e.g. 24" "high" and 80" "deep"), clarify politely **before** summarizing.
-Include **one clear line** stating the working envelope as **Width × Height × Depth** (with units), then end with **one** closing question that naturally combines confirming that reading **with** asking:
-"Is there anything else I should consider in the design before creating our first rendering?"`);
+## Phase 4 — Rendering gate (required)
+Do **NOT** generate or imply that a first image is ready or attached.
+Ask **3–5 short follow-ups** mixing **Category A** (remaining survey: obstructions, architecture, adjacency) with **Category B** (final scope adds/removals).
+Apply **spatial logic**: tallest vertical = Height; shorter horizontal = Depth; remaining horizontal = Width. Closets often ~24" deep — if numbers look swapped, clarify **before** the recap.
+Include **one recap sentence** exactly in this template (fill brackets):  
+"So we're looking at a [Style] [Category] that is [Width × Height × Depth], avoiding [Obstruction visible in photo if any], and [Removal only if they confirmed removing something visible]."
+**THE GATE:** Your **final** question to the homeowner **must be verbatim**:  
+"Is there anything else to consider before I create the first design idea for you?"`);
   } else if (params.firstRenderCheckMode === "awaiting_user_confirmation") {
     chunks.push(`
-## First rendering gate (required)
-You already asked whether there is anything else to consider before the first rendering.
-Do NOT ask it again. If the homeowner confirms there is nothing else to add, proceed; otherwise gather that extra detail first.
+## Phase 4 — Rendering gate (required)
+You already asked the gate question about considering anything else before the first design idea.
+Do **NOT** repeat that exact question. If they confirm nothing else matters, proceed naturally; otherwise capture the missing detail first.
 If they correct dimensions, restate **Width × Height × Depth** using spatial logic before moving on.`);
   }
 
@@ -422,6 +412,7 @@ export async function POST(request: Request) {
     const intakeHasBudget = hasBudgetContext(allUserText);
     const intakeHasPhone = hasPhoneNumber(allUserText);
     const intakeHasCallWindow = hasCallWindow(allUserText);
+    const northStarReadyForPhotoPrompt = hasPhotoPromptNorthStarReady(allUserText);
 
     if (!lastUserText && imageFiles.length === 0) {
       return NextResponse.json(
@@ -435,20 +426,28 @@ export async function POST(request: Request) {
       userAttachedPhotosThisTurn || sketchReferenceFiles.length > 0;
     const hasAnyPriorRender =
       sketchRoundsDelivered > 0 || priorTurnHadConceptImage;
-    const enoughInfoForFirstRender = hasEnoughInfoForFirstRender(messages);
-    const askedFirstRenderCheck = assistantAskedFirstRenderCheck(messages);
+    const allUserTextLower = allUserText.toLowerCase();
+    const eligibleForFirstRenderGate =
+      hasNorthStarContext(allUserTextLower) &&
+      hasRoughDimensions(allUserTextLower) &&
+      intakeHasBudget &&
+      hasPhotoContextInSession;
+    const askedFirstRenderCheck = assistantAskedFirstDesignGate(messages);
     const firstRenderUserConfirmed = userApprovedFirstRender(lastUserText);
     const firstRenderCheckMode: "none" | "ask_now" | "awaiting_user_confirmation" =
       hasAnyPriorRender
         ? "none"
-        : !enoughInfoForFirstRender
+        : !eligibleForFirstRenderGate
           ? "none"
           : askedFirstRenderCheck
             ? firstRenderUserConfirmed
               ? "none"
               : "awaiting_user_confirmation"
             : "ask_now";
-    const blockFirstRenderImage = !hasAnyPriorRender && firstRenderCheckMode !== "none";
+    /** First concept image only after Phase 1–3 intake + Phase 4 homeowner confirmation. */
+    const blockFirstRenderImage =
+      !hasAnyPriorRender &&
+      (!eligibleForFirstRenderGate || firstRenderCheckMode !== "none");
 
     const pureEnthusiasmAfterSketch =
       priorTurnHadConceptImage &&
@@ -508,6 +507,7 @@ export async function POST(request: Request) {
             hasPhone: intakeHasPhone,
             hasCallWindow: intakeHasCallWindow,
             firstRenderCheckMode,
+            northStarReadyForPhotoPrompt,
           })}\n\n${buildConversationMemoryHint(messages)}`,
           contents,
         });
@@ -533,8 +533,16 @@ export async function POST(request: Request) {
       replyRaw = buildFallbackReply(imageFiles.length);
     }
 
+    let replyForPhase = replyRaw;
+    if (!northStarReadyForPhotoPrompt && /\[PHOTO_PROMPT\]/i.test(replyForPhase)) {
+      replyForPhase = replyForPhase
+        .replace(/\[PHOTO_PROMPT\]/gi, "")
+        .replace(/\n{3,}/g, "\n\n")
+        .trim();
+    }
+
     const { cleanReply: cleanReplyRaw, phase, showPhotoUploader } =
-      extractPlannerPhase(replyRaw);
+      extractPlannerPhase(replyForPhase);
 
     const genericBlankSketchEligible =
       substantiveForGenericSketch &&
@@ -602,6 +610,7 @@ export async function POST(request: Request) {
         hasUserProvidedPhoto,
         isCloset: isClosetScope,
         ceilingHeightFeet: ceilingFromTranscript,
+        categoryBucket: inferDesignCategoryBucket(extractionTranscript),
       });
       try {
         const rawSpec = await geminiExtractPlannerVisualSpec(extractionTranscript);

@@ -316,6 +316,8 @@ Output ONLY valid JSON with exactly these keys (no markdown fences, no commentar
 - "depth": number or null — inches, front-to-back into the room or closet cavity
 - "material": string or null — short finish/material vibe only (e.g. painted MDF, oak tone); NEVER dollar amounts or SKUs
 - "style": string or null — short aesthetic label only (e.g. modern, traditional); NEVER fees or rates
+- "designCategory": string or null — Phase 1 "North Star" install type only (e.g. "Built-in shelving", "TV wall", "Trim refresh"); NOT finishes or brands
+- "scopeNotes": string or null — 1–4 sentences: primary use case, obstructions or removals mentioned, architecture cues from photos when discussed; NEVER prices or SKUs
 - "floor": number or null — storey / finished floor level when stated (e.g. 1 main, 2 second floor); otherwise null
 - "isCondo": boolean or null — true if condo, apartment, or strata/stacked dwelling rules/access clearly apply; false if detached house clearly indicated; otherwise null
 
@@ -377,7 +379,9 @@ Output ONLY valid JSON (no markdown fences, no commentary) with exactly these ke
 - "height": number or null — inches
 - "depth": number or null — inches
 - "material": string or null — finishes only (no prices)
-- "style": string or null — aesthetic label only (no prices)
+- "style": string or null — aesthetic label / vibe only (no prices)
+- "designCategory": string or null — Project North Star category (e.g. "TV wall mount", "Reach-in closet", "Crown and base trim package") — NOT material finishes
+- "scopeNotes": string or null — 2–8 sentences capturing use case, budget-as-guardrail discussion (without dollar figures), visible obstructions (outlets/vents), trim/ceiling context, and removals ONLY if the homeowner discussed them; no SKUs or store names
 - "floorLevel": number or null — finished floor / storey when inferable (1 = main)
 - "dwellingType": string or null — short label (e.g. Condo, Townhouse, Detached)
 - "hasElevator": boolean or null — building elevator clearly yes/no; null if unknown
@@ -385,7 +389,7 @@ Output ONLY valid JSON (no markdown fences, no commentary) with exactly these ke
 
 Rules:
 - Numbers only when stated or clearly inferable; otherwise null.
-- Never put dollar amounts, SKUs, or hourly rates into material/style.
+- Never put dollar amounts, SKUs, or hourly rates into material/style/designCategory/scopeNotes.
 `;
 
 function parseLaborHoursEstimate(value: unknown): number | null {
@@ -444,12 +448,28 @@ function normalizeSubmitDesignExtract(
   material = scrubPricing(material);
   style = scrubPricing(style);
 
+  let designCategory: string | null = null;
+  if (typeof parsed.designCategory === "string") {
+    const t = parsed.designCategory.trim();
+    designCategory = t.length ? t.slice(0, 500) : null;
+  }
+  designCategory = scrubPricing(designCategory);
+
+  let scopeNotes: string | null = null;
+  if (typeof parsed.scopeNotes === "string") {
+    const t = parsed.scopeNotes.trim();
+    scopeNotes = t.length ? t.slice(0, 12000) : null;
+  }
+  scopeNotes = scrubPricing(scopeNotes);
+
   return {
     width: parseInchesField(parsed.width),
     height: parseInchesField(parsed.height),
     depth: parseInchesField(parsed.depth),
     material,
     style,
+    designCategory,
+    scopeNotes,
     floorLevel,
     dwellingType,
     hasElevator,

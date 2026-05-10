@@ -80,6 +80,9 @@ export async function GET(
       scopeOfWorkTerms: job.scopeOfWorkTerms,
       assignedCarpenterId: job.assignedCarpenterId,
       guestPayToken: job.guestPayToken,
+      designCategory: job.designCategory,
+      designStyle: job.designStyle,
+      scopeNotes: job.scopeNotes,
     },
     proposal,
   });

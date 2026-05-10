@@ -217,6 +217,36 @@ export default async function AdminJobProfilePage({
                 </dl>
               </div>
 
+              <div className="rounded-xl border border-violet-900/40 bg-violet-950/25 p-5">
+                <h2 className="text-xs font-semibold uppercase tracking-wider text-violet-200/90">
+                  Design intent (Alex intake)
+                </h2>
+                <p className="mt-1 text-[11px] leading-relaxed text-zinc-500">
+                  Project North Star from phased planner conversation — persisted when the customer submits for
+                  review (Gemini extraction).
+                </p>
+                <dl className="mt-4 space-y-3 text-sm">
+                  <div>
+                    <dt className="text-zinc-500">Category</dt>
+                    <dd className="mt-1 font-medium text-zinc-100">
+                      {job.designCategory?.trim() || "—"}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt className="text-zinc-500">Style</dt>
+                    <dd className="mt-1 font-medium text-zinc-100">
+                      {job.designStyle?.trim() || "—"}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt className="text-zinc-500">Scope notes</dt>
+                    <dd className="mt-1 whitespace-pre-wrap text-xs leading-relaxed text-zinc-300">
+                      {job.scopeNotes?.trim() || "—"}
+                    </dd>
+                  </div>
+                </dl>
+              </div>
+
               <div className="rounded-xl border border-zinc-800 bg-zinc-900/40 p-5">
                 <h2 className="text-xs font-semibold uppercase tracking-wider text-zinc-400">
                   Logistics

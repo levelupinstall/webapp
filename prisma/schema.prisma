@@ -159,6 +159,13 @@ model Job {
   /// Generated scope / Terms summary appended at submit time.
   scopeOfWorkTerms String? @map("scope_of_work_terms") @db.Text
 
+  /// Alex Phase 1 — Project North Star (e.g. built-ins, TV wall, trim).
+  designCategory String? @map("design_category") @db.VarChar(500)
+  /// Style / vibe label from intake (e.g. modern minimalist, traditional warm).
+  designStyle String? @map("design_style") @db.VarChar(500)
+  /// Combined use case, survey notes, removals/obstructions discussed (Gemini extract).
+  scopeNotes String? @map("scope_notes") @db.Text
+
   /// Work proposal id when created from formal proposal intake (`portal_users.work_proposals` JSON).
   workProposalId String? @map("work_proposal_id")
 

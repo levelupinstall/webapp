@@ -5,6 +5,10 @@ export type PlannerSubmitDesignExtract = {
   depth: number | null;
   material: string | null;
   style: string | null;
+  /** Phase 1 category — TV wall, shelving, trim, etc. */
+  designCategory: string | null;
+  /** Phase 1–3 narrative: use case, obstructions, removals (no pricing). */
+  scopeNotes: string | null;
   floorLevel: number | null;
   dwellingType: string | null;
   hasElevator: boolean | null;

@@ -13,6 +13,7 @@
   },
   "dependencies": {
     "@prisma/client": "5.22.0",
+    "@vercel/speed-insights": "^2.0.0",
     "bcryptjs": "^3.0.3",
     "googleapis": "^171.4.0",
     "jsonwebtoken": "^9.0.3",
@@ -23,7 +24,6 @@
     "stripe": "^22.1.0"
   },
   "devDependencies": {
-    "prisma": "5.22.0",
     "@tailwindcss/postcss": "^4",
     "@types/jsonwebtoken": "^9.0.10",
     "@types/node": "^20",
@@ -31,6 +31,7 @@
     "@types/react-dom": "^19",
     "eslint": "^9",
     "eslint-config-next": "16.2.5",
+    "prisma": "5.22.0",
     "tailwindcss": "^4",
     "typescript": "^5"
   }

@@ -55,6 +55,8 @@ function blankExtract(): PlannerSubmitDesignExtract {
     depth: null,
     material: null,
     style: null,
+    designCategory: null,
+    scopeNotes: null,
     floorLevel: null,
     dwellingType: null,
     hasElevator: null,
@@ -72,6 +74,8 @@ function mergeVisualIntoSubmit(
   next.depth = next.depth ?? vis.depth;
   next.material = next.material ?? vis.material;
   next.style = next.style ?? vis.style;
+  next.designCategory = next.designCategory ?? vis.designCategory ?? null;
+  next.scopeNotes = next.scopeNotes ?? vis.scopeNotes ?? null;
   next.floorLevel = next.floorLevel ?? vis.floor;
   if (!next.dwellingType?.trim() && vis.isCondo === true) {
     next.dwellingType = "Condominium";
@@ -274,6 +278,8 @@ export async function executePlannerSubmitDesignPipeline(params: {
       depth: extraction.depth,
       material: extraction.material,
       style: extraction.style,
+      designCategory: extraction.designCategory,
+      scopeNotes: extraction.scopeNotes,
       floorLevel,
       dwellingType,
       hasElevator,
@@ -372,6 +378,10 @@ export async function executePlannerSubmitDesignPipeline(params: {
       totalLaborHold: labor.laborHoldCad,
       immediateCharge: labor.immediateChargeCad,
       paymentAmountCents: immediateCents,
+
+      designCategory: extraction.designCategory?.trim() || null,
+      designStyle: extraction.style?.trim() || null,
+      scopeNotes: extraction.scopeNotes?.trim() || null,
 
       laborBreakdown: laborBreakdownBase,
       scopeOfWorkTerms: scopeMarkdown,
