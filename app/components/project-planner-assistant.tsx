@@ -1,7 +1,7 @@
 "use client";
 
 import Image from "next/image";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import {
   type PlannerPhaseTag,
@@ -131,6 +131,7 @@ export default function ProjectPlannerAssistant({
   const [ideaNameModalError, setIdeaNameModalError] = useState<string | null>(null);
 
   const router = useRouter();
+  const searchParams = useSearchParams();
   const ideaNameInputRef = useRef<HTMLInputElement>(null);
 
   const galleryInputRef = useRef<HTMLInputElement>(null);
@@ -168,6 +169,8 @@ export default function ProjectPlannerAssistant({
   const canSaveConversation = messages.some((m) => m.role === "user");
 
   const welcome = welcomeDisplayName?.trim();
+  const resumedIdeaId = searchParams.get("idea");
+  const [loadedIdeaId, setLoadedIdeaId] = useState<string | null>(null);
 
   function defaultIdeaTitle(kind: "save" | "submit"): string {
     const stamp = new Date().toLocaleString();
@@ -192,6 +195,23 @@ export default function ProjectPlannerAssistant({
     const max = 48_000;
     if (full.length <= max) return full;
     return `${full.slice(0, max)}\n\n… (saved excerpt truncated — continue saving after starting a fresh planner thread if needed.)`;
+  }
+
+  function buildConversationPayload() {
+    return {
+      messages: messages.map((m) => ({
+        role: m.role,
+        content: m.role === "assistant" ? stripPlannerPhaseMarkers(m.content) : m.content,
+        ...(m.images?.length
+          ? {
+              images: m.images.map((img) => ({
+                mimeType: img.mimeType,
+                dataUrl: img.dataUrl,
+              })),
+            }
+          : {}),
+      })),
+    };
   }
 
   async function handleSubmit(event: FormEvent) {
@@ -452,6 +472,7 @@ export default function ProjectPlannerAssistant({
         body: JSON.stringify({
           title: ideaTitle.trim().slice(0, 200),
           notes,
+          conversation: buildConversationPayload(),
         }),
       });
 
@@ -524,6 +545,7 @@ export default function ProjectPlannerAssistant({
         body: JSON.stringify({
           title: ideaTitle.trim().slice(0, 200),
           notes,
+          conversation: buildConversationPayload(),
         }),
       });
 
@@ -568,6 +590,64 @@ export default function ProjectPlannerAssistant({
     const id = window.setTimeout(() => ideaNameInputRef.current?.focus(), 0);
     return () => window.clearTimeout(id);
   }, [ideaNameModalOpen]);
+
+  useEffect(() => {
+    const id = resumedIdeaId?.trim();
+    if (!id || !welcome || loadedIdeaId === id) return;
+    let cancelled = false;
+    void fetch("/api/portal/ideas")
+      .then(async (res) => {
+        if (!res.ok) return null;
+        const data = (await res.json()) as {
+          ideas?: Array<{
+            id: string;
+            conversation?: {
+              messages?: Array<{
+                role?: "user" | "assistant";
+                content?: string;
+                images?: Array<{ mimeType?: string; dataUrl?: string }>;
+              }>;
+            };
+          }>;
+        };
+        const idea = (data.ideas ?? []).find((it) => it.id === id);
+        const msgs = idea?.conversation?.messages;
+        if (!idea || !Array.isArray(msgs) || msgs.length === 0) return null;
+        const parsed = msgs
+          .map((m) => {
+            const role = m.role === "assistant" ? "assistant" : "user";
+            const content = String(m.content ?? "");
+            const images = Array.isArray(m.images)
+              ? m.images
+                  .map((img) => ({
+                    mimeType: String(img?.mimeType ?? "image/png"),
+                    dataUrl: String(img?.dataUrl ?? ""),
+                  }))
+                  .filter((img) => img.dataUrl.startsWith("data:"))
+              : [];
+            return {
+              role,
+              content,
+              ...(images.length ? { images } : {}),
+            } as ChatMessage;
+          })
+          .filter((m) => m.content.trim().length > 0 || (m.images?.length ?? 0) > 0);
+        return parsed.length ? parsed : null;
+      })
+      .then((parsed) => {
+        if (cancelled || !parsed) return;
+        setMessages(parsed);
+        setLoadedIdeaId(id);
+        setSaveStatus("Resumed saved design conversation.");
+        const aiWithImages = parsed.filter((m) => m.role === "assistant" && (m.images?.length ?? 0) > 0)
+          .length;
+        setSketchRoundsDelivered(Math.min(MAX_SKETCH_ROUNDS_TRACKED, aiWithImages));
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [resumedIdeaId, welcome, loadedIdeaId]);
 
   return (
     <section className="mt-8 rounded-3xl border border-[#dac6fb] bg-white p-6 shadow-[0_10px_30px_-20px_rgba(91,33,182,0.55)] sm:p-8">

@@ -11,6 +11,13 @@ export type Idea = {
   id: string;
   title: string;
   notes: string;
+  conversation?: {
+    messages: Array<{
+      role: "user" | "assistant";
+      content: string;
+      images?: Array<{ mimeType: string; dataUrl: string }>;
+    }>;
+  };
   createdAt: string;
 };
 
@@ -147,7 +154,49 @@ type UserRecord = {
 };
 
 function parseIdeas(value: Prisma.JsonValue): Idea[] {
-  return Array.isArray(value) ? (value as unknown as Idea[]) : [];
+  if (!Array.isArray(value)) return [];
+  return (value as unknown as Record<string, unknown>[])
+    .filter((row): row is Record<string, unknown> => !!row && typeof row === "object")
+    .map((row, idx) => {
+      const rawConversation = row.conversation;
+      let conversation: Idea["conversation"] | undefined;
+      if (
+        rawConversation &&
+        typeof rawConversation === "object" &&
+        Array.isArray((rawConversation as { messages?: unknown[] }).messages)
+      ) {
+        const parsedMessages = ((rawConversation as { messages?: unknown[] }).messages ?? [])
+          .filter((m): m is Record<string, unknown> => !!m && typeof m === "object")
+          .map((m) => {
+            const rawImages = Array.isArray(m.images) ? m.images : [];
+            const images = rawImages
+              .filter((img): img is Record<string, unknown> => !!img && typeof img === "object")
+              .map((img) => ({
+                mimeType: String(img.mimeType ?? "image/png"),
+                dataUrl: String(img.dataUrl ?? ""),
+              }))
+              .filter((img) => img.dataUrl.startsWith("data:"));
+
+            const role = m.role === "assistant" ? "assistant" : "user";
+            const content = String(m.content ?? "");
+            return {
+              role,
+              content,
+              ...(images.length ? { images } : {}),
+            } as NonNullable<Idea["conversation"]>["messages"][number];
+          })
+          .filter((m) => m.content.trim().length > 0 || (m.images?.length ?? 0) > 0);
+        if (parsedMessages.length) conversation = { messages: parsedMessages };
+      }
+
+      return {
+        id: String(row.id ?? `idea-${idx}`),
+        title: String(row.title ?? "Saved idea"),
+        notes: String(row.notes ?? ""),
+        ...(conversation ? { conversation } : {}),
+        createdAt: String(row.createdAt ?? new Date().toISOString()),
+      };
+    });
 }
 
 function parseInvoices(value: Prisma.JsonValue): Invoice[] {
@@ -817,7 +866,10 @@ export async function markBalanceInvoicePaid(params: {
   return inv;
 }
 
-export async function addIdeaForUser(userId: string, params: Omit<Idea, "id" | "createdAt">) {
+export async function addIdeaForUser(
+  userId: string,
+  params: Omit<Idea, "id" | "createdAt">,
+) {
   const row = await prisma.portalUser.findUnique({ where: { id: userId } });
   if (!row) throw new Error("User not found.");
 
@@ -826,6 +878,7 @@ export async function addIdeaForUser(userId: string, params: Omit<Idea, "id" | "
     id: randomUUID(),
     title: params.title,
     notes: params.notes,
+    ...(params.conversation ? { conversation: params.conversation } : {}),
     createdAt: new Date().toISOString(),
   };
   user.ideas.unshift(idea);

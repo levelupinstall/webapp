@@ -26,7 +26,19 @@ type PortalUser = {
     caption: string;
     uploadedAt: string;
   }[];
-  ideas: { id: string; title: string; notes: string; createdAt: string }[];
+  ideas: {
+    id: string;
+    title: string;
+    notes: string;
+    conversation?: {
+      messages: Array<{
+        role: "user" | "assistant";
+        content: string;
+        images?: Array<{ mimeType: string; dataUrl: string }>;
+      }>;
+    };
+    createdAt: string;
+  }[];
   invoices: {
     id: string;
     projectName: string;
@@ -114,6 +126,7 @@ export default function ClientPortal({
   const [forgotBusy, setForgotBusy] = useState(false);
   const [forgotMessage, setForgotMessage] = useState<string | null>(null);
   const [forgotError, setForgotError] = useState<string | null>(null);
+  const [expandedIdeaId, setExpandedIdeaId] = useState<string | null>(null);
   const router = useRouter();
   const savedProjectsTrackRef = useRef(false);
   const spacePhotosTrackRef = useRef(false);
@@ -396,6 +409,7 @@ export default function ClientPortal({
       if (!response.ok) throw new Error(data.error || "Could not save idea.");
       setIdeaTitle("");
       setIdeaNotes("");
+      setExpandedIdeaId(null);
       await loadMe();
     } catch (ideaError) {
       setError(ideaError instanceof Error ? ideaError.message : "Could not save.");
@@ -701,8 +715,62 @@ export default function ClientPortal({
             ) : (
               user.ideas.map((idea) => (
                 <div key={idea.id} className="rounded-xl border border-[#eddfff] p-3">
-                  <p className="font-semibold text-[#2f1748]">{idea.title}</p>
-                  <p className="text-sm text-[#4d2e70]">{idea.notes}</p>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setExpandedIdeaId((prev) => (prev === idea.id ? null : idea.id))
+                    }
+                    className="flex w-full items-center justify-between gap-3 text-left"
+                  >
+                    <span className="font-semibold text-[#2f1748]">{idea.title}</span>
+                    <span className="text-xs font-semibold text-[#6a4a8f]">
+                      {expandedIdeaId === idea.id ? "Hide" : "Open"}
+                    </span>
+                  </button>
+                  {expandedIdeaId === idea.id ? (
+                    <div className="mt-3 space-y-3 border-t border-[#f0e8ff] pt-3">
+                      {idea.conversation?.messages?.length ? (
+                        <div className="space-y-3">
+                          {idea.conversation.messages.map((m, idx) => (
+                            <div
+                              key={`${idea.id}-m-${idx}`}
+                              className={`rounded-xl px-3 py-2 text-sm ${
+                                m.role === "assistant"
+                                  ? "bg-[#faf6ff] text-[#3e2560]"
+                                  : "ml-auto max-w-[92%] bg-[#6e3eb2] text-white"
+                              }`}
+                            >
+                              <p className="whitespace-pre-wrap">{m.content}</p>
+                              {m.images?.length ? (
+                                <div className="mt-2 grid gap-2 sm:grid-cols-2">
+                                  {m.images.map((img, i) => (
+                                    // eslint-disable-next-line @next/next/no-img-element
+                                    <img
+                                      key={`${idea.id}-img-${idx}-${i}`}
+                                      src={img.dataUrl}
+                                      alt="Saved design image"
+                                      className="max-h-52 w-full rounded-lg border border-[#e8d9ff] object-contain"
+                                    />
+                                  ))}
+                                </div>
+                              ) : null}
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <p className="whitespace-pre-wrap text-sm text-[#4d2e70]">{idea.notes}</p>
+                      )}
+                      <div className="flex flex-wrap gap-2">
+                        <button
+                          type="button"
+                          onClick={() => router.push(`/?section=planner&idea=${encodeURIComponent(idea.id)}`)}
+                          className="rounded-full bg-[#6e3eb2] px-4 py-2 text-xs font-semibold text-white sm:text-sm"
+                        >
+                          Continue in design tool
+                        </button>
+                      </div>
+                    </div>
+                  ) : null}
                 </div>
               ))
             )}
