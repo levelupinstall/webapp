@@ -3,7 +3,7 @@
  * North-star signals precede strict spatial / budget gates per methodology docs.
  */
 
-/** Populated from homeowner messages for `[PHOTO_PROMPT]` gating (client session + server strip). */
+/** Populated from homeowner messages for session display; photo UI also uses `hasEarlyPhotoInviteContext`. */
 export type NorthStarSessionLabels = {
   workCategory: string | null;
   stylePreference: string | null;
@@ -11,7 +11,7 @@ export type NorthStarSessionLabels = {
 
 /**
  * Derive Phase 1 labels from all homeowner text so far (display-oriented strings).
- * Used to gate `[PHOTO_PROMPT]` until both category and style signals exist.
+ * Also feeds `hasEarlyPhotoInviteContext` when both labels match.
  */
 export function deriveNorthStarLabelsFromUserText(userMessagesCombined: string): NorthStarSessionLabels {
   const raw = userMessagesCombined.trim();
@@ -81,22 +81,34 @@ export function deriveNorthStarSessionFromUserMessages(
   return deriveNorthStarLabelsFromUserText(blob);
 }
 
-export function hasPhotoPromptNorthStarReady(allUserText: string): boolean {
+/** Category keyword coverage aligned with Phase 1 / first-render north-star checks. */
+const NORTH_STAR_CATEGORY_PATTERN =
+  /\b(tv|television|mount|media\s+wall|shelving|shelf|shelves|built[\s-]?ins?\b|built\s+in|bookcase|closet|trim|crown|baseboard|casing|wainscot|mudroom|pantry|mantel|ledge|mirror\b|cabinet\s+run|storage\s+wall)/i;
+
+/** Style / vibe keywords — subset for heuristic gates (see deriveNorthStarLabelsFromUserText for display labels). */
+const NORTH_STAR_STYLE_PATTERN =
+  /\b(modern|minimal|minimalist|traditional|warm|ikea|scandi|scandinavian|contemporary|farmhouse|transitional|industrial|classic|rustic|coastal)/i;
+
+/**
+ * Enough category + style signal to invite space photos (`[PHOTO_PROMPT]` + upload UI).
+ * Looser than full Phase 1 north star (no use-case requirement); **does not** affect when the first concept image may render.
+ */
+export function hasEarlyPhotoInviteContext(allUserText: string): boolean {
   const { workCategory, stylePreference } = deriveNorthStarLabelsFromUserText(allUserText);
-  return Boolean(workCategory && stylePreference);
+  if (workCategory && stylePreference) return true;
+  const t = allUserText.toLowerCase();
+  if (t.length < 40) return false;
+  return (
+    NORTH_STAR_CATEGORY_PATTERN.test(allUserText) &&
+    NORTH_STAR_STYLE_PATTERN.test(allUserText)
+  );
 }
 
 /** Phase 1 — category + style + use case signals before relying on dimensions. */
 export function hasNorthStarContext(allUserTextLower: string): boolean {
   const t = allUserTextLower;
-  const hasCategory =
-    /\b(tv|television|mount|media\s+wall|shelving|shelf|shelves|built[\s-]?ins?\b|built\s+in|bookcase|closet|trim|crown|baseboard|casing|wainscot|mudroom|pantry|mantel|ledge|mirror\b|cabinet\s+run|storage\s+wall)/i.test(
-      t,
-    );
-  const hasStyle =
-    /\b(modern|minimal|minimalist|traditional|warm|ikea|scandi|scandinavian|contemporary|farmhouse|transitional|industrial|classic|rustic|coastal)/i.test(
-      t,
-    );
+  const hasCategory = NORTH_STAR_CATEGORY_PATTERN.test(t);
+  const hasStyle = NORTH_STAR_STYLE_PATTERN.test(t);
   const hasUseCase =
     /\b(storage|display|hide|cables|wires|books|heavy|focal|organize|wrap|conceal|seasonal|shoes|coats|linen)/i.test(
       t,

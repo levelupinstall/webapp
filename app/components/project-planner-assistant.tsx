@@ -7,7 +7,10 @@ import {
   type PlannerPhaseTag,
   stripPlannerPhaseMarkers,
 } from "@/lib/planner-phase-utils";
-import { deriveNorthStarSessionFromUserMessages } from "@/lib/planner-intake-detect";
+import {
+  deriveNorthStarSessionFromUserMessages,
+  hasEarlyPhotoInviteContext,
+} from "@/lib/planner-intake-detect";
 import { PLANNER_ASSISTANT_NAME } from "@/lib/planner-brand";
 
 type ChatMessage = {
@@ -125,7 +128,7 @@ export default function ProjectPlannerAssistant({
   const [saveStatus, setSaveStatus] = useState<string | null>(null);
   const [showCreateAccountPrompt, setShowCreateAccountPrompt] = useState(false);
   const [photoInviteActive, setPhotoInviteActive] = useState(false);
-  /** Phase 1 — populated from homeowner messages; `[PHOTO_PROMPT]` UI only when both are set. */
+  /** Phase 1 — populated from homeowner messages (display); upload UI follows `hasEarlyPhotoInviteContext`. */
   const [workCategory, setWorkCategory] = useState<string | null>(null);
   const [stylePreference, setStylePreference] = useState<string | null>(null);
   const [sketchRoundsDelivered, setSketchRoundsDelivered] = useState(0);
@@ -307,11 +310,15 @@ export default function ProjectPlannerAssistant({
       setWorkCategory(northStar.workCategory);
       setStylePreference(northStar.stylePreference);
 
+      const userMessagesBlob = payloadMessages
+        .filter((m) => m.role === "user")
+        .map((m) => m.content.trim())
+        .filter(Boolean)
+        .join("\n");
+
       setPhase(data.phase);
       setPhotoInviteActive(
-        Boolean(
-          data.showPhotoUploader && northStar.workCategory && northStar.stylePreference,
-        ),
+        Boolean(data.showPhotoUploader && hasEarlyPhotoInviteContext(userMessagesBlob)),
       );
 
       const assistantImages = data.images?.map((img) => ({

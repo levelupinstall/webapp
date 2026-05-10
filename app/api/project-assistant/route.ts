@@ -16,8 +16,8 @@ import {
 } from "@/lib/planner-phase-utils";
 import {
   assistantAskedFirstDesignGate,
+  hasEarlyPhotoInviteContext,
   hasNorthStarContext,
-  hasPhotoPromptNorthStarReady,
   hasRoughDimensions,
 } from "@/lib/planner-intake-detect";
 import {
@@ -93,12 +93,24 @@ function shouldShowSubmitDesignCta(params: {
 }
 
 function userApprovedFirstRender(text: string): boolean {
-  const t = text.trim().toLowerCase();
+  const raw = text.trim();
+  const t = raw.toLowerCase();
   if (!t) return false;
-  return (
-    /\b(yes|yep|yeah|sure|ok|okay|go ahead|proceed|please do|render|create|generate)\b/.test(t) ||
-    /\b(nothing else|that'?s all|all good|looks good|no more)\b/.test(t)
-  );
+  if (
+    /\b(go ahead|proceed|please do|please create|you can create|you can go ahead)\b/.test(t)
+  ) {
+    return true;
+  }
+  if (
+    /\b(nothing else|that'?s all|that'?s everything|no,? that'?s it|all set|no more to add)\b/.test(
+      t,
+    )
+  ) {
+    return true;
+  }
+  if (/^(yes|yep|yeah|sure)[\s!.]*$/i.test(raw)) return true;
+  if (/^(no|nope)[\s!.]*$/i.test(raw)) return true;
+  return false;
 }
 
 function buildPlannerSystemInstruction(params: {
@@ -113,7 +125,7 @@ function buildPlannerSystemInstruction(params: {
   hasPhone: boolean;
   hasCallWindow: boolean;
   firstRenderCheckMode: "none" | "ask_now" | "awaiting_user_confirmation";
-  /** Category + style signals present — model may use `[PHOTO_PROMPT]`. */
+  /** Category + style signals present — invite photos early; does not unlock first render. */
   northStarReadyForPhotoPrompt: boolean;
 }): string {
   const chunks: string[] = [PLANNER_ASSISTANT_SYSTEM];
@@ -141,8 +153,8 @@ Stay concise; end with **one** sharp **question**. Prefer \`[PHASE:refine]\` whe
   }
   if (!params.hasPhotoContextInSession && params.northStarReadyForPhotoPrompt) {
     chunks.push(`
-## Session hint (photo invite — Phase 1 complete)
-The homeowner has indicated **both** a **work category** and **style direction**. Invite clear photos of the space **now** when helpful. Include \`[PHOTO_PROMPT]\` in your reply when asking for uploads. Explain briefly that photos help tailor layout questions to the real room.`);
+## Session hint (photo invite — early Phase 1)
+The homeowner has signaled enough **work category** + **style direction** to invite pictures. Ask for clear photos of the space **on this turn or soon** when helpful — include \`[PHOTO_PROMPT]\` when you invite uploads. This **does not** mean a first concept sketch is coming yet; the platform only attaches the **first** rendering after photos, measurements, budget/contact intake, and their answer to the Phase 4 gate question.`);
   }
 
   if (params.suggestInPersonAfterManySketches) {
@@ -412,7 +424,7 @@ export async function POST(request: Request) {
     const intakeHasBudget = hasBudgetContext(allUserText);
     const intakeHasPhone = hasPhoneNumber(allUserText);
     const intakeHasCallWindow = hasCallWindow(allUserText);
-    const northStarReadyForPhotoPrompt = hasPhotoPromptNorthStarReady(allUserText);
+    const northStarReadyForPhotoPrompt = hasEarlyPhotoInviteContext(allUserText);
 
     if (!lastUserText && imageFiles.length === 0) {
       return NextResponse.json(
