@@ -116,6 +116,8 @@ function userApprovedFirstRender(text: string): boolean {
 function buildPlannerSystemInstruction(params: {
   priorTurnHadConceptImage: boolean;
   sketchLikelyAfterReply: boolean;
+  /** True when the first concept image is blocked (intake / Phase 4 gate). */
+  blockFirstRenderImage: boolean;
   userAttachedPhotosThisTurn: boolean;
   hasPhotoContextInSession: boolean;
   sketchRoundsDelivered: number;
@@ -137,9 +139,15 @@ Your immediately previous assistant turn included a **concept visualization** th
   }
 
   if (params.sketchLikelyAfterReply) {
-    chunks.push(`
+    if (params.blockFirstRenderImage) {
+      chunks.push(`
+## Session hint (platform — no visualization this turn)
+The **first** concept image is **not** being attached on this reply because intake or the Phase 4 confirmation is **not** complete yet. Do **not** say you created, generated, produced, attached, or showed a sketch or picture, and do **not** say they should see an image **below** this message — **there will not be one**. Continue with **short questions and prose guidance only** until the platform can attach a visualization.`);
+    } else {
+      chunks.push(`
 ## Session hint (platform)
 The platform **may** attach a concept sketch after this reply—either tied to their room photos or a **neutral blank-studio style** preview if they have not shared pictures. **Never** claim you created, rendered, or attached the image. Focus on **look and layout**. **Do not** mention retailers, SKUs, or prices. Ask one clear **question** about whether the direction feels close—not a statement ending.`);
+    }
   }
 
   if (params.userAttachedPhotosThisTurn) {
@@ -510,6 +518,7 @@ export async function POST(request: Request) {
           systemInstruction: `${buildPlannerSystemInstruction({
             priorTurnHadConceptImage,
             sketchLikelyAfterReply,
+            blockFirstRenderImage,
             userAttachedPhotosThisTurn,
             hasPhotoContextInSession,
             sketchRoundsDelivered,
@@ -658,9 +667,10 @@ export async function POST(request: Request) {
         }
       }
 
-      if (responseImages.length === 0) {
-        cleanReply = stripMisleadingImageDeliveryClaims(cleanReply);
-      }
+    }
+
+    if (responseImages.length === 0) {
+      cleanReply = stripMisleadingImageDeliveryClaims(cleanReply);
     }
 
     const portalSession = await getSessionFromCookie();

@@ -62,10 +62,12 @@ export function stripMisleadingImageDeliveryClaims(text: string): string {
   if (!text.trim()) return text;
   let t = text;
   const patterns = [
-    /\bI'?ve\s+(just\s+)?(created|generated|attached|included|added|shown)\s+[^.!?\n]*[.!?]\s*/gi,
-    /\bI\s+(also\s+)?(created|generated|attached|included)\s+(a|your|the)\s+[^.!?\n]*[.!?]\s*/gi,
-    /\b(here'?s|here is)\s+(your\s+|a\s+|the\s+)?(sketch|rendering|visual|concept\s+image|image|mock-?up)[^.!?\n]*[.!?]\s*/gi,
-    /\b(the\s+)?(sketch|image|visual|rendering)\s+(is\s+)?(below|attached|included|ready|for\s+you)[^.!?\n]*[.!?]\s*/gi,
+    /\bI'?ve\s+(just\s+)?(created|generated|produced|attached|included|added|shown|put\s+together)\s+[^.!?\n]*[.!?]\s*/gi,
+    /\bI\s+(also\s+)?(created|generated|produced|attached|included)\s+(a|your|the)\s+[^.!?\n]*[.!?]\s*/gi,
+    /\b(here'?s|here is)\s+(your\s+|a\s+|the\s+)?(sketch|rendering|visual|concept\s+image|image|picture|mock-?up)[^.!?\n]*[.!?]\s*/gi,
+    /\b(the\s+)?(sketch|image|visual|rendering|picture|concept)\s+(is\s+)?(below|above|attached|included|ready|for\s+you|waiting)[^.!?\n]*[.!?]\s*/gi,
+    /\b(you\s+should\s+now\s+see|you'?ll\s+see|you\s+can\s+see|for\s+you\s+to\s+see)\s+[^.!?\n]*[.!?]\s*/gi,
+    /\b(take\s+a\s+look\s+at)\s+(the\s+|your\s+)?(sketch|rendering|picture|image|visual|concept)[^.!?\n]*[.!?]\s*/gi,
   ];
   for (const re of patterns) {
     t = t.replace(re, "");
