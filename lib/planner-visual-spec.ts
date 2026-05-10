@@ -9,13 +9,16 @@ export type PlannerVisualSpec = {
   depth: number | null;
   material: string | null;
   style: string | null;
-  /** Ceiling height in feet when the homeowner stated it (e.g. 10, 12). */
-  ceilingHeightFeet: number | null;
+  /** Storey / finished-floor level when the homeowner stated it (e.g. 2 = second floor). */
+  floor: number | null;
+  /** Condo / apartment style dwelling when inferable from chat. */
+  isCondo: boolean | null;
 };
 
 export type AdaptiveScaleOptions = {
   hasUserProvidedPhoto: boolean;
   isCloset: boolean;
+  /** From transcript regex — used only when there are no reference photos (photo wins). */
   ceilingHeightFeet: number | null;
 };
 
@@ -23,25 +26,27 @@ export type AdaptiveScaleOptions = {
 export function buildAdaptiveScaleInjection(opts: AdaptiveScaleOptions): string {
   const segments: string[] = [];
 
-  if (opts.ceilingHeightFeet !== null && Number.isFinite(opts.ceilingHeightFeet)) {
-    const ft = opts.ceilingHeightFeet;
-    const label = ft === Math.floor(ft) ? String(Math.round(ft)) : String(ft);
-    segments.push(`Render with ${label} foot ceiling height.`);
-  }
-
   if (opts.hasUserProvidedPhoto) {
     segments.push(
-      "Match the architectural scale of the homeowner's provided reference photo(s): align built-ins and trim with doors, windows, wall planes, floor line, and ceiling line visible in those images.",
+      "CRITICAL — Reference photo authority: Match the visible ceiling height (floor-to-ceiling proportion), crown molding, baseboard height and profile, door and window casing, and other trim exactly as shown in the attached homeowner photo(s). Do not inflate ceiling height, stretch verticals, or change trim scale relative to that imagery — the photograph defines ceiling line and trim character.",
     );
+  } else if (opts.ceilingHeightFeet !== null && Number.isFinite(opts.ceilingHeightFeet)) {
+    const ft = opts.ceilingHeightFeet;
+    const label = ft === Math.floor(ft) ? String(Math.round(ft)) : String(ft);
+    segments.push(`Render with ${label} foot ceiling height (no reference photo — transcript-derived).`);
   }
+
+  segments.push(
+    "Primary human-scale calibration: standard clothing hangers on a closet rod (believable rod height and hanger silhouette) — use this reference consistently so shelving and cabinets are never oversized relative to realistic residential proportions.",
+  );
 
   if (opts.isCloset) {
     segments.push(
-      "Primary scale reference for depth and vertical proportions: standard clothing hangers on a closet rod (believable rod height and hanger silhouette); calibrate shelf depths and vertical stacking to that reference.",
+      "Closet context: align shelf depths and vertical stacking to that hanger-and-rod scale so cavity depth reads believably.",
     );
   } else {
     segments.push(
-      "Primary room-scale anchors for open built-ins: standard electrical outlet height and baseboard trim relative to the floor — keep proportions consistent with typical residential construction.",
+      "Secondary room anchors where visible: standard electrical outlet height and baseboard trim relative to the floor.",
     );
   }
 
@@ -70,34 +75,42 @@ export function parseInchesField(value: unknown): number | null {
   return null;
 }
 
-/** Parse ceiling height in feet from extraction JSON. */
-export function parseCeilingFeetField(value: unknown): number | null {
+export function parseFloorField(value: unknown): number | null {
   if (value === null || value === undefined) return null;
   if (typeof value === "number" && Number.isFinite(value)) {
-    if (value > 30) return value / 12;
-    if (value >= 6 && value <= 24) return value;
+    const n = Math.round(value);
+    if (n >= -5 && n <= 200) return n;
     return null;
   }
   if (typeof value === "string") {
-    const t = value.trim().toLowerCase();
-    if (!t || t === "null") return null;
-    const inchM = t.match(/^(\d+(?:\.\d+)?)\s*(?:in|inch|inches)\b/);
-    if (inchM) {
-      const inches = parseFloat(inchM[1]);
-      if (Number.isFinite(inches) && inches >= 72 && inches <= 288) {
-        return inches / 12;
-      }
-    }
-    const ftM = t.match(/(\d+(?:\.\d+)?)/);
-    if (ftM) {
-      const ft = parseFloat(ftM[1]);
-      if (Number.isFinite(ft) && ft >= 6 && ft <= 24) return ft;
+    const trimmed = value.trim().toLowerCase();
+    if (!trimmed || trimmed === "null") return null;
+    const digit = trimmed.match(/-?\d+/);
+    if (digit) {
+      const n = parseInt(digit[0], 10);
+      if (n >= -5 && n <= 200) return n;
     }
   }
   return null;
 }
 
-/** Regex fallback when extraction omitted ceiling height (feet). */
+export function parseBooleanLoose(value: unknown): boolean | null {
+  if (value === null || value === undefined) return null;
+  if (typeof value === "boolean") return value;
+  if (typeof value === "number") {
+    if (value === 1) return true;
+    if (value === 0) return false;
+    return null;
+  }
+  if (typeof value === "string") {
+    const t = value.trim().toLowerCase();
+    if (["true", "yes", "y", "condo", "apartment", "apt"].includes(t)) return true;
+    if (["false", "no", "n", "house", "detached"].includes(t)) return false;
+  }
+  return null;
+}
+
+/** Regex fallback when transcript mentions ceiling height (feet) — used only without reference photos. */
 export function extractCeilingHeightFeetFromTranscript(text: string): number | null {
   const samples = text.match(/[^\n]{0,120}/g) ?? [];
   const ceilingLine = samples.find((line) => /\bceil(?:ing)?s?\b/i.test(line));
@@ -130,13 +143,27 @@ export function normalizeVisualSpec(raw: Record<string, unknown>): PlannerVisual
     return null;
   };
 
+  let material = str(raw.material);
+  let style = str(raw.style);
+  /** Strip accidental pricing leakage from LLM output (should stay in background only). */
+  const scrubPricing = (s: string | null): string | null => {
+    if (!s) return null;
+    if (/\$\s*\d|hourly|\$\s*150\b|\b150\s*dollar|\d\s*\$\s*\/\s*hr|\b\/hr\b/i.test(s)) {
+      return null;
+    }
+    return s;
+  };
+  material = scrubPricing(material);
+  style = scrubPricing(style);
+
   return {
     width: parseInchesField(raw.width),
     height: parseInchesField(raw.height),
     depth: parseInchesField(raw.depth),
-    material: str(raw.material),
-    style: str(raw.style),
-    ceilingHeightFeet: parseCeilingFeetField(raw.ceilingHeightFeet ?? raw.ceiling_height_feet),
+    material,
+    style,
+    floor: parseFloorField(raw.floor),
+    isCondo: parseBooleanLoose(raw.isCondo),
   };
 }
 
@@ -201,8 +228,18 @@ export function buildExtractedVisualDirective(
     segments.push(`Style direction: ${spec.style}.`);
   }
 
-  const ceilingFeet =
-    spec.ceilingHeightFeet ?? extractCeilingHeightFeetFromTranscript(ctx.extractionTranscript);
+  if (spec.floor !== null) {
+    segments.push(
+      `Storey / finished-floor context from intake: floor level ${spec.floor} — keep vertical proportions consistent with typical residential floor-to-floor relationships.`,
+    );
+  }
+  if (spec.isCondo === true) {
+    segments.push(
+      "Dwelling: condominium / apartment-style — depths and bulk should respect typical condo constraints when inferring layout.",
+    );
+  }
+
+  const ceilingFeet = extractCeilingHeightFeetFromTranscript(ctx.extractionTranscript);
 
   segments.push(
     buildAdaptiveScaleInjection({

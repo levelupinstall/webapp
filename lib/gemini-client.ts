@@ -310,13 +310,15 @@ Output ONLY valid JSON with exactly these keys (no markdown fences, no commentar
 - "width": number or null — inches, primary horizontal run along the wall / opening when inferable
 - "height": number or null — inches, vertical span (floor to unit top or ceiling zone)
 - "depth": number or null — inches, front-to-back into the room or closet cavity
-- "material": string or null — short, e.g. painted MDF, oak, walnut tone
-- "style": string or null — short, e.g. modern, traditional, minimalist
-- "ceilingHeightFeet": number or null — ceiling height in feet only when the homeowner clearly stated it (e.g. 10, 12 for "10 ft ceilings"); otherwise null
+- "material": string or null — short finish/material vibe only (e.g. painted MDF, oak tone); NEVER dollar amounts or SKUs
+- "style": string or null — short aesthetic label only (e.g. modern, traditional); NEVER fees or rates
+- "floor": number or null — storey / finished floor level when stated (e.g. 1 main, 2 second floor); otherwise null
+- "isCondo": boolean or null — true if condo, apartment, or strata/stacked dwelling rules/access clearly apply; false if detached house clearly indicated; otherwise null
 
 Rules:
 - Use numbers only when explicitly stated or clearly inferable; otherwise null. Do not invent precise measurements.
 - If only one horizontal is given for a closet run, map it to width when it reads like a wall span.
+- **Pricing isolation:** Do NOT put call-out fees, hourly labor rates, "$150", dollar figures, or "/hour" language into ANY field — omit pricing entirely from this JSON (those signals stay in other backend systems only, never echoed here).
 `;
 
 /** Extract structured fields for concept-image prompting (separate from Alex's chat persona). */
