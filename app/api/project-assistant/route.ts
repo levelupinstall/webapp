@@ -76,6 +76,41 @@ function shouldShowSubmitDesignCta(params: {
   return false;
 }
 
+function hasEnoughInfoForFirstRender(messages: PlannerClientMessage[]): boolean {
+  const userText = messages
+    .filter((m) => m.role === "user")
+    .map((m) => m.content.trim())
+    .filter(Boolean)
+    .join("\n")
+    .toLowerCase();
+  const hasSpaceType =
+    /(kitchen|bathroom|bedroom|closet|mudroom|laundry|entry|living|office|basement|hall)/i.test(
+      userText,
+    );
+  const hasPreferenceSignal =
+    /(style|modern|traditional|minimal|warm|bright|dark|storage|shelves|drawers|layout|colour|color|wood|trim|finish|look|feel)/i.test(
+      userText,
+    );
+  return userText.length >= 160 && hasSpaceType && hasPreferenceSignal;
+}
+
+function userApprovedFirstRender(text: string): boolean {
+  const t = text.trim().toLowerCase();
+  if (!t) return false;
+  return (
+    /\b(yes|yep|yeah|sure|ok|okay|go ahead|proceed|please do|render|create|generate)\b/.test(t) ||
+    /\b(nothing else|that'?s all|all good|looks good|no more)\b/.test(t)
+  );
+}
+
+function assistantAskedFirstRenderCheck(messages: PlannerClientMessage[]): boolean {
+  return messages.some(
+    (m) =>
+      m.role === "assistant" &&
+      /anything else .*consider .*before creating our first rendering/i.test(m.content),
+  );
+}
+
 function buildPlannerSystemInstruction(params: {
   priorTurnHadConceptImage: boolean;
   sketchLikelyAfterReply: boolean;
@@ -87,6 +122,7 @@ function buildPlannerSystemInstruction(params: {
   hasBudgetContext: boolean;
   hasPhone: boolean;
   hasCallWindow: boolean;
+  firstRenderCheckMode: "none" | "ask_now" | "awaiting_user_confirmation";
 }): string {
   const chunks: string[] = [PLANNER_ASSISTANT_SYSTEM];
 
@@ -140,6 +176,18 @@ Before final handoff, ask for the best phone number to reach the homeowner.`);
     chunks.push(`
 ## Session hint (required intake)
 Before final handoff, ask what days/times are ideal for a callback (e.g. weekday evenings, mornings, etc.).`);
+  }
+
+  if (params.firstRenderCheckMode === "ask_now") {
+    chunks.push(`
+## First rendering gate (required)
+Do NOT generate or imply an image yet. Ask this exact question naturally at the end:
+"Is there anything else I should consider in the design before creating our first rendering?"`);
+  } else if (params.firstRenderCheckMode === "awaiting_user_confirmation") {
+    chunks.push(`
+## First rendering gate (required)
+You already asked whether there is anything else to consider before the first rendering.
+Do NOT ask it again. If the homeowner confirms there is nothing else to add, proceed; otherwise gather that extra detail first.`);
   }
 
   return chunks.join("\n");
@@ -370,6 +418,22 @@ export async function POST(request: Request) {
     const userAttachedPhotosThisTurn = imageFiles.length > 0;
     const hasPhotoContextInSession =
       userAttachedPhotosThisTurn || sketchReferenceFiles.length > 0;
+    const hasAnyPriorRender =
+      sketchRoundsDelivered > 0 || priorTurnHadConceptImage;
+    const enoughInfoForFirstRender = hasEnoughInfoForFirstRender(messages);
+    const askedFirstRenderCheck = assistantAskedFirstRenderCheck(messages);
+    const firstRenderUserConfirmed = userApprovedFirstRender(lastUserText);
+    const firstRenderCheckMode: "none" | "ask_now" | "awaiting_user_confirmation" =
+      hasAnyPriorRender
+        ? "none"
+        : !enoughInfoForFirstRender
+          ? "none"
+          : askedFirstRenderCheck
+            ? firstRenderUserConfirmed
+              ? "none"
+              : "awaiting_user_confirmation"
+            : "ask_now";
+    const blockFirstRenderImage = !hasAnyPriorRender && firstRenderCheckMode !== "none";
 
     const pureEnthusiasmAfterSketch =
       priorTurnHadConceptImage &&
@@ -428,6 +492,7 @@ export async function POST(request: Request) {
             hasBudgetContext: intakeHasBudget,
             hasPhone: intakeHasPhone,
             hasCallWindow: intakeHasCallWindow,
+            firstRenderCheckMode,
           })}\n\n${buildConversationMemoryHint(messages)}`,
           contents,
         });
@@ -440,6 +505,9 @@ export async function POST(request: Request) {
               mimeType: img.mimeType,
               data: img.dataBase64,
             }));
+          if (blockFirstRenderImage) {
+            plannerInlineImages = [];
+          }
         }
       }
     } catch {
@@ -464,6 +532,7 @@ export async function POST(request: Request) {
     const allowConceptImage =
       isGeminiConfigured() &&
       plannerInlineImages.length === 0 &&
+      !blockFirstRenderImage &&
       !pureEnthusiasmAfterSketch &&
       hasUserMessage &&
       (userAttachedPhotosThisTurn ||
