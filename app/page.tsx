@@ -157,7 +157,7 @@ function HomeContent() {
                     onClick={() => openAccountView("saved-projects")}
                     className="w-full rounded-lg px-3 py-2 text-left text-sm text-[#4d2e70] hover:bg-[#f5efff]"
                   >
-                    Saved Projects
+                    Saved Designs
                   </button>
                   <button
                     type="button"

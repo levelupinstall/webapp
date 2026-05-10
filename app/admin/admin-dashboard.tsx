@@ -39,7 +39,13 @@ type PortalClient = {
   }[];
   projectStatus: { phase: string; updatedAt: string; details: string };
   carpenterUploads: { id: string; caption: string; uploadedAt: string }[];
-  spacePhotos?: { id: string; caption: string; uploadedAt: string }[];
+  spacePhotos?: {
+    id: string;
+    type: "image" | "video";
+    url: string;
+    caption: string;
+    uploadedAt: string;
+  }[];
   aiPlannerActivity: AiPlannerActivity[];
   lastLoginAt?: string | null;
   portalAnalytics?: {
@@ -444,6 +450,11 @@ export default function AdminDashboard() {
     (Math.floor(now.getMonth() / 3) + 1) as 1 | 2 | 3 | 4,
   );
   const [reportRangeKind, setReportRangeKind] = useState<ReportRangeKind>("quarter");
+  const [clientMediaPreview, setClientMediaPreview] = useState<{
+    type: "image" | "video";
+    url: string;
+    caption: string;
+  } | null>(null);
 
   const refreshOverview = useCallback(async () => {
     setOverviewLoading(true);
@@ -2078,6 +2089,58 @@ export default function AdminDashboard() {
                     />
 
                     <div>
+                      <h4 className="text-xs font-semibold uppercase text-zinc-500">
+                        Uploaded pictures and videos
+                      </h4>
+                      {(c.spacePhotos ?? []).length === 0 ? (
+                        <p className="mt-2 text-sm text-zinc-600">
+                          No customer media uploads yet.
+                        </p>
+                      ) : (
+                        <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                          {(c.spacePhotos ?? []).map((media) => (
+                            <button
+                              key={media.id}
+                              type="button"
+                              onClick={() =>
+                                setClientMediaPreview({
+                                  type: media.type,
+                                  url: media.url,
+                                  caption: media.caption || "Customer upload",
+                                })
+                              }
+                              className="overflow-hidden rounded-lg border border-zinc-800 bg-zinc-950/70 text-left hover:border-violet-500/60"
+                            >
+                              {media.type === "video" ? (
+                                <video
+                                  src={media.url}
+                                  className="h-36 w-full bg-black object-cover"
+                                  muted
+                                  playsInline
+                                />
+                              ) : (
+                                // eslint-disable-next-line @next/next/no-img-element
+                                <img
+                                  src={media.url}
+                                  alt={media.caption || "Customer upload"}
+                                  className="h-36 w-full bg-black object-cover"
+                                />
+                              )}
+                              <div className="border-t border-zinc-800 px-2 py-1.5">
+                                <p className="truncate text-xs text-zinc-300">
+                                  {media.caption || "Customer upload"}
+                                </p>
+                                <p className="text-[11px] text-zinc-500">
+                                  {new Date(media.uploadedAt).toLocaleString()}
+                                </p>
+                              </div>
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+
+                    <div>
                       <h4 className="text-xs font-semibold uppercase text-zinc-500">Project status</h4>
                       <p className="mt-1 text-sm text-zinc-300">
                         <span className="text-violet-400">{c.projectStatus.phase}</span> ·{" "}
@@ -2572,6 +2635,38 @@ export default function AdminDashboard() {
                   : "Yes, delete permanently"}
               </button>
             </div>
+          </div>
+        </div>
+      ) : null}
+
+      {clientMediaPreview ? (
+        <div className="fixed inset-0 z-30 flex items-center justify-center bg-black/80 p-4">
+          <div className="w-full max-w-4xl rounded-2xl border border-zinc-700 bg-zinc-950 p-4">
+            <div className="mb-3 flex items-center justify-between gap-4">
+              <p className="text-sm text-zinc-300">{clientMediaPreview.caption}</p>
+              <button
+                type="button"
+                onClick={() => setClientMediaPreview(null)}
+                className="rounded-md border border-zinc-700 px-3 py-1 text-xs text-zinc-300 hover:bg-zinc-900"
+              >
+                Close
+              </button>
+            </div>
+            {clientMediaPreview.type === "video" ? (
+              <video
+                src={clientMediaPreview.url}
+                controls
+                autoPlay
+                className="max-h-[75vh] w-full rounded-lg bg-black object-contain"
+              />
+            ) : (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={clientMediaPreview.url}
+                alt={clientMediaPreview.caption}
+                className="max-h-[75vh] w-full rounded-lg bg-black object-contain"
+              />
+            )}
           </div>
         </div>
       ) : null}
