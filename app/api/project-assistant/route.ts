@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getSessionFromCookie } from "@/lib/client-portal-auth";
 import {
+  geminiExtractPlannerVisualSpec,
   geminiGenerateConceptImage,
   geminiPlannerMultiTurn,
   homeownerPureEnthusiasmAfterSketch,
@@ -10,8 +11,16 @@ import {
 import {
   extractPlannerPhase,
   stripMisleadingImageDeliveryClaims,
+  stripPlannerPhaseMarkers,
   type PlannerPhaseTag,
 } from "@/lib/planner-phase-utils";
+import {
+  applyFullCarpenterPipeline,
+  buildAdaptiveScaleInjection,
+  buildExtractedVisualDirective,
+  extractCeilingHeightFeetFromTranscript,
+  transcriptSuggestsCloset,
+} from "@/lib/planner-visual-spec";
 import { PLANNER_ASSISTANT_SYSTEM } from "@/lib/planner-assistant-prompt";
 import { PLANNER_ASSISTANT_NAME } from "@/lib/planner-brand";
 import { addClientSpacePhoto, appendAiPlannerActivity } from "@/lib/client-portal-store";
@@ -181,13 +190,16 @@ Before final handoff, ask what days/times are ideal for a callback (e.g. weekday
   if (params.firstRenderCheckMode === "ask_now") {
     chunks.push(`
 ## First rendering gate (required)
-Do NOT generate or imply an image yet. Ask this exact question naturally at the end:
+Do NOT generate or imply an image yet.
+Apply **spatial logic**: tallest vertical = Height; shorter horizontal = Depth; remaining horizontal = Width. For closets, ~24" depth is typical — if numbers look swapped (e.g. 24" "high" and 80" "deep"), clarify politely **before** summarizing.
+Include **one clear line** stating the working envelope as **Width × Height × Depth** (with units), then end with **one** closing question that naturally combines confirming that reading **with** asking:
 "Is there anything else I should consider in the design before creating our first rendering?"`);
   } else if (params.firstRenderCheckMode === "awaiting_user_confirmation") {
     chunks.push(`
 ## First rendering gate (required)
 You already asked whether there is anything else to consider before the first rendering.
-Do NOT ask it again. If the homeowner confirms there is nothing else to add, proceed; otherwise gather that extra detail first.`);
+Do NOT ask it again. If the homeowner confirms there is nothing else to add, proceed; otherwise gather that extra detail first.
+If they correct dimensions, restate **Width × Height × Depth** using spatial logic before moving on.`);
   }
 
   return chunks.join("\n");
@@ -236,6 +248,9 @@ type ContentPart =
 
 /** How much prior conversation context we pass back to Gemini each turn. */
 const MAX_MESSAGES = 200;
+
+/** Chat turns fed into visual-field extraction (text-only JSON step before image generation). */
+const VISUAL_EXTRACTION_MESSAGE_WINDOW = 100;
 
 function parseClientPhase(raw: string): PlannerPhaseTag {
   const p = raw.trim().toLowerCase();
@@ -567,6 +582,41 @@ export async function POST(request: Request) {
       const baseGoal =
         lastUserText.slice(0, 4000) || cleanReply.slice(0, 1200);
 
+      const extractionTranscript = messages
+        .slice(-VISUAL_EXTRACTION_MESSAGE_WINDOW)
+        .map((m) => {
+          const label = m.role === "user" ? "Homeowner" : PLANNER_ASSISTANT_NAME;
+          const body =
+            m.role === "assistant" ? stripPlannerPhaseMarkers(m.content) : m.content;
+          return `${label}: ${body}`;
+        })
+        .join("\n");
+
+      const hasUserProvidedPhoto =
+        conceptReferenceParts.length > 0 || imageFiles.length > 0;
+      const isClosetScope = transcriptSuggestsCloset(extractionTranscript);
+      const ceilingFromTranscript =
+        extractCeilingHeightFeetFromTranscript(extractionTranscript);
+
+      let extractedVisualDirective = buildAdaptiveScaleInjection({
+        hasUserProvidedPhoto,
+        isCloset: isClosetScope,
+        ceilingHeightFeet: ceilingFromTranscript,
+      });
+      try {
+        const rawSpec = await geminiExtractPlannerVisualSpec(extractionTranscript);
+        if (rawSpec) {
+          const corrected = applyFullCarpenterPipeline(rawSpec, extractionTranscript);
+          extractedVisualDirective = buildExtractedVisualDirective(corrected, {
+            hasUserProvidedPhoto,
+            isCloset: isClosetScope,
+            extractionTranscript,
+          });
+        }
+      } catch {
+        /* extraction must not block visuals */
+      }
+
       for (let attempt = 0; attempt < 2; attempt++) {
         const visual = await geminiGenerateConceptImage({
           promptContext: basePrompt,
@@ -576,6 +626,7 @@ export async function POST(request: Request) {
               : `${baseGoal}\n\n(Second attempt: output must include one clear IMAGE part showing the finish-carpentry concept.)`,
           referenceImageParts:
             conceptReferenceParts.length > 0 ? conceptReferenceParts : undefined,
+          extractedVisualDirective,
         });
 
         if (!("error" in visual) && visual.images.length > 0) {

@@ -2,6 +2,10 @@ import {
   LEVEL_UP_IMAGE_GENERATION_SUFFIX,
   LEVEL_UP_LEAD_COORDINATOR_PROMPT,
 } from "@/lib/level-up-gemini-persona";
+import {
+  normalizeVisualSpec,
+  type PlannerVisualSpec,
+} from "@/lib/planner-visual-spec";
 
 const GEMINI_API_BASE = "https://generativelanguage.googleapis.com/v1beta";
 
@@ -300,6 +304,66 @@ export async function geminiPlannerTurn(params: {
   return extractParts(result.json);
 }
 
+const PLANNER_VISUAL_EXTRACTION_SYSTEM = `You are a data extraction tool. Read the conversation between a homeowner and a planning assistant (Alex) about interior finish carpentry: closets, shelving, built-ins, trim, wall storage, etc.
+
+Output ONLY valid JSON with exactly these keys (no markdown fences, no commentary):
+- "width": number or null — inches, primary horizontal run along the wall / opening when inferable
+- "height": number or null — inches, vertical span (floor to unit top or ceiling zone)
+- "depth": number or null — inches, front-to-back into the room or closet cavity
+- "material": string or null — short, e.g. painted MDF, oak, walnut tone
+- "style": string or null — short, e.g. modern, traditional, minimalist
+- "ceilingHeightFeet": number or null — ceiling height in feet only when the homeowner clearly stated it (e.g. 10, 12 for "10 ft ceilings"); otherwise null
+
+Rules:
+- Use numbers only when explicitly stated or clearly inferable; otherwise null. Do not invent precise measurements.
+- If only one horizontal is given for a closet run, map it to width when it reads like a wall span.
+`;
+
+/** Extract structured fields for concept-image prompting (separate from Alex's chat persona). */
+export async function geminiExtractPlannerVisualSpec(
+  conversationTranscript: string,
+): Promise<PlannerVisualSpec | null> {
+  const apiKey = getApiKey();
+  if (!apiKey) return null;
+
+  const text = conversationTranscript.trim().slice(-24_000);
+  if (!text) return null;
+
+  const result = await geminiGenerateContent({
+    model: defaultGeminiTextModel(),
+    systemInstruction: PLANNER_VISUAL_EXTRACTION_SYSTEM,
+    contents: [
+      {
+        role: "user",
+        parts: [
+          {
+            text: `Conversation transcript:\n\n${text}\n\nReturn only the JSON object.`,
+          },
+        ],
+      },
+    ],
+    generationConfig: {
+      responseMimeType: "application/json",
+    },
+  });
+
+  if (!result.ok) return null;
+
+  const extracted = extractParts(result.json);
+  const rawText = extracted.text.trim();
+  if (!rawText) return null;
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(rawText) as unknown;
+  } catch {
+    return null;
+  }
+
+  if (!parsed || typeof parsed !== "object") return null;
+  return normalizeVisualSpec(parsed as Record<string, unknown>);
+}
+
 /** Image-capable model: TEXT + IMAGE modalities. */
 export async function geminiGenerateConceptImage(params: {
   promptContext: string;
@@ -307,15 +371,26 @@ export async function geminiGenerateConceptImage(params: {
   userGoal: string;
   /** Space photos from the homeowner — improves sketch grounding when present. */
   referenceImageParts?: ContentPart[];
+  /** Post-extraction directive: dimensions, materials, scale injection (image model only). */
+  extractedVisualDirective?: string;
 }): Promise<GeminiGenerateResult | { error: string }> {
   const model = defaultGeminiImageModel();
+
+  const extractionBlock = params.extractedVisualDirective?.trim()
+    ? `
+
+---
+Extracted parameters & mandatory rendering scale (follow strictly; generic finishes only):
+${params.extractedVisualDirective.trim()}
+`
+    : "";
 
   const fullPrompt = `${LEVEL_UP_LEAD_COORDINATOR_PROMPT}
 
 ${LEVEL_UP_IMAGE_GENERATION_SUFFIX}
 
 Project / homeowner context:
-${params.promptContext.slice(0, 12000)}
+${params.promptContext.slice(0, 12000)}${extractionBlock}
 
 Specific visualization request:
 ${params.userGoal.slice(0, 4000)}`;
