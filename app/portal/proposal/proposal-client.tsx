@@ -24,6 +24,8 @@ function cadMoney(cents: number) {
 export default function ProposalClient() {
   const searchParams = useSearchParams();
   const token = searchParams.get("t")?.trim() ?? "";
+  const checkoutKind =
+    searchParams.get("checkout_kind")?.trim() || searchParams.get("checkout")?.trim() || "";
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -164,6 +166,15 @@ export default function ProposalClient() {
 
   if (!data) return null;
 
+  const paymentReturnBanner =
+    checkoutKind === "immediate_ok"
+      ? "Payment received — thank you. Your call-out fee and materials deposit are on file."
+      : checkoutKind === "labor_hold_ok"
+        ? "Labor authorization hold is in place — thanks."
+        : checkoutKind === "cancelled" || checkoutKind === "labor_cancelled"
+          ? "Checkout was cancelled. Use the secure links in this proposal when you're ready."
+          : null;
+
   const showPayOnly = data.status === "accepted_pending_payment";
   const paid = data.status === "paid";
 
@@ -194,6 +205,12 @@ export default function ProposalClient() {
           Amount due after acceptance:{" "}
           <span className="font-semibold text-[#2d1546]">{cadMoney(data.paymentAmountCents)}</span>
         </p>
+
+        {paymentReturnBanner ? (
+          <p className="mt-4 rounded-2xl border border-[#cbb6ee] bg-[#f7f1ff] px-4 py-3 text-sm text-[#442866]">
+            {paymentReturnBanner}
+          </p>
+        ) : null}
 
         {data.renderings.length > 0 ? (
           <section className="mt-8">

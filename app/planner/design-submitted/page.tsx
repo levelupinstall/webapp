@@ -1,5 +1,7 @@
 import Link from "next/link";
 
+import { DesignSubmittedStatus } from "@/app/planner/design-submitted/design-submitted-status";
+
 export default function DesignSubmittedPage() {
   return (
     <main className="mx-auto min-h-screen w-full max-w-3xl bg-gradient-to-b from-[#f8f2ff] via-[#f2e9ff] to-[#ffffff] px-4 py-16 text-[#281437]">
@@ -9,6 +11,7 @@ export default function DesignSubmittedPage() {
           We&apos;ll review your conversation and visuals, then prepare a final proposal for your review.
           You&apos;ll hear from us when it&apos;s ready.
         </p>
+        <DesignSubmittedStatus />
         <div className="mt-8 flex flex-wrap gap-3">
           <Link
             href="/?section=account&portalView=saved-projects"

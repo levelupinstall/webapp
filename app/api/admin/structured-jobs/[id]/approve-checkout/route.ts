@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 
+import { revalidateAdminDashboard } from "@/lib/admin-revalidate";
 import { getAdminSession } from "@/lib/admin-auth";
 import { prisma } from "@/lib/prisma";
 import { createStripeServer } from "@/lib/stripe-server";
@@ -135,6 +136,8 @@ export async function POST(
       stripeCheckoutSessionId: session.id,
     },
   });
+
+  revalidateAdminDashboard();
 
   return NextResponse.json({
     url: session.url,

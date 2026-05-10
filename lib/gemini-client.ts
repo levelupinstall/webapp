@@ -4,8 +4,12 @@ import {
 } from "@/lib/level-up-gemini-persona";
 import {
   normalizeVisualSpec,
+  parseBooleanLoose,
+  parseFloorField,
+  parseInchesField,
   type PlannerVisualSpec,
 } from "@/lib/planner-visual-spec";
+import type { PlannerSubmitDesignExtract } from "@/lib/planner-submit-design-types";
 
 const GEMINI_API_BASE = "https://generativelanguage.googleapis.com/v1beta";
 
@@ -364,6 +368,348 @@ export async function geminiExtractPlannerVisualSpec(
 
   if (!parsed || typeof parsed !== "object") return null;
   return normalizeVisualSpec(parsed as Record<string, unknown>);
+}
+
+const SUBMIT_DESIGN_EXTRACTION_SYSTEM = `You are a data extraction tool for interior finish carpentry jobs (closets, built-ins, shelving, trim).
+
+Output ONLY valid JSON (no markdown fences, no commentary) with exactly these keys:
+- "width": number or null — inches
+- "height": number or null — inches
+- "depth": number or null — inches
+- "material": string or null — finishes only (no prices)
+- "style": string or null — aesthetic label only (no prices)
+- "floorLevel": number or null — finished floor / storey when inferable (1 = main)
+- "dwellingType": string or null — short label (e.g. Condo, Townhouse, Detached)
+- "hasElevator": boolean or null — building elevator clearly yes/no; null if unknown
+- "baseLaborHoursEstimate": number or null — realistic baseline INSTALL labor hours for THIS scope BEFORE logistics buffers and BEFORE any 15% margin (typical range 0.5–24)
+
+Rules:
+- Numbers only when stated or clearly inferable; otherwise null.
+- Never put dollar amounts, SKUs, or hourly rates into material/style.
+`;
+
+function parseLaborHoursEstimate(value: unknown): number | null {
+  if (value === null || value === undefined) return null;
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return Math.min(48, Math.max(0.25, value));
+  }
+  if (typeof value === "string") {
+    const m = value.trim().match(/(\d+(?:\.\d+)?)/);
+    if (m) {
+      const n = parseFloat(m[1]);
+      if (Number.isFinite(n)) return Math.min(48, Math.max(0.25, n));
+    }
+  }
+  return null;
+}
+
+function normalizeSubmitDesignExtract(
+  parsed: Record<string, unknown>,
+): PlannerSubmitDesignExtract {
+  let hasElevator: boolean | null = null;
+  if ("hasElevator" in parsed) {
+    if (typeof parsed.hasElevator === "boolean") {
+      hasElevator = parsed.hasElevator;
+    } else {
+      hasElevator = parseBooleanLoose(parsed.hasElevator);
+    }
+  }
+
+  const floorLevel =
+    parseFloorField(parsed.floorLevel) ?? parseFloorField(parsed.floor);
+
+  let dwellingType: string | null = null;
+  if (typeof parsed.dwellingType === "string") {
+    const t = parsed.dwellingType.trim();
+    dwellingType = t.length ? t.slice(0, 120) : null;
+  }
+
+  let material: string | null = null;
+  let style: string | null = null;
+  if (typeof parsed.material === "string") {
+    const t = parsed.material.trim();
+    material = t.length ? t.slice(0, 500) : null;
+  }
+  if (typeof parsed.style === "string") {
+    const t = parsed.style.trim();
+    style = t.length ? t.slice(0, 300) : null;
+  }
+  const scrubPricing = (s: string | null): string | null => {
+    if (!s) return null;
+    if (/\$\s*\d|hourly|\$\s*150\b|\b150\s*dollar|\d\s*\$\s*\/\s*hr|\b\/hr\b/i.test(s)) {
+      return null;
+    }
+    return s;
+  };
+  material = scrubPricing(material);
+  style = scrubPricing(style);
+
+  return {
+    width: parseInchesField(parsed.width),
+    height: parseInchesField(parsed.height),
+    depth: parseInchesField(parsed.depth),
+    material,
+    style,
+    floorLevel,
+    dwellingType,
+    hasElevator,
+    baseLaborHoursEstimate: parseLaborHoursEstimate(parsed.baseLaborHoursEstimate),
+  };
+}
+
+export async function geminiExtractPlannerSubmitDesign(
+  conversationTranscript: string,
+): Promise<PlannerSubmitDesignExtract | null> {
+  const apiKey = getApiKey();
+  if (!apiKey) return null;
+
+  const text = conversationTranscript.trim().slice(-24_000);
+  if (!text) return null;
+
+  const result = await geminiGenerateContent({
+    model: defaultGeminiTextModel(),
+    systemInstruction: SUBMIT_DESIGN_EXTRACTION_SYSTEM,
+    contents: [
+      {
+        role: "user",
+        parts: [{ text: `Conversation transcript:\n\n${text}\n\nReturn only the JSON object.` }],
+      },
+    ],
+    generationConfig: {
+      responseMimeType: "application/json",
+    },
+  });
+
+  if (!result.ok) return null;
+
+  const extracted = extractParts(result.json);
+  const rawText = extracted.text.trim();
+  if (!rawText) return null;
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(rawText) as unknown;
+  } catch {
+    return null;
+  }
+
+  if (!parsed || typeof parsed !== "object") return null;
+  return normalizeSubmitDesignExtract(parsed as Record<string, unknown>);
+}
+
+export type GeminiShoppingListItem = {
+  description: string;
+  estimatedCad: number;
+  qty?: number | null;
+  notes?: string | null;
+};
+
+export type GeminiMaterialsEstimate = {
+  items: GeminiShoppingListItem[];
+  totalMaterialCad: number;
+  grounded: boolean;
+};
+
+const MATERIALS_WITH_SEARCH_SYSTEM = `You estimate realistic CAD retail rough-order material costs for a residential finish-carpentry scope described by the homeowner.
+
+Use Google Search grounding when it materially improves pricing realism for lumber, sheet goods, hardware, and finishing supplies in Canada.
+
+Return ONLY valid JSON (no markdown fences) with exactly:
+{
+  "totalMaterialCad": number,
+  "items": [ { "description": string, "estimatedCad": number, "qty": number|null, "notes": string|null } ],
+  "groundingNotes": string
+}
+
+Rules:
+- totalMaterialCad should match the sum of item estimatedCad within ~15%.
+- Keep descriptions generic (no need for exact SKUs).
+- If uncertain, round conservatively and explain briefly in groundingNotes.
+`;
+
+function parseMaterialsJson(raw: string): GeminiMaterialsEstimate | null {
+  const stripped = raw
+    .trim()
+    .replace(/^```(?:json)?\s*/i, "")
+    .replace(/\s*```$/i, "")
+    .trim();
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(stripped) as unknown;
+  } catch {
+    return null;
+  }
+  if (!parsed || typeof parsed !== "object") return null;
+  const o = parsed as Record<string, unknown>;
+  const totalRaw = o.totalMaterialCad;
+  let totalMaterialCad = 0;
+  if (typeof totalRaw === "number" && Number.isFinite(totalRaw)) {
+    totalMaterialCad = Math.max(0, totalRaw);
+  }
+  const itemsRaw = o.items;
+  const items: GeminiShoppingListItem[] = [];
+  if (Array.isArray(itemsRaw)) {
+    for (const row of itemsRaw) {
+      if (!row || typeof row !== "object") continue;
+      const r = row as Record<string, unknown>;
+      const description =
+        typeof r.description === "string" ? r.description.trim().slice(0, 400) : "";
+      if (!description) continue;
+      let estimatedCad = 0;
+      if (typeof r.estimatedCad === "number" && Number.isFinite(r.estimatedCad)) {
+        estimatedCad = Math.max(0, r.estimatedCad);
+      }
+      let qty: number | null = null;
+      if (typeof r.qty === "number" && Number.isFinite(r.qty)) qty = r.qty;
+      let notes: string | null = null;
+      if (typeof r.notes === "string" && r.notes.trim()) {
+        notes = r.notes.trim().slice(0, 400);
+      }
+      items.push({ description, estimatedCad, qty, notes });
+    }
+  }
+
+  if (items.length === 0 && totalMaterialCad <= 0) return null;
+
+  if (totalMaterialCad <= 0 && items.length > 0) {
+    totalMaterialCad = items.reduce((s, i) => s + i.estimatedCad, 0);
+  }
+
+  return {
+    items,
+    totalMaterialCad: Math.max(0, Math.round(totalMaterialCad * 100) / 100),
+    grounded: false,
+  };
+}
+
+export async function geminiEstimateMaterialsShoppingList(params: {
+  transcript: string;
+  dimsSummary: string;
+  dwellingLabel: string;
+}): Promise<GeminiMaterialsEstimate> {
+  const apiKey = getApiKey();
+  const prompt = [
+    "Homeowner transcript (trimmed):",
+    params.transcript.trim().slice(-16_000),
+    "",
+    `Dwelling / context: ${params.dwellingLabel}`,
+    `Envelope hint: ${params.dimsSummary}`,
+    "",
+    "Produce the JSON object now.",
+  ].join("\n");
+
+  if (!apiKey) {
+    return {
+      items: [
+        {
+          description: "Estimated sheet goods, lumber & hardware bundle (Gemini not configured)",
+          estimatedCad: 400,
+          qty: 1,
+          notes: "Placeholder — set GEMINI_API_KEY for grounded estimates.",
+        },
+      ],
+      totalMaterialCad: 400,
+      grounded: false,
+    };
+  }
+
+  const withSearch = await geminiGenerateContent({
+    model: defaultGeminiTextModel(),
+    systemInstruction: MATERIALS_WITH_SEARCH_SYSTEM,
+    contents: [{ role: "user", parts: [{ text: prompt }] }],
+    tools: [{ google_search: {} }],
+  });
+
+  if (withSearch.ok) {
+    const parts = extractParts(withSearch.json);
+    const parsed = parseMaterialsJson(parts.text);
+    if (parsed) {
+      return { ...parsed, grounded: true };
+    }
+  }
+
+  const plain = await geminiGenerateContent({
+    model: defaultGeminiTextModel(),
+    systemInstruction: MATERIALS_WITH_SEARCH_SYSTEM,
+    contents: [{ role: "user", parts: [{ text: prompt }] }],
+  });
+
+  if (plain.ok) {
+    const parts = extractParts(plain.json);
+    const parsed = parseMaterialsJson(parts.text);
+    if (parsed) return parsed;
+  }
+
+  return {
+    items: [
+      {
+        description: "Estimated materials bundle (parser fallback)",
+        estimatedCad: 450,
+        qty: 1,
+        notes: "Automatic fallback estimate.",
+      },
+    ],
+    totalMaterialCad: 450,
+    grounded: false,
+  };
+}
+
+/** Reference mime must be image/* supported by Gemini image stack. */
+export async function geminiGenerateInstallBlueprint(params: {
+  referenceMimeType: string;
+  referenceDataBase64: string;
+  widthIn: number;
+  heightIn: number;
+  depthIn: number;
+  materialHint?: string | null;
+  styleHint?: string | null;
+}): Promise<GeminiGenerateResult | { error: string }> {
+  const model = defaultGeminiImageModel();
+
+  const hints = [
+    params.materialHint?.trim() ? `Materials: ${params.materialHint.trim()}` : "",
+    params.styleHint?.trim() ? `Style: ${params.styleHint.trim()}` : "",
+  ]
+    .filter(Boolean)
+    .join("\n");
+
+  const prompt = `Produce ONE technical installation drawing for the built-in shown in the attached homeowner/agreed render reference.
+
+Requirements:
+- Pure black linework on white background (blueprint / permit-style). NO color fills. NO photorealistic shading.
+- Orthographic or simple elevation view that an installer can follow.
+- Clearly annotate overall WIDTH × HEIGHT × DEPTH in inches on the drawing: ${params.widthIn}" W × ${params.heightIn}" H × ${params.depthIn}" D.
+- Show principal openings, partitions, and shelf zones where inferable from the reference — generic labels only (no brands).
+${hints ? `\n${hints}` : ""}`;
+
+  const result = await geminiGenerateContent({
+    model,
+    contents: [
+      {
+        role: "user",
+        parts: [
+          { text: prompt },
+          {
+            inline_data: {
+              mime_type: params.referenceMimeType,
+              data: params.referenceDataBase64,
+            },
+          },
+        ],
+      },
+    ],
+    generationConfig: {
+      responseModalities: ["TEXT", "IMAGE"],
+    },
+  });
+
+  if (!result.ok) {
+    return {
+      error: `Gemini blueprint error (${result.status}). ${result.body}`,
+    };
+  }
+
+  return extractParts(result.json);
 }
 
 /** Image-capable model: TEXT + IMAGE modalities. */

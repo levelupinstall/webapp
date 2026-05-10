@@ -491,29 +491,53 @@ export default function ProjectPlannerAssistant({
       }
 
       const formData = await createWorkProposalFormData();
-      const proposalResponse = await fetch("/api/portal/work-proposals/request", {
+      const submitResponse = await fetch("/api/planner/submit-design-job", {
         method: "POST",
         body: formData,
       });
-      const proposalData = (await proposalResponse.json().catch(() => ({}))) as {
+      const submitData = (await submitResponse.json().catch(() => ({}))) as {
         error?: string;
+        stripeWarning?: string;
+        immediateCheckoutUrl?: string | null;
+        laborHoldCheckoutUrl?: string | null;
       };
 
-      if (proposalResponse.status === 401) {
+      if (submitResponse.status === 401) {
         setShowCreateAccountPrompt(true);
         setError("Your session may have expired — sign in again and try submitting.");
         return;
       }
 
-      if (!proposalResponse.ok) {
+      if (!submitResponse.ok) {
         setError(
-          proposalData.error ||
-            "Your design was saved, but we could not start the proposal. Try again or contact Level Up.",
+          submitData.error ||
+            "Your design was saved, but we could not finish submission. Try again or contact Level Up.",
         );
         return;
       }
 
       setShowCreateAccountPrompt(false);
+
+      try {
+        if (submitData.laborHoldCheckoutUrl?.trim()) {
+          sessionStorage.setItem("plannerSubmitLaborHoldCheckoutUrl", submitData.laborHoldCheckoutUrl);
+        } else {
+          sessionStorage.removeItem("plannerSubmitLaborHoldCheckoutUrl");
+        }
+      } catch {
+        /* ignore */
+      }
+
+      if (submitData.stripeWarning?.trim()) {
+        setError(submitData.stripeWarning);
+      }
+
+      const payUrl = submitData.immediateCheckoutUrl?.trim();
+      if (payUrl) {
+        window.location.href = payUrl;
+        return;
+      }
+
       router.push("/planner/design-submitted");
     } catch {
       setError("Something went wrong while submitting. Please try again.");

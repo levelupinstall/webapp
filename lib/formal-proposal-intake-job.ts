@@ -63,6 +63,8 @@ export async function createFormalProposalIntakeJob(params: {
   client: ClientProfile;
   spacePhotos: WorkProposalRendering[];
   renderings: WorkProposalRendering[];
+  /** When true, skip `createStructuredJobRow` — caller persists full Prisma Job (planner submit pipeline). */
+  skipStructuredJobRow?: boolean;
 }): Promise<{ carpenterId: string; jobId: string }> {
   let carpenterId = pickIntakeCarpenterId();
   if (!carpenterId) {
@@ -99,14 +101,16 @@ export async function createFormalProposalIntakeJob(params: {
     initialMedia,
   });
 
-  await createStructuredJobRow({
-    id: job.id,
-    portalUserId: params.portalUserId,
-    assignedCarpenterId: carpenterId,
-    customerPhone: params.client.phone?.trim() ?? "",
-    customerEmail: params.client.email?.trim() ?? "",
-    workProposalId: params.proposalId,
-  });
+  if (!params.skipStructuredJobRow) {
+    await createStructuredJobRow({
+      id: job.id,
+      portalUserId: params.portalUserId,
+      assignedCarpenterId: carpenterId,
+      customerPhone: params.client.phone?.trim() ?? "",
+      customerEmail: params.client.email?.trim() ?? "",
+      workProposalId: params.proposalId,
+    });
+  }
 
   return { carpenterId, jobId: job.id };
 }

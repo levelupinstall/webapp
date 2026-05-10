@@ -116,6 +116,7 @@ model Job {
   customerPhone String   @map("customer_phone")
   /// Required for Stripe receipts / guest checkout when no portal account.
   customerEmail String   @default("") @map("customer_email")
+  /// Pipeline: PENDING_REVIEW → PROPOSAL_SENT → CURRENT_JOB (deposit / mock / webhook) → COMPLETED; legacy: PAID, APPROVED_PENDING_PAYMENT.
   status        String   @default("PENDING_REVIEW")
 
   /// Spatial data (typically inches — align with Alex extraction pipeline).
@@ -149,6 +150,14 @@ model Job {
   assignedCarpenter   CarpenterAccount? @relation("CarpenterStructuredJobs", fields: [assignedCarpenterId], references: [id], onDelete: SetNull)
 
   stripeCheckoutSessionId String? @map("stripe_checkout_session_id")
+
+  stripeLaborHoldCheckoutSessionId String? @map("stripe_labor_hold_checkout_session_id")
+
+  /// Buffer breakdown, holds, and estimator audit trail (JSON).
+  laborBreakdown Json @default("{}") @map("labor_breakdown")
+
+  /// Generated scope / Terms summary appended at submit time.
+  scopeOfWorkTerms String? @map("scope_of_work_terms") @db.Text
 
   /// Work proposal id when created from formal proposal intake (`portal_users.work_proposals` JSON).
   workProposalId String? @map("work_proposal_id")

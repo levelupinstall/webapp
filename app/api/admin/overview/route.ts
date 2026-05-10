@@ -26,33 +26,45 @@ export async function GET() {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const [clients, carpenters, workRequests, structuredJobsPending] = await Promise.all([
+  const structuredJobSelect = {
+    id: true,
+    createdAt: true,
+    status: true,
+    customerPhone: true,
+    customerEmail: true,
+    portalUserId: true,
+    width: true,
+    height: true,
+    depth: true,
+    dwellingType: true,
+    immediateCharge: true,
+    paymentAmountCents: true,
+    guestPayToken: true,
+    stripeCheckoutSessionId: true,
+    assignedCarpenterId: true,
+  } as const;
+
+  const [
+    clients,
+    carpenters,
+    workRequests,
+    structuredJobsPending,
+    structuredJobsCurrent,
+  ] = await Promise.all([
     listPortalUsersForAdmin(),
     listCarpentersForAdmin(),
     listWorkRequestsForAdmin(),
     prisma.job.findMany({
-      where: {
-        status: { in: ["PENDING_REVIEW", "APPROVED_PENDING_PAYMENT"] },
-      },
+      where: { status: { in: ["PENDING_REVIEW", "PROPOSAL_SENT"] } },
       orderBy: { createdAt: "desc" },
       take: 200,
-      select: {
-        id: true,
-        createdAt: true,
-        status: true,
-        customerPhone: true,
-        customerEmail: true,
-        portalUserId: true,
-        width: true,
-        height: true,
-        depth: true,
-        dwellingType: true,
-        immediateCharge: true,
-        paymentAmountCents: true,
-        guestPayToken: true,
-        stripeCheckoutSessionId: true,
-        assignedCarpenterId: true,
-      },
+      select: structuredJobSelect,
+    }),
+    prisma.job.findMany({
+      where: { status: "CURRENT_JOB" },
+      orderBy: { createdAt: "desc" },
+      take: 200,
+      select: structuredJobSelect,
     }),
   ]);
 
@@ -136,5 +148,6 @@ export async function GET() {
     activityFeed,
     workRequests,
     structuredJobsPending,
+    structuredJobsCurrent,
   });
 }

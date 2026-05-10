@@ -405,7 +405,8 @@ async function sendSignupEmail(
   }
 }
 
-async function sendSignupSms(
+/** Transactional SMS via Twilio (signup verification, admin notifications, etc.). */
+export async function sendTwilioTextMessage(
   toE164: string,
   body: string,
 ): Promise<{ sent: boolean; error?: string }> {
@@ -441,4 +442,11 @@ async function sendSignupSms(
     return { sent: false, error: errBody || `Twilio HTTP ${res.status}` };
   }
   return { sent: true };
+}
+
+async function sendSignupSms(
+  toE164: string,
+  body: string,
+): Promise<{ sent: boolean; error?: string }> {
+  return sendTwilioTextMessage(toE164, body);
 }

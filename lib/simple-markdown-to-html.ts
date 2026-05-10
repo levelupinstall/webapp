@@ -9,10 +9,19 @@ export function simpleMarkdownToSafeHtml(markdown: string): string {
   }
 
   function inlineFormat(s: string) {
-    let out = escapeHtml(s);
-    out = out.replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>");
-    out = out.replace(/_(.+?)_/g, "<em>$1</em>");
-    return out;
+    const linked = s.split(/(\[[^\]]+\]\(https?:\/\/[^)]+\))/g).map((segment) => {
+      const m = segment.match(/^\[([^\]]+)\]\((https?:\/\/[^)]+)\)$/);
+      if (m) {
+        const label = escapeHtml(m[1]);
+        const href = escapeHtml(m[2]);
+        return `<a href="${href}" class="text-[#6e3eb2] underline font-medium" target="_blank" rel="noopener noreferrer">${label}</a>`;
+      }
+      let out = escapeHtml(segment);
+      out = out.replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>");
+      out = out.replace(/_(.+?)_/g, "<em>$1</em>");
+      return out;
+    });
+    return linked.join("");
   }
 
   const lines = markdown.replace(/\r\n/g, "\n").split("\n");

@@ -6,7 +6,7 @@ import { prisma } from "@/lib/prisma";
 
 const DEFAULT_LABOR_HOLD_DOLLARS = 150;
 
-function newGuestPayToken(): string {
+export function newGuestPayToken(): string {
   return randomBytes(18).toString("base64url");
 }
 

@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import Stripe from "stripe";
 import { finalizeBalanceCheckoutSession } from "@/lib/finalize-balance-checkout";
 import { finalizeProposalCheckoutSession } from "@/lib/finalize-proposal-checkout";
+import { finalizeJobSubmitImmediateCheckout } from "@/lib/finalize-job-submit-immediate-checkout";
 import { finalizeStructuredJobCheckout } from "@/lib/finalize-structured-job-checkout";
 import { createStripeServer } from "@/lib/stripe-server";
 
@@ -32,6 +33,7 @@ export async function POST(request: Request) {
     await finalizeBalanceCheckoutSession(checkoutSession);
     await finalizeProposalCheckoutSession(checkoutSession);
     await finalizeStructuredJobCheckout(checkoutSession);
+    await finalizeJobSubmitImmediateCheckout(checkoutSession);
   }
 
   return NextResponse.json({ received: true });
