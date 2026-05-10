@@ -14,7 +14,7 @@ import {
 } from "@/lib/planner-phase-utils";
 import { PLANNER_ASSISTANT_SYSTEM } from "@/lib/planner-assistant-prompt";
 import { PLANNER_ASSISTANT_NAME } from "@/lib/planner-brand";
-import { appendAiPlannerActivity } from "@/lib/client-portal-store";
+import { addClientSpacePhoto, appendAiPlannerActivity } from "@/lib/client-portal-store";
 
 /** After this many assistant turns that included a concept sketch, steer toward in-person consult. */
 const SKETCH_ROUNDS_BEFORE_IN_PERSON_NUDGE = 5;
@@ -80,6 +80,7 @@ function buildPlannerSystemInstruction(params: {
   priorTurnHadConceptImage: boolean;
   sketchLikelyAfterReply: boolean;
   userAttachedPhotosThisTurn: boolean;
+  hasPhotoContextInSession: boolean;
   sketchRoundsDelivered: number;
   suggestInPersonAfterManySketches: boolean;
   advanceTowardSiteVisit: boolean;
@@ -105,6 +106,11 @@ The platform **may** attach a concept sketch after this reply—either tied to t
     chunks.push(`
 ## Session hint (platform)
 The homeowner attached **photos** with this message—they may be **room shots**, **pictures of purchased materials/kits**, or both; interpret accordingly. Thank them warmly. Stay short; the system can generate a sketch from consultation + their pictures. Prefer moving to \`[PHASE:refine]\` after this turn when you're iterating visually. End with a **question**.`);
+  }
+  if (!params.hasPhotoContextInSession) {
+    chunks.push(`
+## Session hint (required intake)
+Ask for clear photos of the space early in consultation. Include \`[PHOTO_PROMPT]\` in your reply when asking. Explain that photos help Level Up tailor layout questions and recommendations to the real room.`);
   }
 
   if (params.suggestInPersonAfterManySketches) {
@@ -180,7 +186,8 @@ type ContentPart =
   | { text: string }
   | { inline_data: { mime_type: string; data: string } };
 
-const MAX_MESSAGES = 28;
+/** How much prior conversation context we pass back to Gemini each turn. */
+const MAX_MESSAGES = 200;
 
 function parseClientPhase(raw: string): PlannerPhaseTag {
   const p = raw.trim().toLowerCase();
@@ -227,6 +234,43 @@ function buildGeminiContents(
   return contents;
 }
 
+function buildConversationMemoryHint(messages: PlannerClientMessage[]): string {
+  const recent = messages.slice(-MAX_MESSAGES);
+  const priorUser = recent
+    .filter((m) => m.role === "user")
+    .map((m) => m.content.trim())
+    .filter(Boolean)
+    .join("\n")
+    .toLowerCase();
+
+  const hasBudgetContext =
+    /\$+\s*\d/.test(priorUser) ||
+    /\b\d+\s*k\b/i.test(priorUser) ||
+    priorUser.includes("budget") ||
+    priorUser.includes("investment") ||
+    priorUser.includes("spend");
+  const hasPhone =
+    /(?:\+?1[\s\-]?)?(?:\(?\d{3}\)?[\s\-]?)\d{3}[\s\-]?\d{4}/.test(priorUser);
+  const hasCallWindow =
+    /\b\d{1,2}\s?(am|pm)\b/i.test(priorUser) ||
+    ["morning", "afternoon", "evening", "weekday", "weekend", "anytime"].some((k) =>
+      priorUser.includes(k),
+    );
+
+  return `
+## Conversation memory (critical)
+Use the full chat history provided in this request, not only the latest message.
+- Reference earlier homeowner goals, constraints, and preferences when you reply.
+- Keep recommendations consistent with prior details unless the homeowner explicitly changes direction.
+- If budget/contact details are already in prior turns, do not re-ask the same question.
+
+Known from prior turns:
+- Budget context captured: ${hasBudgetContext ? "yes" : "no"}
+- Phone captured: ${hasPhone ? "yes" : "no"}
+- Preferred call timing captured: ${hasCallWindow ? "yes" : "no"}
+`.trim();
+}
+
 function buildFallbackReply(imageCount: number): string {
   const photoNote =
     imageCount > 0
@@ -249,6 +293,12 @@ async function loadLatestImageParts(images: File[]): Promise<ContentPart[]> {
       };
     }),
   );
+}
+
+async function fileToDataUrl(file: File): Promise<string> {
+  const bytes = Buffer.from(await file.arrayBuffer());
+  const mime = file.type || "image/jpeg";
+  return `data:${mime};base64,${bytes.toString("base64")}`;
 }
 
 export async function POST(request: Request) {
@@ -318,6 +368,8 @@ export async function POST(request: Request) {
     }
 
     const userAttachedPhotosThisTurn = imageFiles.length > 0;
+    const hasPhotoContextInSession =
+      userAttachedPhotosThisTurn || sketchReferenceFiles.length > 0;
 
     const pureEnthusiasmAfterSketch =
       priorTurnHadConceptImage &&
@@ -365,17 +417,18 @@ export async function POST(request: Request) {
     try {
       if (isGeminiConfigured()) {
         const result = await geminiPlannerMultiTurn({
-          systemInstruction: buildPlannerSystemInstruction({
+          systemInstruction: `${buildPlannerSystemInstruction({
             priorTurnHadConceptImage,
             sketchLikelyAfterReply,
             userAttachedPhotosThisTurn,
+            hasPhotoContextInSession,
             sketchRoundsDelivered,
             suggestInPersonAfterManySketches,
             advanceTowardSiteVisit,
             hasBudgetContext: intakeHasBudget,
             hasPhone: intakeHasPhone,
             hasCallWindow: intakeHasCallWindow,
-          }),
+          })}\n\n${buildConversationMemoryHint(messages)}`,
           contents,
         });
 
@@ -472,6 +525,16 @@ export async function POST(request: Request) {
     const portalSession = await getSessionFromCookie();
     if (portalSession?.userId) {
       try {
+        if (imageFiles.length > 0) {
+          for (const image of imageFiles.slice(0, 6)) {
+            const dataUrl = await fileToDataUrl(image);
+            await addClientSpacePhoto(portalSession.userId, {
+              type: "image",
+              url: dataUrl,
+              caption: image.name?.trim() || "Planner space photo",
+            });
+          }
+        }
         const conceptImages = conceptImagesForAdminCrm(responseImages);
         await appendAiPlannerActivity(portalSession.userId, {
           promptPreview: lastUserText.slice(0, 280) || "(photo)",
