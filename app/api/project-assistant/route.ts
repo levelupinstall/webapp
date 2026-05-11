@@ -520,12 +520,6 @@ export async function POST(request: Request) {
       imageFiles.length === 0 &&
       sketchReferenceFiles.length === 0;
 
-    const sketchLikelyAfterReply =
-      !pureEnthusiasmAfterSketch &&
-      (userAttachedPhotosThisTurn ||
-        (priorTurnHadConceptImage && hasUserMessage) ||
-        likelyGenericBlankSketch);
-
     const latestImageParts = await loadLatestImageParts(imageFiles);
     const sketchReferenceParts = await loadLatestImageParts(sketchReferenceFiles);
 
@@ -554,6 +548,18 @@ export async function POST(request: Request) {
       ...refinementBaseParts,
       ...conceptReferenceParts,
     ];
+
+    /**
+     * True when a concept sketch is plausibly generated after this reply.
+     * Must count re-sent `sketchReferenceImages` (not only `images` this turn), otherwise
+     * Phase-4 text confirmations with re-attached room photos skip hints / `allowConceptImage`.
+     */
+    const sketchLikelyAfterReply =
+      !pureEnthusiasmAfterSketch &&
+      (userAttachedPhotosThisTurn ||
+        (priorTurnHadConceptImage && hasUserMessage) ||
+        likelyGenericBlankSketch ||
+        (conceptReferenceParts.length > 0 && hasUserMessage));
 
     const contents = buildGeminiContents(messages, latestImageParts);
     if (!contents) {
@@ -664,7 +670,8 @@ export async function POST(request: Request) {
       hasUserMessage &&
       (userAttachedPhotosThisTurn ||
         (priorTurnHadConceptImage && hasUserMessage) ||
-        genericBlankSketchEligible);
+        genericBlankSketchEligible ||
+        (conceptReferenceParts.length > 0 && !blockFirstRenderImage));
 
     const responseImages: { mimeType: string; data: string }[] = [
       ...plannerInlineImages,
