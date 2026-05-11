@@ -268,9 +268,10 @@ Callback timing is still missing for **scheduling / follow-up**. Ask for ideal d
 ## Phase 4 — Rendering gate (required)
 Do **NOT** generate or imply that a first image is ready or attached.
 Ask **3–5 short follow-ups** mixing **Category A** (remaining survey: obstructions, architecture, adjacency) with **Category B** (final scope adds/removals).
-Apply **spatial logic**: tallest vertical = Height; shorter horizontal = Depth; remaining horizontal = Width. Closets often ~24" deep — if numbers look swapped, clarify **before** the recap.
+Apply **spatial logic**: tallest vertical = Height; shorter horizontal = Depth; remaining horizontal = Width. Closets often ~24 inches deep — if numbers look swapped, clarify **before** the recap.
+**Units:** Recap dimensions in the **homeowner’s preferred units** (what they used in chat). If they ever gave a **bare number without a unit**, you must have asked whether they meant inches, centimeters, etc. — do **not** guess.
 Include **one recap sentence** exactly in this template (fill brackets):  
-"So we're looking at a [Style] [Category] that is [Width × Height × Depth], avoiding [Obstruction visible in photo if any], and [Removal only if they confirmed removing something visible]."
+"So we're looking at a [Style] [Category] that is [Width × Height × Depth **in their units**], avoiding [Obstruction visible in photo if any], and [Removal only if they confirmed removing something visible]."
 **THE GATE:** Your **final** question to the homeowner **must be verbatim**:  
 "Is there anything else to consider before I create the first design idea for you?"`);
   } else if (params.firstRenderCheckMode === "awaiting_user_confirmation") {
@@ -278,7 +279,7 @@ Include **one recap sentence** exactly in this template (fill brackets):
 ## Phase 4 — Rendering gate (required)
 You already asked the gate question about considering anything else before the first design idea.
 Do **NOT** repeat that exact question. If they confirm nothing else matters, proceed naturally; otherwise capture the missing detail first.
-If they correct dimensions, restate **Width × Height × Depth** using spatial logic before moving on.`);
+If they correct dimensions, restate **Width × Height × Depth** using spatial logic **in their units** before moving on.`);
   }
 
   return chunks.join("\n");
@@ -799,12 +800,16 @@ export async function POST(request: Request) {
       const ceilingFromTranscript =
         extractCeilingHeightFeetFromTranscript(specTranscript);
 
+      const categoryBucketForScale = inferDesignCategoryBucket(specTranscript);
       let extractedVisualDirective = buildAdaptiveScaleInjection({
         hasUserProvidedPhoto,
         isCloset: isClosetScope,
         ceilingHeightFeet: ceilingFromTranscript,
-        categoryBucket: inferDesignCategoryBucket(specTranscript),
+        categoryBucket: categoryBucketForScale,
       });
+
+      /** Spec snapshot driving W×H×D (inches) in the image directive — for render diagnostics only. */
+      let conceptRenderSpec: PlannerVisualSpec | null = null;
 
       let rawSpec: PlannerVisualSpec | null = null;
       const extractStartedAt = Date.now();
@@ -832,6 +837,7 @@ export async function POST(request: Request) {
             applyFullCarpenterPipeline(rawSpec, specTranscript),
             specTranscript,
           );
+          conceptRenderSpec = corrected;
           extractedVisualDirective = buildExtractedVisualDirective(corrected, {
             hasUserProvidedPhoto,
             isCloset: isClosetScope,
@@ -881,6 +887,7 @@ export async function POST(request: Request) {
         });
         logHarvestAssumptions("harvest", harvest.assumptionsLogged);
 
+        conceptRenderSpec = harvest.spec;
         extractedVisualDirective = buildExtractedVisualDirective(harvest.spec, {
           hasUserProvidedPhoto,
           isCloset: isClosetScope,
@@ -901,6 +908,28 @@ export async function POST(request: Request) {
           baseGoal = bundle.userGoal;
         }
       }
+
+      const harvestedDimensions = conceptRenderSpec
+        ? {
+            widthIn: conceptRenderSpec.width,
+            heightIn: conceptRenderSpec.height,
+            depthIn: conceptRenderSpec.depth,
+            shelfBoardSpanAlongWallIn:
+              conceptRenderSpec.shelfBoardSpanAlongWallIn ?? null,
+            shelfVerticalSpacingIn:
+              conceptRenderSpec.shelfVerticalSpacingIn ?? null,
+          }
+        : null;
+      const categoryAnchors = {
+        categoryBucket: categoryBucketForScale,
+        hasUserProvidedPhoto,
+        isClosetScope,
+        ceilingHeightFeet: ceilingFromTranscript,
+      };
+
+      console.log("--- RENDERING START ---");
+      console.log("Target Dimensions:", harvestedDimensions);
+      console.log("Scale Anchors Used:", categoryAnchors);
 
       let prevOkNoImages = false;
       for (let attempt = 0; attempt < 4; attempt++) {
