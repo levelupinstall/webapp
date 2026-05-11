@@ -16,10 +16,20 @@ import {
 } from "@/lib/planner-phase-utils";
 import {
   assistantAskedFirstDesignGate,
+  deriveNorthStarLabelsFromUserText,
   hasEarlyPhotoInviteContext,
   hasNorthStarContext,
   hasRoughDimensions,
 } from "@/lib/planner-intake-detect";
+import {
+  applyHarvestSafetyCategoryFallbacks,
+  buildFullPlannerTranscriptForHarvest,
+  buildHarvestConceptPromptBundle,
+  buildNorthStarGoalSummaryFromMessages,
+  harvestPlannerImageContextFromTranscript,
+  logHarvestAssumptions,
+  type HarvestPromptVisualMode,
+} from "@/lib/planner-image-context-harvest";
 import {
   applyFullCarpenterPipeline,
   buildAdaptiveScaleInjection,
@@ -27,6 +37,7 @@ import {
   extractCeilingHeightFeetFromTranscript,
   inferDesignCategoryBucket,
   transcriptSuggestsCloset,
+  type PlannerVisualSpec,
 } from "@/lib/planner-visual-spec";
 import { PLANNER_ASSISTANT_SYSTEM } from "@/lib/planner-assistant-prompt";
 import { PLANNER_ASSISTANT_NAME } from "@/lib/planner-brand";
@@ -68,6 +79,11 @@ function conceptImagesForAdminCrm(
 }
 
 export const maxDuration = 120;
+
+function plannerEnvFlagEnabled(name: string): boolean {
+  const v = process.env[name]?.trim().toLowerCase();
+  return v === "1" || v === "true" || v === "yes";
+}
 
 function shouldShowSubmitDesignCta(params: {
   cleanReply: string;
@@ -626,7 +642,7 @@ export async function POST(request: Request) {
     let cleanReply = cleanReplyRaw;
 
     if (allowConceptImage && responseImages.length === 0) {
-      const transcript = messages
+      const transcriptRecent = messages
         .slice(-12)
         .map(
           (m) =>
@@ -642,10 +658,6 @@ export async function POST(request: Request) {
             : phase === "consultation"
               ? "\n\n(Context: consultation — no room photos in request; neutral blank studio backdrop, illustrative proportions only.)"
               : "\n\n(Context: no reference photos — neutral blank studio room; apply chat feedback to the concept.)";
-
-      const basePrompt = `${transcript}\n\n${PLANNER_ASSISTANT_NAME} reply:\n${cleanReply.slice(0, 6000)}${exploratoryNote}`;
-      const baseGoal =
-        lastUserText.slice(0, 4000) || cleanReply.slice(0, 1200);
 
       const extractionTranscript = messages
         .slice(-VISUAL_EXTRACTION_MESSAGE_WINDOW)
@@ -669,8 +681,21 @@ export async function POST(request: Request) {
         ceilingHeightFeet: ceilingFromTranscript,
         categoryBucket: inferDesignCategoryBucket(extractionTranscript),
       });
+
+      let rawSpec: PlannerVisualSpec | null = null;
       try {
-        const rawSpec = await geminiExtractPlannerVisualSpec(extractionTranscript);
+        rawSpec = await geminiExtractPlannerVisualSpec(extractionTranscript);
+      } catch {
+        /* extraction must not block visuals */
+      }
+
+      const plannerHarvestV1 = plannerEnvFlagEnabled("PLANNER_HARVEST_V1");
+
+      let basePrompt = `${transcriptRecent}\n\n${PLANNER_ASSISTANT_NAME} reply:\n${cleanReply.slice(0, 6000)}${exploratoryNote}`;
+      let baseGoal =
+        lastUserText.slice(0, 4000) || cleanReply.slice(0, 1200);
+
+      if (!plannerHarvestV1) {
         if (rawSpec) {
           const corrected = applyFullCarpenterPipeline(rawSpec, extractionTranscript);
           extractedVisualDirective = buildExtractedVisualDirective(corrected, {
@@ -679,8 +704,55 @@ export async function POST(request: Request) {
             extractionTranscript,
           });
         }
-      } catch {
-        /* extraction must not block visuals */
+      } else {
+        const correctedSpec = rawSpec
+          ? applyFullCarpenterPipeline(rawSpec, extractionTranscript)
+          : null;
+        const { workCategory } = deriveNorthStarLabelsFromUserText(allUserText);
+        const northStarGoalSummary = buildNorthStarGoalSummaryFromMessages(messages);
+
+        const hasSpaceReference = conceptReferenceParts.length > 0;
+        const hasRefinementBaseline = false;
+
+        const harvestFirstRender =
+          !hasAnyPriorRender && !blockFirstRenderImage && hasSpaceReference;
+        const harvestRefinementRound =
+          hasAnyPriorRender &&
+          !blockFirstRenderImage &&
+          (hasRefinementBaseline || hasSpaceReference);
+        const useHarvestPipeline = harvestFirstRender || harvestRefinementRound;
+
+        const visualMode: HarvestPromptVisualMode =
+          hasAnyPriorRender && useHarvestPipeline
+            ? "refinement-delta"
+            : "first-render";
+
+        let harvest = harvestPlannerImageContextFromTranscript({
+          extractionTranscript,
+          baseSpec: correctedSpec,
+        });
+        harvest = applyHarvestSafetyCategoryFallbacks(harvest, workCategory);
+        logHarvestAssumptions("harvest", harvest.assumptionsLogged);
+
+        extractedVisualDirective = buildExtractedVisualDirective(harvest.spec, {
+          hasUserProvidedPhoto,
+          isCloset: isClosetScope,
+          extractionTranscript,
+        });
+
+        if (useHarvestPipeline) {
+          const bundle = buildHarvestConceptPromptBundle({
+            harvest,
+            hasUploadedSpacePhoto: hasSpaceReference,
+            hasRefinementBaselineImage: hasRefinementBaseline,
+            assistantReplySummary: cleanReply,
+            northStarGoalSummary,
+            lastUserFeedback: lastUserText,
+            visualMode,
+          });
+          basePrompt = `${bundle.promptContext}\n\n--- Conversation excerpt ---\n\n${transcriptRecent}\n\n${PLANNER_ASSISTANT_NAME} reply:\n${cleanReply.slice(0, 6000)}${exploratoryNote}`;
+          baseGoal = bundle.userGoal;
+        }
       }
 
       for (let attempt = 0; attempt < 2; attempt++) {
