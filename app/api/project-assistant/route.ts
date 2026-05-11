@@ -16,6 +16,7 @@ import {
 } from "@/lib/planner-phase-utils";
 import {
   assistantAskedFirstDesignGate,
+  assistantAskedLayoutGoAheadPrompt,
   deriveNorthStarLabelsFromUserText,
   hasEarlyPhotoInviteContext,
   hasNorthStarContext,
@@ -45,6 +46,7 @@ import {
 import { PLANNER_ASSISTANT_SYSTEM } from "@/lib/planner-assistant-prompt";
 import { PLANNER_ASSISTANT_NAME } from "@/lib/planner-brand";
 import { addClientSpacePhoto, appendAiPlannerActivity } from "@/lib/client-portal-store";
+import { renderShelvingBlueprintToPng } from "@/lib/blueprint-engine";
 
 /** After this many assistant turns that included a concept sketch, steer toward in-person consult. */
 const SKETCH_ROUNDS_BEFORE_IN_PERSON_NUDGE = 5;
@@ -132,47 +134,26 @@ function userApprovedFirstRender(text: string): boolean {
   return false;
 }
 
-/**
- * After the Phase 4 gate question, homeowner signals they have nothing else to add for the design.
- * Kept separate from userApprovedFirstRender so we can require assistantAskedFirstDesignGate in the caller.
- */
-function userConfirmedNoFurtherDesignConsiderations(text: string): boolean {
-  const raw = text.trim();
-  if (!raw || raw.length > 720) return false;
-  const t = raw.toLowerCase();
-  if (/\bnothing\s+else\b.*\b(to\s+)?consider\b/i.test(t)) return true;
-  if (/\bno\s+more\b.*\b(to\s+)?consider\b/i.test(t)) return true;
-  if (/\bnothing\s+else\b.*\b(for\s+)?(the\s+)?design\b/i.test(t)) return true;
-  if (/\bno(\s+other)?\s+changes?\b.*\b(for|to)\s*(the\s+)?design\b/i.test(t)) return true;
-  if (/\b(that'?s|that is|thats)\s+all\b.*\b(for\s+)?(the\s+)?design\b/i.test(t)) return true;
-  if (/\b(i\s+)?don'?t\s+have\b.*\b(anything\s+)?else\b.*\b(consider|to add|for the design)\b/i.test(t))
-    return true;
-  if (
-    /\b(is\s+)?(everything|that)\s+(good|set|clear|covered)\b.*\b(for the design|to proceed|to move forward)\b/i.test(
-      t,
-    )
-  ) {
-    return true;
-  }
-  if (/\bno\s+further\b.*\b(considerations|changes|questions)\b.*\b(design)?\b/i.test(t)) return true;
-  return false;
-}
-
 /** Max length for treating latest message as a "contact completion" reply after Phase 4 gate. */
 const MAX_CONTACT_ONLY_PHASE4_REPLY_CHARS = 520;
 
 /**
- * Phase 4 gate cleared for first sketch: explicit approval phrases, or (after gate was asked)
- * design-complete confirmation, or a short message that completes phone + callback heuristics.
+ * Phase 4 gate cleared for first sketch: after the design gate was asked, the homeowner gave an
+ * explicit **go ahead** / **proceed** once Alex asked for layout lock (structural blueprint + first
+ * sketch), or legacy contact-completion heuristics when phone/callback were still missing.
  */
 function firstRenderPhaseFourCleared(
   lastUserText: string,
   allUserText: string,
   messages: PlannerClientMessage[],
 ): boolean {
-  if (userApprovedFirstRender(lastUserText)) return true;
-  if (!assistantAskedFirstDesignGate(messages)) return false;
-  if (userConfirmedNoFurtherDesignConsiderations(lastUserText)) return true;
+  const layoutGoAheadAsked = assistantAskedLayoutGoAheadPrompt(messages);
+  const designGateAsked = assistantAskedFirstDesignGate(messages);
+
+  if (userApprovedFirstRender(lastUserText) && layoutGoAheadAsked) {
+    return true;
+  }
+  if (!designGateAsked) return false;
 
   if (!hasPhoneNumber(allUserText) || !hasCallWindow(allUserText)) return false;
 
@@ -231,7 +212,7 @@ Stay concise; end with **one** sharp **question**. Prefer \`[PHASE:refine]\` whe
   if (!params.hasPhotoContextInSession && params.northStarReadyForPhotoPrompt) {
     chunks.push(`
 ## Session hint (photo invite — early Phase 1)
-The homeowner has signaled enough **work category** + **style direction** to invite pictures. Ask for clear photos of the space **on this turn or soon** when helpful — include \`[PHOTO_PROMPT]\` when you invite uploads. This **does not** mean a first concept sketch is coming yet; the platform only attaches the **first** rendering after photos, measurements, budget, and their answer to the Phase 4 gate question (phone/callback are for **handoff**, not that first attachment).`);
+The homeowner has signaled enough **work category** + **style direction** to invite pictures. Ask for clear photos of the space **on this turn or soon** when helpful — include \`[PHOTO_PROMPT]\` when you invite uploads. This **does not** mean a first concept sketch is coming yet; the platform only attaches the **first** rendering after photos, measurements, budget, **Phase 4** layout confirmation (Layout Type + recap + gate question + homeowner **go ahead**), and the intake signals the server tracks (phone/callback are for **handoff**, not that first attachment).`);
   }
 
   if (params.suggestInPersonAfterManySketches) {
@@ -265,21 +246,25 @@ Callback timing is still missing for **scheduling / follow-up**. Ask for ideal d
 
   if (params.firstRenderCheckMode === "ask_now") {
     chunks.push(`
-## Phase 4 — Rendering gate (required)
-Do **NOT** generate or imply that a first image is ready or attached.
+## Phase 4 — Layout confirmation & rendering gate (required)
+Do **NOT** generate or imply that a first image or structural line drawing is ready or attached.
 Ask **3–5 short follow-ups** mixing **Category A** (remaining survey: obstructions, architecture, adjacency) with **Category B** (final scope adds/removals).
 Apply **spatial logic**: tallest vertical = Height; shorter horizontal = Depth; remaining horizontal = Width. Closets often ~24 inches deep — if numbers look swapped, clarify **before** the recap.
 **Units:** Recap dimensions in the **homeowner’s preferred units** (what they used in chat). If they ever gave a **bare number without a unit**, you must have asked whether they meant inches, centimeters, etc. — do **not** guess.
-Include **one recap sentence** exactly in this template (fill brackets):  
-"So we're looking at a [Style] [Category] that is [Width × Height × Depth **in their units**], avoiding [Obstruction visible in photo if any], and [Removal only if they confirmed removing something visible]."
-**THE GATE:** Your **final** question to the homeowner **must be verbatim**:  
-"Is there anything else to consider before I create the first design idea for you?"`);
+**Layout Type (required):** In your recap, you **must** explicitly name the **Layout Type** (short carpenter label, e.g. *Double-hang closet*, *Board-and-batten trim*, *Media wall with shelving*).
+**Recap:** Include **primary Width × Height × Depth** and **key obstructions** (or state none noted).
+Include **one recap sentence** in this template (fill brackets):  
+"We're confirming a [Layout Type] — [Style] [Category] at roughly [Width × Height × Depth **in their units**], with obstructions noted as [obstructions or none]."
+**THE GATE:** Your **final** question this turn **must be verbatim**:  
+"Is there anything else to consider before I create the first design idea for you?"
+After they later confirm nothing else is missing, you **must** ask for an explicit **go ahead** / **proceed** before the platform may run the structural blueprint and first sketch — explain that this locks the layout type for the correct structural guide.`);
   } else if (params.firstRenderCheckMode === "awaiting_user_confirmation") {
     chunks.push(`
-## Phase 4 — Rendering gate (required)
+## Phase 4 — Layout confirmation & rendering gate (required)
 You already asked the gate question about considering anything else before the first design idea.
-Do **NOT** repeat that exact question. If they confirm nothing else matters, proceed naturally; otherwise capture the missing detail first.
-If they correct dimensions, restate **Width × Height × Depth** using spatial logic **in their units** before moving on.`);
+Do **NOT** repeat that exact question verbatim unless they asked you to restate it.
+If they confirmed nothing else matters and you have **not** yet asked for a **go ahead** / **proceed** to lock layout for the structural line drawing + first concept, ask now — they must reply with **go ahead** or **proceed** when the **Layout Type**, dimensions, and obstruction recap all look right.
+If they correct dimensions or layout type, restate **Layout Type** and **Width × Height × Depth** using spatial logic **in their units** before asking for go ahead again.`);
   }
 
   return chunks.join("\n");
@@ -927,6 +912,51 @@ export async function POST(request: Request) {
         ceilingHeightFeet: ceilingFromTranscript,
       };
 
+      let blueprintReferenceParts: ContentPart[] = [];
+      const hasRoomPhotoForBlueprint =
+        latestImageParts.length > 0 || sketchReferenceFiles.length > 0;
+      if (
+        hasRoomPhotoForBlueprint &&
+        conceptRenderSpec?.width != null &&
+        conceptRenderSpec.height != null &&
+        conceptRenderSpec.shelfCount != null &&
+        conceptRenderSpec.shelfCount >= 1
+      ) {
+        try {
+          const png = await renderShelvingBlueprintToPng(
+            {
+              widthIn: conceptRenderSpec.width,
+              heightIn: conceptRenderSpec.height,
+              depthIn: conceptRenderSpec.depth ?? undefined,
+            },
+            conceptRenderSpec.shelfCount,
+          );
+          blueprintReferenceParts = [
+            {
+              inline_data: {
+                mime_type: "image/png",
+                data: png.toString("base64"),
+              },
+            },
+          ];
+        } catch (err) {
+          console.warn(
+            "[project-assistant] shelving blueprint PNG failed:",
+            err instanceof Error ? err.message : err,
+          );
+        }
+      }
+
+      const conceptReferenceWithBlueprint =
+        blueprintReferenceParts.length > 0
+          ? [...blueprintReferenceParts, ...combinedConceptReferenceParts]
+          : combinedConceptReferenceParts;
+
+      const structuralGuideDirective =
+        blueprintReferenceParts.length > 0
+          ? 'Use the attached line drawing as the exact structural guide for the rendering. The first reference image after this prompt is a schematic elevation (white lines on black): the rectangle is the unit width × height; each horizontal white line is a shelf level. Match shelf count and vertical shelf positions to this diagram when integrating the homeowner room photo(s).'
+          : undefined;
+
       console.log("--- RENDERING START ---");
       console.log("Target Dimensions:", harvestedDimensions);
       console.log("Scale Anchors Used:", categoryAnchors);
@@ -951,10 +981,11 @@ export async function POST(request: Request) {
           promptContext: basePrompt,
           userGoal: userGoalAug,
           referenceImageParts:
-            combinedConceptReferenceParts.length > 0
-              ? combinedConceptReferenceParts
+            conceptReferenceWithBlueprint.length > 0
+              ? conceptReferenceWithBlueprint
               : undefined,
           extractedVisualDirective,
+          structuralGuideDirective,
         });
 
         if (!("error" in visual) && visual.images.length > 0) {

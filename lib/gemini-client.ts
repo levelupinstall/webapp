@@ -790,6 +790,11 @@ export async function geminiGenerateConceptImage(params: {
   referenceImageParts?: ContentPart[];
   /** Post-extraction directive: dimensions, materials, scale injection (image model only). */
   extractedVisualDirective?: string;
+  /**
+   * When a schematic line drawing is attached as the first reference image, append this
+   * instruction block into the main text so the model reads it before the images.
+   */
+  structuralGuideDirective?: string;
 }): Promise<GeminiGenerateResult | { error: string }> {
   const model = defaultGeminiImageModel();
 
@@ -802,12 +807,21 @@ ${params.extractedVisualDirective.trim()}
 `
     : "";
 
+  const structuralBlock = params.structuralGuideDirective?.trim()
+    ? `
+
+---
+Structural line drawing (attached as the first reference image after this text):
+${params.structuralGuideDirective.trim()}
+`
+    : "";
+
   const fullPrompt = `${LEVEL_UP_LEAD_COORDINATOR_PROMPT}
 
 ${LEVEL_UP_IMAGE_GENERATION_SUFFIX}
 
 Project / homeowner context:
-${params.promptContext.slice(0, 12000)}${extractionBlock}
+${params.promptContext.slice(0, 12000)}${extractionBlock}${structuralBlock}
 
 Specific visualization request:
 ${params.userGoal.slice(0, 4000)}`;

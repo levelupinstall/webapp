@@ -146,3 +146,19 @@ export function assistantAskedFirstDesignGate(messages: Array<{ role: string; co
     );
   });
 }
+
+/** True after Alex asked for an explicit go-ahead to lock layout / run structural blueprint + first sketch. */
+export function assistantAskedLayoutGoAheadPrompt(
+  messages: Array<{ role: string; content: string }>,
+): boolean {
+  return messages.some((m) => {
+    if (m.role !== "assistant") return false;
+    const c = m.content.toLowerCase();
+    return (
+      (/\bgo ahead\b/i.test(c) || /\bproceed\b/i.test(c)) &&
+      /\b(lock|layout|structural|blueprint|line drawing|first concept|first design|sketch|generate)\b/i.test(
+        c,
+      )
+    );
+  });
+}
