@@ -140,6 +140,7 @@ export function assistantAskedFirstDesignGate(messages: Array<{ role: string; co
     return (
       /anything else.*before (creating|i create).*(first rendering|first design idea)/i.test(c) ||
       /before i create the first design idea/i.test(c) ||
+      /before\s+(we|i)\s+create\s+the\s+first\s+design\s+idea/i.test(c) ||
       /is there anything else to consider before i create/i.test(c) ||
       /anything else i should consider.*before creating our first rendering/i.test(c)
     );

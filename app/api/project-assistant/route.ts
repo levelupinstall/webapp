@@ -129,6 +129,28 @@ function userApprovedFirstRender(text: string): boolean {
   return false;
 }
 
+/** Max length for treating latest message as a "contact completion" reply after Phase 4 gate. */
+const MAX_CONTACT_ONLY_PHASE4_REPLY_CHARS = 520;
+
+/**
+ * Phase 4 gate cleared for first sketch: explicit approval phrases, or (after gate was asked)
+ * a short message that completes phone + callback heuristics in the transcript.
+ */
+function firstRenderPhaseFourCleared(
+  lastUserText: string,
+  allUserText: string,
+  messages: PlannerClientMessage[],
+): boolean {
+  if (userApprovedFirstRender(lastUserText)) return true;
+  if (!assistantAskedFirstDesignGate(messages)) return false;
+  if (!hasPhoneNumber(allUserText) || !hasCallWindow(allUserText)) return false;
+
+  const raw = lastUserText.trim();
+  if (!raw || raw.length > MAX_CONTACT_ONLY_PHASE4_REPLY_CHARS) return false;
+
+  return hasPhoneNumber(lastUserText) || hasCallWindow(lastUserText);
+}
+
 function buildPlannerSystemInstruction(params: {
   priorTurnHadConceptImage: boolean;
   sketchLikelyAfterReply: boolean;
@@ -178,7 +200,7 @@ Stay concise; end with **one** sharp **question**. Prefer \`[PHASE:refine]\` whe
   if (!params.hasPhotoContextInSession && params.northStarReadyForPhotoPrompt) {
     chunks.push(`
 ## Session hint (photo invite — early Phase 1)
-The homeowner has signaled enough **work category** + **style direction** to invite pictures. Ask for clear photos of the space **on this turn or soon** when helpful — include \`[PHOTO_PROMPT]\` when you invite uploads. This **does not** mean a first concept sketch is coming yet; the platform only attaches the **first** rendering after photos, measurements, budget/contact intake, and their answer to the Phase 4 gate question.`);
+The homeowner has signaled enough **work category** + **style direction** to invite pictures. Ask for clear photos of the space **on this turn or soon** when helpful — include \`[PHOTO_PROMPT]\` when you invite uploads. This **does not** mean a first concept sketch is coming yet; the platform only attaches the **first** rendering after photos, measurements, budget, and their answer to the Phase 4 gate question (phone/callback are for **handoff**, not that first attachment).`);
   }
 
   if (params.suggestInPersonAfterManySketches) {
@@ -201,13 +223,13 @@ Budget context is missing or unclear. Ask for a realistic budget target before d
   }
   if (!params.hasPhone) {
     chunks.push(`
-## Session hint (required intake)
-Before final handoff, ask for the best phone number to reach the homeowner.`);
+## Session hint (proposal handoff — not a first-sketch gate)
+Phone number is still missing for **Level Up’s follow-up after you’re happy with the direction**. Ask for the best number when natural — **do not** say the **first** AI concept sketch is withheld until they provide it; the platform does not use phone as a prerequisite for that first attachment.`);
   }
   if (!params.hasCallWindow) {
     chunks.push(`
-## Session hint (required intake)
-Before final handoff, ask what days/times are ideal for a callback (e.g. weekday evenings, mornings, etc.).`);
+## Session hint (proposal handoff — not a first-sketch gate)
+Callback timing is still missing for **scheduling / follow-up**. Ask for ideal days or times when natural — **do not** say the **first** AI concept sketch is withheld until they provide it.`);
   }
 
   if (params.firstRenderCheckMode === "ask_now") {
@@ -482,7 +504,11 @@ export async function POST(request: Request) {
       intakeHasBudget &&
       hasPhotoContextInSession;
     const askedFirstRenderCheck = assistantAskedFirstDesignGate(messages);
-    const firstRenderUserConfirmed = userApprovedFirstRender(lastUserText);
+    const firstRenderUserConfirmed = firstRenderPhaseFourCleared(
+      lastUserText,
+      allUserText,
+      messages,
+    );
     const firstRenderCheckMode: "none" | "ask_now" | "awaiting_user_confirmation" =
       hasAnyPriorRender
         ? "none"
@@ -845,6 +871,16 @@ export async function POST(request: Request) {
           }
           break;
         }
+        if ("error" in visual) {
+          console.warn(
+            "[project-assistant] geminiGenerateConceptImage error:",
+            visual.error,
+          );
+        } else if (visual.images.length === 0) {
+          console.warn(
+            "[project-assistant] geminiGenerateConceptImage returned no image parts",
+          );
+        }
       }
 
     }
@@ -909,6 +945,8 @@ export async function POST(request: Request) {
           "PLANNER_HARVEST_FULL_TRANSCRIPT",
         ),
         blockFirstRenderImage,
+        eligibleForFirstRenderGate,
+        firstRenderCheckMode,
         refinementBaselineImages: refinementBaseParts.length,
       });
     }
