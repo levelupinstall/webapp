@@ -418,6 +418,10 @@ export async function POST(request: Request) {
       );
     }
 
+    const plannerDebugDiagnostics =
+      plannerEnvFlagEnabled("PLANNER_DEBUG_DIAGNOSTICS") ||
+      process.env.NODE_ENV === "development";
+
     const clientPhase = parseClientPhase(String(formData.get("phase") ?? ""));
 
     const priorTurnHadConceptImage =
@@ -560,6 +564,7 @@ export async function POST(request: Request) {
     }
 
     let replyRaw = "";
+    let usedPlannerFallbackReply = false;
     let plannerInlineImages: { mimeType: string; data: string }[] = [];
 
     try {
@@ -625,6 +630,7 @@ export async function POST(request: Request) {
     }
 
     if (!replyRaw) {
+      usedPlannerFallbackReply = true;
       console.warn(
         "[project-assistant] Using canned fallback reply (connection hiccup copy). See warnings above for root cause.",
       );
@@ -870,7 +876,7 @@ export async function POST(request: Request) {
       }
     }
 
-    return NextResponse.json({
+    const responseBody: Record<string, unknown> = {
       reply: cleanReply,
       phase,
       showPhotoUploader,
@@ -883,6 +889,27 @@ export async function POST(request: Request) {
         hasCallWindow: intakeHasCallWindow,
       }),
       ...(responseImages.length ? { images: responseImages } : {}),
+    };
+
+    if (plannerDebugDiagnostics) {
+      responseBody.debugHint = JSON.stringify({
+        usedPlannerFallbackReply,
+        phase,
+        allowConceptImage,
+        conceptImagesReturned: responseImages.length,
+        plannerHarvestV1: plannerEnvFlagEnabled("PLANNER_HARVEST_V1"),
+        plannerHarvestFullTranscript: plannerEnvFlagEnabled(
+          "PLANNER_HARVEST_FULL_TRANSCRIPT",
+        ),
+        blockFirstRenderImage,
+        refinementBaselineImages: refinementBaseParts.length,
+      });
+    }
+
+    return NextResponse.json(responseBody, {
+      ...(plannerDebugDiagnostics
+        ? { headers: { "X-Planner-Diagnostic": "1" } }
+        : {}),
     });
   } catch {
     return NextResponse.json(

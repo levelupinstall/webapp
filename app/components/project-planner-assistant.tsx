@@ -26,6 +26,8 @@ type AssistantResponse = {
   showPhotoUploader?: boolean;
   showSubmitDesignCta?: boolean;
   images?: { mimeType: string; data: string }[];
+  /** Present when PLANNER_DEBUG_DIAGNOSTICS or NODE_ENV=development on server. */
+  debugHint?: string;
 };
 
 type ProjectPlannerAssistantProps = {
