@@ -690,7 +690,7 @@ export async function POST(request: Request) {
               ? "\n\n(Context: consultation — no room photos in request; neutral blank studio backdrop, illustrative proportions only.)"
               : "\n\n(Context: no reference photos — neutral blank studio room; apply chat feedback to the concept.)";
 
-      const extractionTranscript = messages
+      const extractionWindowTranscript = messages
         .slice(-VISUAL_EXTRACTION_MESSAGE_WINDOW)
         .map((m) => {
           const label = m.role === "user" ? "Homeowner" : PLANNER_ASSISTANT_NAME;
@@ -700,24 +700,45 @@ export async function POST(request: Request) {
         })
         .join("\n");
 
+      const plannerHarvestFullExtract = plannerEnvFlagEnabled(
+        "PLANNER_HARVEST_FULL_TRANSCRIPT",
+      );
+      const cappedFullHarvestTranscript = plannerHarvestFullExtract
+        ? buildFullPlannerTranscriptForHarvest(messages.slice(-MAX_MESSAGES))
+            .trim()
+            .slice(-24_000)
+        : "";
+
+      const specTranscript =
+        plannerHarvestFullExtract && cappedFullHarvestTranscript.length > 0
+          ? cappedFullHarvestTranscript
+          : extractionWindowTranscript;
+
       const hasUserProvidedPhoto =
         combinedConceptReferenceParts.length > 0 || imageFiles.length > 0;
-      const isClosetScope = transcriptSuggestsCloset(extractionTranscript);
+      const isClosetScope = transcriptSuggestsCloset(specTranscript);
       const ceilingFromTranscript =
-        extractCeilingHeightFeetFromTranscript(extractionTranscript);
+        extractCeilingHeightFeetFromTranscript(specTranscript);
 
       let extractedVisualDirective = buildAdaptiveScaleInjection({
         hasUserProvidedPhoto,
         isCloset: isClosetScope,
         ceilingHeightFeet: ceilingFromTranscript,
-        categoryBucket: inferDesignCategoryBucket(extractionTranscript),
+        categoryBucket: inferDesignCategoryBucket(specTranscript),
       });
 
       let rawSpec: PlannerVisualSpec | null = null;
+      const extractStartedAt = Date.now();
       try {
-        rawSpec = await geminiExtractPlannerVisualSpec(extractionTranscript);
+        rawSpec = await geminiExtractPlannerVisualSpec(specTranscript);
       } catch {
         /* extraction must not block visuals */
+      }
+      if (plannerHarvestFullExtract) {
+        console.info(
+          "[project-assistant] geminiExtractPlannerVisualSpec durationMs:",
+          Date.now() - extractStartedAt,
+        );
       }
 
       const plannerHarvestV1 = plannerEnvFlagEnabled("PLANNER_HARVEST_V1");
@@ -728,16 +749,16 @@ export async function POST(request: Request) {
 
       if (!plannerHarvestV1) {
         if (rawSpec) {
-          const corrected = applyFullCarpenterPipeline(rawSpec, extractionTranscript);
+          const corrected = applyFullCarpenterPipeline(rawSpec, specTranscript);
           extractedVisualDirective = buildExtractedVisualDirective(corrected, {
             hasUserProvidedPhoto,
             isCloset: isClosetScope,
-            extractionTranscript,
+            extractionTranscript: specTranscript,
           });
         }
       } else {
         const correctedSpec = rawSpec
-          ? applyFullCarpenterPipeline(rawSpec, extractionTranscript)
+          ? applyFullCarpenterPipeline(rawSpec, specTranscript)
           : null;
         const { workCategory } = deriveNorthStarLabelsFromUserText(allUserText);
         const northStarGoalSummary = buildNorthStarGoalSummaryFromMessages(messages);
@@ -758,8 +779,13 @@ export async function POST(request: Request) {
             ? "refinement-delta"
             : "first-render";
 
+        const harvestSourceTranscript =
+          plannerHarvestFullExtract && cappedFullHarvestTranscript.length > 0
+            ? cappedFullHarvestTranscript
+            : extractionWindowTranscript;
+
         let harvest = harvestPlannerImageContextFromTranscript({
-          extractionTranscript,
+          extractionTranscript: harvestSourceTranscript,
           baseSpec: correctedSpec,
         });
         harvest = applyHarvestSafetyCategoryFallbacks(harvest, workCategory);
@@ -768,7 +794,7 @@ export async function POST(request: Request) {
         extractedVisualDirective = buildExtractedVisualDirective(harvest.spec, {
           hasUserProvidedPhoto,
           isCloset: isClosetScope,
-          extractionTranscript,
+          extractionTranscript: specTranscript,
         });
 
         if (useHarvestPipeline) {
