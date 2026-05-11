@@ -353,10 +353,10 @@ Output ONLY valid JSON with exactly these keys (no markdown fences, no commentar
 - "material": string or null — short finish/material vibe only (e.g. painted MDF, oak tone); NEVER dollar amounts or SKUs
 - "style": string or null — short aesthetic label only (e.g. modern, traditional); NEVER fees or rates
 - "designCategory": string or null — Phase 1 "North Star" install type only (e.g. "Built-in shelving", "TV wall", "Trim refresh"); NOT finishes or brands
-- "scopeNotes": string or null — 1–4 sentences: primary use case, obstructions or removals mentioned, architecture cues from photos when discussed; NEVER prices or SKUs
+- "scopeNotes": string or null — 1–6 sentences: primary use case, obstructions or removals, architecture cues from photos when discussed; **include explicit quantities** for any counted scope the homeowner stated that is **not** captured by shelfCount / drawerCount / closetRodCount (e.g. closet organizer sections or tower modules, mirror or picture panels, moulding runs or pieces, bathroom fixtures in scope, bookcase bays/columns, other repeated elements). Example tail: "Counts: 3 closet sections, 2 mirrors." NEVER prices or SKUs
 - "floor": number or null — storey / finished floor level when stated (e.g. 1 main, 2 second floor); otherwise null
 - "isCondo": boolean or null — true if condo, apartment, or strata/stacked dwelling rules/access clearly apply; false if detached house clearly indicated; otherwise null
-- "shelfCount": integer or null — number of visible shelf boards/surfaces the homeowner asked for (e.g. "3 shelves"); null if unknown
+- "shelfCount": integer or null — number of **horizontal** shelf boards/tiers the homeowner asked for (e.g. "3 shelves"); null if unknown
 - "drawerCount": integer or null — number of drawers stated; null if unknown
 - "closetRodCount": integer or null — hanging rods / closet bars / garment rods (e.g. "2 hanging bars", "double hang" = 2 rods, "triple hang" = 3); null if unknown
 - "shelfVerticalSpacingIn": number or null — inches between shelf tiers when the homeowner stated vertical spacing (e.g. "14 inches between each shelf"); null if unknown or only overall unit height was given
@@ -370,7 +370,7 @@ Rules:
 - Map homeowner size language onto **width / height / depth** (inches) when they describe the overall run or unit: e.g. "8 foot span along the wall" → width 96; "about 2.4 m wide" → convert to inches for width; "84 inches tall" / "7 foot tall unit" → height in inches; "300 mm deep shelves" → depth in inches when it describes shelf or cabinet depth into the room or cavity.
 - Put **only** tier-to-tier or "between shelves" vertical spacing into **shelfVerticalSpacingIn** (in inches after conversion), not the full unit height.
 - Put **per-shelf horizontal board length** (shorter shelves, "24 inch shelves" meaning not wall-long) into **shelfBoardSpanAlongWallIn** when it is **not** clearly overall unit width/height/depth.
-- Capture **explicit counts** from the transcript for shelves, drawers, and closet hanging rods/bars (including “double hang” / “triple hang” as rod counts when that’s what the homeowner means).
+- Capture **explicit counts** from the transcript for shelves, drawers, and closet hanging rods/bars (including “double hang” / “triple hang” as rod counts when that’s what the homeowner means). For other countable install elements (closet organizer sections/towers, mirrors, pictures, moulding runs, bathroom fixtures, bookcase bays, etc.), put the counts into **scopeNotes** if they do not map cleanly onto shelfCount, drawerCount, or closetRodCount.
 - If only one horizontal is given for a closet run, map it to width when it reads like a wall span.
 - **Pricing isolation:** Do NOT put call-out fees, hourly labor rates, "$150", dollar figures, or "/hour" language into ANY field — omit pricing entirely from this JSON (those signals stay in other backend systems only, never echoed here).
 `;

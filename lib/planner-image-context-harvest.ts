@@ -379,7 +379,7 @@ export function buildHarvestConceptPromptBundle(params: {
 
   if (visualMode === "refinement-delta") {
     const baseline = hasRefinementBaselineImage
-      ? "REFINEMENT — DELTA UPDATE: The FIRST attached image is the previous planner concept rendering — treat it as the baseline. Apply ONLY the changes implied by the homeowner's latest feedback and the assistant reply. Keep room architecture, materials, trim character, and overall layout identical to that baseline unless the user explicitly asked to change them."
+      ? "REFINEMENT — DELTA UPDATE: The FIRST attached image is the previous planner concept rendering — treat it as the baseline. Apply ONLY the changes implied by the homeowner's latest feedback and the assistant reply. Keep room architecture, wall color, materials, trim character, and overall layout identical to that baseline unless the user explicitly asked to change them. Treat the built-in / closet / TV / mirror / moulding as a **rigid assembly** for moves: translate vertically or horizontally as a whole — do not stretch, squash, or re-center the composition for aesthetics."
       : "REFINEMENT — No baseline concept image was attached; infer carefully from space references and transcript.";
 
     const spaceNote = hasUploadedSpacePhoto
@@ -431,7 +431,7 @@ export function buildHarvestConceptPromptBundle(params: {
     if (fc.shelfBoardSpanAlongWallIn !== null) {
       parts.push(`each shelf board ≤${fc.shelfBoardSpanAlongWallIn}" along the wall (not full-wall span)`);
     }
-    userGoal = `${userGoal}\n\nReinforce exact layout numbers in the render: ${parts.join(", ")} — match counts and stated spacing; no extras.`;
+    userGoal = `${userGoal}\n\nReinforce exact layout numbers in the render: ${parts.join(", ")} — match counts and stated spacing for every countable element (including counts spelled out in scope notes); no extras to fill space.`;
   }
 
   const promptContext = [

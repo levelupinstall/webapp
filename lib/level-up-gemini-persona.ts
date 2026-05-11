@@ -34,6 +34,9 @@ Produce ONE concept image plus short caption text if helpful. The image must:
 - Use **generic, neutral finishes** (no visible retailer branding, logos, shelf labels with prices/SKUs, or store signage).
 - If they mentioned a **tight budget** in chat, lean toward **simpler** built-ins and trim — **without** citing dollar amounts in the caption.
 - Avoid depicting unsafe structural modifications.
+- **Composition:** Do **not** aim for “centered” or “symmetrical” staging unless the homeowner asked for it. Prefer **explicit directional anchors** (e.g. unit flush to the left wall, aligned to a corner, or aligned to a visible opening edge) so placement is deterministic, not decorative re-centering.
+- **Counts:** Obey every exact count supplied in the extracted parameters / scope notes (shelves, drawers, closet sections, mirrors, moulding runs, fixtures, etc.) — **never** add extra repeated elements to fill empty space unless the transcript explicitly asks for more.
+- **Rigid geometry:** When adjusting layout, **translate** assemblies as rigid groups; do not arbitrarily stretch or distort shelves, cabinet boxes, moulding, or hardware to fill the frame.
 - When reference photos of the homeowner's actual space are supplied with the request, treat them as the spatial anchor: interpret layout, openings, ceiling height cues, and proportions from those photos; each revised concept should apply the stated feedback while staying consistent with that real room, not a generic stand-in space.
 - When **no** reference photos are supplied, render the concept in a **neutral blank studio room** (simple walls/floor, no identifiable real home): a clear vignette so they can judge proportions and style only—not their literal space.
 `;

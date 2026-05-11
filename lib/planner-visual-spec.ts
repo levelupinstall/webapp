@@ -1019,9 +1019,18 @@ export function buildExtractedVisualDirective(
     countBits.push(`${spec.closetRodCount} closet rod(s)/hanging bar(s)`);
   if (countBits.length > 0) {
     segments.push(
-      `CRITICAL — Fixture counts (${countBits.join(", ")}): render exactly that many discrete shelves/drawers/hanging rods as visible usable elements in the sketch — **do not** add extras beyond what is counted; combine into a plausible layout that matches the homeowner request.`,
+      `CRITICAL — Exact fixture counts (${countBits.join(", ")}): Render EXACTLY those quantities as visible discrete elements — for shelves, count **horizontal** shelf boards/tiers only. Do **not** add extra shelves, drawers, or rods to fill empty space; do not reduce counts. Combine into a plausible layout that matches the homeowner request.`,
     );
   }
+  if (spec.scopeNotes?.trim()) {
+    segments.push(
+      `CRITICAL — Scope / survey counts: The scope notes may include quantities for elements beyond shelves/drawers/rods (e.g. closet organizer sections, mirrors, pictures, moulding runs, bathroom fixtures, bookcase bays). Treat every stated quantity there as a **hard cap** — render EXACTLY that many for each category; do **not** auto-fill the wall or cavity with additional sections, mirrors, fixtures, or trim pieces beyond what is stated.`,
+    );
+  }
+
+  segments.push(
+    "CRITICAL — Rigid assemblies: Treat shelving units, closet organizers, TV mounts and bracket hardware, mirror/picture installations, and wall moulding as **rigid** — when the transcript implies moving something vertically or horizontally, translate the **whole assembly** as one group; do not stretch, squash, or distort boards, boxes, or moulding profiles to fill space unless the homeowner explicitly asked to resize.",
+  );
   if (spec.shelfVerticalSpacingIn !== null) {
     segments.push(
       `CRITICAL — Stated vertical spacing between shelf tiers: target ≈ ${spec.shelfVerticalSpacingIn}" clear or center-to-center as the homeowner described — keep visible shelf gaps consistent with this spacing across the stack (do not compress or stretch bands arbitrarily).`,
