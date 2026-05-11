@@ -549,11 +549,13 @@ export async function POST(request: Request) {
             : "ask_now";
     /**
      * First concept image: strict intake path OR Phase 4 asked + homeowner cleared the gate
-     * (approval, design-complete wording, or contact completion) even when strict heuristics lag.
+     * (approval, design-complete wording, or contact completion) even when other heuristics lag —
+     * but only when there are uploaded or re-sent space photos on this request.
      */
     const phase4PathUnblocksFirstSketch =
       askedFirstRenderCheck &&
-      firstRenderPhaseFourCleared(lastUserText, allUserText, messages);
+      firstRenderPhaseFourCleared(lastUserText, allUserText, messages) &&
+      hasPhotoContextInSession;
     const blockFirstRenderImage =
       !hasAnyPriorRender &&
       !phase4PathUnblocksFirstSketch &&
