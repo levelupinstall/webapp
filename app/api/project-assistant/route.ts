@@ -129,12 +129,38 @@ function userApprovedFirstRender(text: string): boolean {
   return false;
 }
 
+/**
+ * After the Phase 4 gate question, homeowner signals they have nothing else to add for the design.
+ * Kept separate from userApprovedFirstRender so we can require assistantAskedFirstDesignGate in the caller.
+ */
+function userConfirmedNoFurtherDesignConsiderations(text: string): boolean {
+  const raw = text.trim();
+  if (!raw || raw.length > 720) return false;
+  const t = raw.toLowerCase();
+  if (/\bnothing\s+else\b.*\b(to\s+)?consider\b/i.test(t)) return true;
+  if (/\bno\s+more\b.*\b(to\s+)?consider\b/i.test(t)) return true;
+  if (/\bnothing\s+else\b.*\b(for\s+)?(the\s+)?design\b/i.test(t)) return true;
+  if (/\bno(\s+other)?\s+changes?\b.*\b(for|to)\s*(the\s+)?design\b/i.test(t)) return true;
+  if (/\b(that'?s|that is|thats)\s+all\b.*\b(for\s+)?(the\s+)?design\b/i.test(t)) return true;
+  if (/\b(i\s+)?don'?t\s+have\b.*\b(anything\s+)?else\b.*\b(consider|to add|for the design)\b/i.test(t))
+    return true;
+  if (
+    /\b(is\s+)?(everything|that)\s+(good|set|clear|covered)\b.*\b(for the design|to proceed|to move forward)\b/i.test(
+      t,
+    )
+  ) {
+    return true;
+  }
+  if (/\bno\s+further\b.*\b(considerations|changes|questions)\b.*\b(design)?\b/i.test(t)) return true;
+  return false;
+}
+
 /** Max length for treating latest message as a "contact completion" reply after Phase 4 gate. */
 const MAX_CONTACT_ONLY_PHASE4_REPLY_CHARS = 520;
 
 /**
  * Phase 4 gate cleared for first sketch: explicit approval phrases, or (after gate was asked)
- * a short message that completes phone + callback heuristics in the transcript.
+ * design-complete confirmation, or a short message that completes phone + callback heuristics.
  */
 function firstRenderPhaseFourCleared(
   lastUserText: string,
@@ -143,6 +169,8 @@ function firstRenderPhaseFourCleared(
 ): boolean {
   if (userApprovedFirstRender(lastUserText)) return true;
   if (!assistantAskedFirstDesignGate(messages)) return false;
+  if (userConfirmedNoFurtherDesignConsiderations(lastUserText)) return true;
+
   if (!hasPhoneNumber(allUserText) || !hasCallWindow(allUserText)) return false;
 
   const raw = lastUserText.trim();
@@ -519,9 +547,16 @@ export async function POST(request: Request) {
               ? "none"
               : "awaiting_user_confirmation"
             : "ask_now";
-    /** First concept image only after Phase 1–3 intake + Phase 4 homeowner confirmation. */
+    /**
+     * First concept image: strict intake path OR Phase 4 asked + homeowner cleared the gate
+     * (approval, design-complete wording, or contact completion) even when strict heuristics lag.
+     */
+    const phase4PathUnblocksFirstSketch =
+      askedFirstRenderCheck &&
+      firstRenderPhaseFourCleared(lastUserText, allUserText, messages);
     const blockFirstRenderImage =
       !hasAnyPriorRender &&
+      !phase4PathUnblocksFirstSketch &&
       (!eligibleForFirstRenderGate || firstRenderCheckMode !== "none");
 
     const pureEnthusiasmAfterSketch =
