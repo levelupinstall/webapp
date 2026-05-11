@@ -61,6 +61,18 @@ function isLikelyImageFile(file: File): boolean {
 }
 
 /**
+ * Last assistant concept sketch as a File for refinement baseline (server prepends to reference parts).
+ */
+async function conceptDataUrlToRefinementFile(
+  dataUrl: string,
+  filename: string,
+): Promise<File> {
+  const res = await fetch(dataUrl);
+  const blob = await res.blob();
+  return new File([blob], filename, { type: blob.type || "image/png" });
+}
+
+/**
  * Shrinks large gallery photos before upload so POST bodies stay under edge/server limits
  * (full-resolution phone photos often exceed ~4.5MB total and surface as "Failed to fetch").
  */
@@ -294,6 +306,18 @@ export default function ProjectPlannerAssistant({
       for (const image of compressedImages) {
         uploadTotalBytes += image.size;
         formData.append("images", image);
+      }
+
+      if (priorTurnHadConceptImage && lastAssistantBeforeSend?.images?.[0]) {
+        const ref = lastAssistantBeforeSend.images[0];
+        const refinementFile = await conceptDataUrlToRefinementFile(
+          ref.dataUrl,
+          "refinement-baseline.png",
+        );
+        if (refinementFile.size <= MAX_IMAGE_BYTES) {
+          formData.append("refinementBaseImage", refinementFile);
+          uploadTotalBytes += refinementFile.size;
+        }
       }
 
       if (uploadTotalBytes > 4 * 1024 * 1024) {

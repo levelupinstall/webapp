@@ -524,7 +524,32 @@ export async function POST(request: Request) {
 
     const latestImageParts = await loadLatestImageParts(imageFiles);
     const sketchReferenceParts = await loadLatestImageParts(sketchReferenceFiles);
+
+    const allowRefinementBaselineUpload =
+      plannerEnvFlagEnabled("PLANNER_REFINEMENT_BASELINE") ||
+      priorTurnHadConceptImage ||
+      sketchRoundsDelivered > 0;
+
+    const refinementBaseRaw = formData.get("refinementBaseImage");
+    const refinementBaseFile =
+      allowRefinementBaselineUpload &&
+      refinementBaseRaw instanceof File &&
+      refinementBaseRaw.size > 0 &&
+      refinementBaseRaw.size <= 5 * 1024 * 1024 &&
+      isPlannerImageUpload(refinementBaseRaw)
+        ? refinementBaseRaw
+        : null;
+
+    const refinementBaseParts = refinementBaseFile
+      ? await loadLatestImageParts([refinementBaseFile])
+      : [];
+
     const conceptReferenceParts = [...sketchReferenceParts, ...latestImageParts];
+    /** Prior concept first (delta baseline), then space uploads — image model order. */
+    const combinedConceptReferenceParts = [
+      ...refinementBaseParts,
+      ...conceptReferenceParts,
+    ];
 
     const contents = buildGeminiContents(messages, latestImageParts);
     if (!contents) {
@@ -642,6 +667,12 @@ export async function POST(request: Request) {
     let cleanReply = cleanReplyRaw;
 
     if (allowConceptImage && responseImages.length === 0) {
+      if (hasAnyPriorRender && refinementBaseParts.length === 0) {
+        console.warn(
+          "[project-assistant] Refinement image generation without refinementBaseImage — delta fidelity may suffer; client should send last concept.",
+        );
+      }
+
       const transcriptRecent = messages
         .slice(-12)
         .map(
@@ -670,7 +701,7 @@ export async function POST(request: Request) {
         .join("\n");
 
       const hasUserProvidedPhoto =
-        conceptReferenceParts.length > 0 || imageFiles.length > 0;
+        combinedConceptReferenceParts.length > 0 || imageFiles.length > 0;
       const isClosetScope = transcriptSuggestsCloset(extractionTranscript);
       const ceilingFromTranscript =
         extractCeilingHeightFeetFromTranscript(extractionTranscript);
@@ -712,7 +743,7 @@ export async function POST(request: Request) {
         const northStarGoalSummary = buildNorthStarGoalSummaryFromMessages(messages);
 
         const hasSpaceReference = conceptReferenceParts.length > 0;
-        const hasRefinementBaseline = false;
+        const hasRefinementBaseline = refinementBaseParts.length > 0;
 
         const harvestFirstRender =
           !hasAnyPriorRender && !blockFirstRenderImage && hasSpaceReference;
@@ -763,7 +794,9 @@ export async function POST(request: Request) {
               ? baseGoal
               : `${baseGoal}\n\n(Second attempt: output must include one clear IMAGE part showing the finish-carpentry concept.)`,
           referenceImageParts:
-            conceptReferenceParts.length > 0 ? conceptReferenceParts : undefined,
+            combinedConceptReferenceParts.length > 0
+              ? combinedConceptReferenceParts
+              : undefined,
           extractedVisualDirective,
         });
 
@@ -802,6 +835,7 @@ export async function POST(request: Request) {
           imageCount:
             imageFiles.length +
             sketchReferenceFiles.length +
+            (refinementBaseFile ? 1 : 0) +
             responseImages.length,
           ...(conceptImages.length ? { conceptImages } : {}),
         });
