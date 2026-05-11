@@ -344,6 +344,15 @@ Known from prior turns:
 `.trim();
 }
 
+/** Keep server logs readable (Gemini error JSON can be large). */
+const PLANNER_LOG_DETAIL_MAX = 2500;
+
+function truncateForPlannerLog(s: string): string {
+  return s.length > PLANNER_LOG_DETAIL_MAX
+    ? `${s.slice(0, PLANNER_LOG_DETAIL_MAX)}…`
+    : s;
+}
+
 function buildFallbackReply(imageCount: number): string {
   const photoNote =
     imageCount > 0
@@ -533,7 +542,12 @@ export async function POST(request: Request) {
           contents,
         });
 
-        if (!("error" in result)) {
+        if ("error" in result) {
+          console.warn(
+            "[project-assistant] geminiPlannerMultiTurn failed:",
+            truncateForPlannerLog(result.error),
+          );
+        } else {
           replyRaw = result.text.trim();
           plannerInlineImages = result.images
             .filter((img) => img.dataBase64.length >= 64)
@@ -544,13 +558,35 @@ export async function POST(request: Request) {
           if (blockFirstRenderImage) {
             plannerInlineImages = [];
           }
+          if (!replyRaw) {
+            if (result.blockReason) {
+              console.warn(
+                "[project-assistant] geminiPlannerMultiTurn returned empty text; promptFeedback.blockReason:",
+                result.blockReason,
+              );
+            } else {
+              console.warn(
+                "[project-assistant] geminiPlannerMultiTurn returned empty text and no blockReason (check API response / candidates / finishReason).",
+              );
+            }
+          }
         }
+      } else {
+        console.warn(
+          "[project-assistant] GEMINI_API_KEY is not set — planner cannot call Gemini (fallback reply only).",
+        );
       }
-    } catch {
+    } catch (err) {
+      const message =
+        err instanceof Error ? err.message : typeof err === "string" ? err : String(err);
+      console.warn("[project-assistant] geminiPlannerMultiTurn threw:", message);
       replyRaw = "";
     }
 
     if (!replyRaw) {
+      console.warn(
+        "[project-assistant] Using canned fallback reply (connection hiccup copy). See warnings above for root cause.",
+      );
       replyRaw = buildFallbackReply(imageFiles.length);
     }
 
