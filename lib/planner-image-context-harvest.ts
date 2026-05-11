@@ -7,6 +7,7 @@ import { stripPlannerPhaseMarkers } from "@/lib/planner-phase-utils";
 import { PLANNER_ASSISTANT_NAME } from "@/lib/planner-brand";
 import {
   inferDesignCategoryBucket,
+  illustrativeEnvelopeInchesForBucket,
   mergePlannerFixtureCounts,
   transcriptSuggestsCloset,
   emptyPlannerVisualSpec,
@@ -255,10 +256,12 @@ function styleFallbackForCategory(workCategory: string | null): string {
 
 /**
  * When style or all envelope dims are missing, apply category defaults and log (still proceed).
+ * @param options.transcriptForDimFallback — used to infer illustrative W×H×D when all dims are null but `workCategory` is null.
  */
 export function applyHarvestSafetyCategoryFallbacks(
   harvest: HarvestedPlannerImageContext,
   workCategory: string | null,
+  options?: { transcriptForDimFallback?: string | null },
 ): HarvestedPlannerImageContext {
   const assumptions: string[] = [];
   let spec = { ...harvest.spec };
@@ -278,17 +281,33 @@ export function applyHarvestSafetyCategoryFallbacks(
     );
   }
 
-  if (missingAllDims && workCategory) {
-    const fb = carpentryEnvelopeFallbackByCategory(workCategory);
-    if (fb) {
-      w = fb.width;
-      h = fb.height;
-      d = fb.depth;
-      spec = { ...spec, width: w, height: h, depth: d };
-      assumptions.push(
-        `All dimensions missing — applied typical ${workCategory} envelope ${w}"×${h}"×${d}" (illustrative only)`,
-      );
+  if (missingAllDims) {
+    let fb = workCategory ? carpentryEnvelopeFallbackByCategory(workCategory) : null;
+    let dimSourceLabel: string | null = workCategory;
+
+    if (!fb && workCategory?.trim()) {
+      fb = illustrativeEnvelopeInchesForBucket("shelving_builtin");
+      dimSourceLabel = `${workCategory.trim()} (non-standard category — shelving illustration)`;
     }
+
+    if (!fb && options?.transcriptForDimFallback?.trim()) {
+      const bucket = inferDesignCategoryBucket(options.transcriptForDimFallback);
+      fb = illustrativeEnvelopeInchesForBucket(bucket);
+      dimSourceLabel =
+        workCategoryLabelFromDesignBucket(bucket) ?? `designBucket:${bucket}`;
+    }
+    if (!fb) {
+      fb = illustrativeEnvelopeInchesForBucket("general");
+      dimSourceLabel = dimSourceLabel ?? "general illustrative shelving";
+    }
+
+    w = fb.width;
+    h = fb.height;
+    d = fb.depth;
+    spec = { ...spec, width: w, height: h, depth: d };
+    assumptions.push(
+      `All dimensions missing — applied illustrative envelope ${w}"×${h}"×${d}" (${dimSourceLabel ?? "unspecified"})`,
+    );
   }
 
   if (missingStyle || missingAllDims) {
@@ -400,13 +419,17 @@ export function buildHarvestConceptPromptBundle(params: {
   const hasFixtureCounts =
     fc.shelfCount !== null || fc.drawerCount !== null || fc.closetRodCount !== null;
   const hasSpacing = fc.shelfVerticalSpacingIn !== null;
-  if (hasFixtureCounts || hasSpacing) {
+  const hasShelfSpan = fc.shelfBoardSpanAlongWallIn !== null;
+  if (hasFixtureCounts || hasSpacing || hasShelfSpan) {
     const parts: string[] = [];
     if (fc.shelfCount !== null) parts.push(`${fc.shelfCount} shelf(es)`);
     if (fc.drawerCount !== null) parts.push(`${fc.drawerCount} drawer(s)`);
     if (fc.closetRodCount !== null) parts.push(`${fc.closetRodCount} hanging rod(s)`);
     if (fc.shelfVerticalSpacingIn !== null) {
       parts.push(`~${fc.shelfVerticalSpacingIn}" vertical spacing between shelf tiers`);
+    }
+    if (fc.shelfBoardSpanAlongWallIn !== null) {
+      parts.push(`each shelf board ≤${fc.shelfBoardSpanAlongWallIn}" along the wall (not full-wall span)`);
     }
     userGoal = `${userGoal}\n\nReinforce exact layout numbers in the render: ${parts.join(", ")} — match counts and stated spacing; no extras.`;
   }
@@ -421,6 +444,9 @@ export function buildHarvestConceptPromptBundle(params: {
     harvest.spec.scopeNotes ? `Scope notes: ${harvest.spec.scopeNotes}` : "",
     harvest.spec.shelfVerticalSpacingIn !== null
       ? `Stated shelf tier spacing: ${harvest.spec.shelfVerticalSpacingIn}" (vertical)`
+      : "",
+    harvest.spec.shelfBoardSpanAlongWallIn !== null
+      ? `Stated max shelf board span (along wall): ${harvest.spec.shelfBoardSpanAlongWallIn}"`
       : "",
   ]
     .filter(Boolean)

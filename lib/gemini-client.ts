@@ -26,6 +26,8 @@ export type GeminiGenerateResult = {
   text: string;
   images: GeminiInlineImage[];
   blockReason?: string;
+  /** First candidate finishReason when present (e.g. STOP, SAFETY) — for diagnostics when images are empty. */
+  candidateFinishReason?: string;
 };
 
 type ContentPart =
@@ -135,6 +137,11 @@ function extractParts(json: unknown): GeminiGenerateResult {
     return { text: "", images: [], blockReason };
   }
 
+  const candidateFinishReason =
+    typeof candidates[0]?.finishReason === "string"
+      ? candidates[0].finishReason
+      : undefined;
+
   const textChunks: string[] = [];
   const images: GeminiInlineImage[] = [];
   const seenImageData = new Set<string>();
@@ -167,6 +174,7 @@ function extractParts(json: unknown): GeminiGenerateResult {
     text: textChunks.join("\n").trim(),
     images,
     blockReason,
+    candidateFinishReason,
   };
 }
 
@@ -177,7 +185,7 @@ export async function geminiGenerateContent(params: {
   generationConfig?: Record<string, unknown>;
   /** Grounding with Google Search — real-time retail/product facts (billable; see Gemini pricing). */
   tools?: Array<Record<string, unknown>>;
-  /** Retry on transient HTTP errors (429, 503) with backoff — up to 3 attempts total. */
+  /** Retry on transient HTTP errors (429, 503) with backoff — up to 5 attempts total. */
   retryTransientErrors?: boolean;
 }): Promise<{ ok: true; json: unknown } | { ok: false; status: number; body: string }> {
   const apiKey = getApiKey();
@@ -209,11 +217,14 @@ export async function geminiGenerateContent(params: {
   }
 
   const payload = JSON.stringify(body);
-  const maxAttempts = params.retryTransientErrors ? 3 : 1;
+  const maxAttempts = params.retryTransientErrors ? 5 : 1;
 
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
     if (attempt > 0 && params.retryTransientErrors) {
-      await sleep(attempt === 1 ? 400 : 1200);
+      const bases = [0, 500, 1500, 3000, 5500];
+      const base = bases[Math.min(attempt, bases.length - 1)] ?? 5500;
+      const jitter = Math.floor(Math.random() * 250);
+      await sleep(Math.min(8000, base + jitter));
     }
 
     const res = await fetch(url, {
@@ -349,13 +360,15 @@ Output ONLY valid JSON with exactly these keys (no markdown fences, no commentar
 - "drawerCount": integer or null — number of drawers stated; null if unknown
 - "closetRodCount": integer or null — hanging rods / closet bars / garment rods (e.g. "2 hanging bars", "double hang" = 2 rods, "triple hang" = 3); null if unknown
 - "shelfVerticalSpacingIn": number or null — inches between shelf tiers when the homeowner stated vertical spacing (e.g. "14 inches between each shelf"); null if unknown or only overall unit height was given
+- "shelfBoardSpanAlongWallIn": number or null — inches: maximum left-to-right extent of each shelf board / tier when the homeowner wants shorter shelves (e.g. "24 inch shelves", "not as long", "shelves only 2 feet wide"). Not the full wall run (use width for full run). If they said "deep" or "depth", use depth instead, not this field.
 
 Rules:
-- **Output inches as numbers** for width, height, depth, and shelfVerticalSpacingIn. When the homeowner used **mm, cm, or m**, convert to inches (round to one decimal when helpful). When they used **feet or inches**, convert feet to inches for width/height/depth.
+- **Output inches as numbers** for width, height, depth, shelfVerticalSpacingIn, and shelfBoardSpanAlongWallIn. When the homeowner used **mm, cm, or m**, convert to inches (round to one decimal when helpful). When they used **feet or inches**, convert feet to inches for width/height/depth.
 - Phrases like **about, approximately, around, roughly, ~, close to, give or take** still carry a real target — **do not omit** the measurement; use the stated number as the value (same as an exact statement unless they give an explicit range — then use the midpoint or the clearest single value).
 - Use numbers only when explicitly stated or clearly inferable; otherwise null. Do not invent precise measurements.
 - Map homeowner size language onto **width / height / depth** (inches) when they describe the overall run or unit: e.g. "8 foot span along the wall" → width 96; "about 2.4 m wide" → convert to inches for width; "84 inches tall" / "7 foot tall unit" → height in inches; "300 mm deep shelves" → depth in inches when it describes shelf or cabinet depth into the room or cavity.
 - Put **only** tier-to-tier or "between shelves" vertical spacing into **shelfVerticalSpacingIn** (in inches after conversion), not the full unit height.
+- Put **per-shelf horizontal board length** (shorter shelves, "24 inch shelves" meaning not wall-long) into **shelfBoardSpanAlongWallIn** when it is **not** clearly overall unit width/height/depth.
 - Capture **explicit counts** from the transcript for shelves, drawers, and closet hanging rods/bars (including “double hang” / “triple hang” as rod counts when that’s what the homeowner means).
 - If only one horizontal is given for a closet run, map it to width when it reads like a wall span.
 - **Pricing isolation:** Do NOT put call-out fees, hourly labor rates, "$150", dollar figures, or "/hour" language into ANY field — omit pricing entirely from this JSON (those signals stay in other backend systems only, never echoed here).
@@ -387,6 +400,7 @@ export async function geminiExtractPlannerVisualSpec(
     generationConfig: {
       responseMimeType: "application/json",
     },
+    retryTransientErrors: true,
   });
 
   if (!result.ok) return null;

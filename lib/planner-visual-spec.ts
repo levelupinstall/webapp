@@ -26,6 +26,11 @@ export type PlannerVisualSpec = {
    * Distinct from overall unit `height`.
    */
   shelfVerticalSpacingIn: number | null;
+  /**
+   * Max horizontal extent of each shelf board / tier (inches), distinct from full-unit `width` along the wall.
+   * Use when the homeowner asks for shorter shelves, e.g. "24 inch shelves", "not as long".
+   */
+  shelfBoardSpanAlongWallIn: number | null;
 };
 
 export function emptyPlannerVisualSpec(): PlannerVisualSpec {
@@ -43,6 +48,7 @@ export function emptyPlannerVisualSpec(): PlannerVisualSpec {
     drawerCount: null,
     closetRodCount: null,
     shelfVerticalSpacingIn: null,
+    shelfBoardSpanAlongWallIn: null,
   };
 }
 
@@ -397,6 +403,7 @@ const DIM_W = [12, 360] as const;
 const DIM_H = [12, 192] as const;
 const DIM_D = [4, 48] as const;
 const DIM_SP = [4, 60] as const;
+const DIM_SHELF_SPAN = [8, 120] as const;
 
 function clampDim(n: number, lo: number, hi: number): number | null {
   if (!Number.isFinite(n) || n <= 0) return null;
@@ -438,7 +445,11 @@ function lastDimAcrossPatterns(
  */
 export function extractStatedDimensionsFromTranscript(text: string): Pick<
   PlannerVisualSpec,
-  "width" | "height" | "depth" | "shelfVerticalSpacingIn"
+  | "width"
+  | "height"
+  | "depth"
+  | "shelfVerticalSpacingIn"
+  | "shelfBoardSpanAlongWallIn"
 > {
   const hay = text.toLowerCase();
 
@@ -722,7 +733,58 @@ export function extractStatedDimensionsFromTranscript(text: string): Pick<
     },
   ]);
 
-  return { width, height, depth, shelfVerticalSpacingIn };
+  const shelfBoardSpanAlongWallIn = lastDimAcrossPatterns(hay, [
+    {
+      re: new RegExp(
+        `${MAY_APX}(\\d+(?:\\.\\d+)?)(mm|cm|m)\\s+shelves?\\b(?!\\s*,\\s*deep)`,
+        "gi",
+      ),
+      toInches: fromUnit,
+      clamp: DIM_SHELF_SPAN,
+    },
+    {
+      re: new RegExp(
+        `${MAY_APX}(\\d+(?:\\.\\d+)?)\\s*(?:"|in(?:ches)?\\.?)\\s+shelves?\\b(?!\\s*,\\s*deep)`,
+        "gi",
+      ),
+      toInches: (m) => valueToInches(nu(m, 1), "in"),
+      clamp: DIM_SHELF_SPAN,
+    },
+    {
+      re: new RegExp(
+        `shelves?\\s+(?:only|just|about|around|roughly|of|at)?\\s*${MAY_APX}(\\d+(?:\\.\\d+)?)\\s*(mm|cm|m)\\b`,
+        "gi",
+      ),
+      toInches: fromUnit,
+      clamp: DIM_SHELF_SPAN,
+    },
+    {
+      re: new RegExp(
+        `shelves?\\s+(?:only|just|about|around|roughly|of|at)?\\s*${MAY_APX}(\\d+(?:\\.\\d+)?)\\s*(?:"|in(?:ches)?\\.?)\\b`,
+        "gi",
+      ),
+      toInches: (m) => valueToInches(nu(m, 1), "in"),
+      clamp: DIM_SHELF_SPAN,
+    },
+    {
+      re: new RegExp(
+        `(?:not\\s+as\\s+long|shorter|less\\s+long|narrower)[^.\\n]{0,55}${MAY_APX}(\\d+(?:\\.\\d+)?)\\s*(mm|cm|m)\\b`,
+        "gi",
+      ),
+      toInches: fromUnit,
+      clamp: DIM_SHELF_SPAN,
+    },
+    {
+      re: new RegExp(
+        `(?:not\\s+as\\s+long|shorter|less\\s+long|narrower)[^.\\n]{0,55}${MAY_APX}(\\d+(?:\\.\\d+)?)\\s*(?:"|in(?:ches)?\\.?)\\b`,
+        "gi",
+      ),
+      toInches: (m) => valueToInches(nu(m, 1), "in"),
+      clamp: DIM_SHELF_SPAN,
+    },
+  ]);
+
+  return { width, height, depth, shelfVerticalSpacingIn, shelfBoardSpanAlongWallIn };
 }
 
 export function mergePlannerStatedDimensionsFromTranscript(
@@ -736,6 +798,8 @@ export function mergePlannerStatedDimensionsFromTranscript(
     height: spec.height ?? ex.height,
     depth: spec.depth ?? ex.depth,
     shelfVerticalSpacingIn: spec.shelfVerticalSpacingIn ?? ex.shelfVerticalSpacingIn,
+    shelfBoardSpanAlongWallIn:
+      spec.shelfBoardSpanAlongWallIn ?? ex.shelfBoardSpanAlongWallIn,
   };
 }
 
@@ -768,6 +832,24 @@ export function workCategoryLabelFromDesignBucket(
       return "Trim / millwork";
     default:
       return null;
+  }
+}
+
+/** Illustrative W×H×D (inches) for image fallback when all envelope dims are missing. */
+export function illustrativeEnvelopeInchesForBucket(
+  bucket: DesignCategoryBucket,
+): { width: number; height: number; depth: number } {
+  switch (bucket) {
+    case "closet":
+      return { width: 72, height: 84, depth: 24 };
+    case "tv_wall":
+      return { width: 120, height: 42, depth: 18 };
+    case "trim_millwork":
+      return { width: 144, height: 96, depth: 8 };
+    case "shelving_builtin":
+    case "general":
+    default:
+      return { width: 96, height: 84, depth: 14 };
   }
 }
 
@@ -819,6 +901,7 @@ export function normalizeVisualSpec(raw: Record<string, unknown>): PlannerVisual
     drawerCount: parseCountField(raw.drawerCount),
     closetRodCount: parseCountField(raw.closetRodCount),
     shelfVerticalSpacingIn: parseInchesFieldClamped(raw.shelfVerticalSpacingIn, 4, 60),
+    shelfBoardSpanAlongWallIn: parseInchesFieldClamped(raw.shelfBoardSpanAlongWallIn, 8, 120),
   };
 }
 
@@ -929,6 +1012,11 @@ export function buildExtractedVisualDirective(
   if (spec.shelfVerticalSpacingIn !== null) {
     segments.push(
       `CRITICAL — Stated vertical spacing between shelf tiers: target ≈ ${spec.shelfVerticalSpacingIn}" clear or center-to-center as the homeowner described — keep visible shelf gaps consistent with this spacing across the stack (do not compress or stretch bands arbitrarily).`,
+    );
+  }
+  if (spec.shelfBoardSpanAlongWallIn !== null) {
+    segments.push(
+      `CRITICAL — Per-shelf horizontal board extent: each visible shelf tier must not read longer than ≈ ${spec.shelfBoardSpanAlongWallIn}" left-to-right along the board (homeowner target). Do **not** stretch shelf boards to fill the entire wall opening if this limit applies — keep the shelf footprint visually within this span even when reference photos show a wider wall (overall unit width may still be larger if the design is a short stack of boards on a long wall).`,
     );
   }
 

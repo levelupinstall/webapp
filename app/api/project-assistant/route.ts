@@ -876,7 +876,9 @@ export async function POST(request: Request) {
           extractionTranscript: harvestSourceTranscript,
           baseSpec: correctedSpec,
         });
-        harvest = applyHarvestSafetyCategoryFallbacks(harvest, effectiveWorkCategory);
+        harvest = applyHarvestSafetyCategoryFallbacks(harvest, effectiveWorkCategory, {
+          transcriptForDimFallback: harvestSourceTranscript,
+        });
         logHarvestAssumptions("harvest", harvest.assumptionsLogged);
 
         extractedVisualDirective = buildExtractedVisualDirective(harvest.spec, {
@@ -901,9 +903,9 @@ export async function POST(request: Request) {
       }
 
       let prevOkNoImages = false;
-      for (let attempt = 0; attempt < 3; attempt++) {
+      for (let attempt = 0; attempt < 4; attempt++) {
         if (attempt >= 1 && prevOkNoImages) {
-          await new Promise((r) => setTimeout(r, attempt === 1 ? 800 : 1400));
+          await new Promise((r) => setTimeout(r, attempt === 1 ? 800 : attempt === 2 ? 1400 : 2000));
         }
         prevOkNoImages = false;
 
@@ -912,7 +914,9 @@ export async function POST(request: Request) {
             ? baseGoal
             : attempt === 1
               ? `${baseGoal}\n\n(Second attempt: output must include one clear IMAGE part showing the finish-carpentry concept.)`
-              : `${baseGoal}\n\n(Third attempt: mandatory — emit at least one IMAGE part; no text-only replies; prioritize a single clear finish-carpentry concept render.)`;
+              : attempt === 2
+                ? `${baseGoal}\n\n(Third attempt: mandatory — emit at least one IMAGE part; no text-only replies; prioritize a single clear finish-carpentry concept render.)`
+                : `${baseGoal}\n\n(Fourth attempt: you MUST return one IMAGE inlineData part — no text-only response; single clearest concept render.)`;
 
         const visual = await geminiGenerateConceptImage({
           promptContext: basePrompt,
@@ -939,8 +943,10 @@ export async function POST(request: Request) {
             visual.error,
           );
         } else if (visual.images.length === 0) {
+          const fr = visual.candidateFinishReason;
           console.warn(
             "[project-assistant] geminiGenerateConceptImage returned no image parts",
+            fr ? { candidateFinishReason: fr } : {},
           );
         }
       }
