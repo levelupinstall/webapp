@@ -337,6 +337,11 @@ export function buildHarvestConceptPromptBundle(params: {
   northStarGoalSummary: string;
   lastUserFeedback: string;
   visualMode: HarvestPromptVisualMode;
+  /**
+   * When the concept image request attaches **room → structural blueprint → baseline**, the prior
+   * sketch must be described as the **last** image; otherwise baseline-first order keeps "first".
+   */
+  refinementBaselineAttachmentPosition?: "first" | "last";
 }): { promptContext: string; userGoal: string } {
   const {
     harvest,
@@ -346,6 +351,7 @@ export function buildHarvestConceptPromptBundle(params: {
     northStarGoalSummary,
     lastUserFeedback,
     visualMode,
+    refinementBaselineAttachmentPosition = "first",
   } = params;
   const style = harvest.phase1Style ?? "the homeowner's stated design direction";
   const material =
@@ -379,11 +385,15 @@ export function buildHarvestConceptPromptBundle(params: {
 
   if (visualMode === "refinement-delta") {
     const baseline = hasRefinementBaselineImage
-      ? "REFINEMENT — DELTA UPDATE: The FIRST attached image is the previous planner concept rendering — treat it as the baseline. Apply ONLY the changes implied by the homeowner's latest feedback and the assistant reply. Keep room architecture, wall color, materials, trim character, and overall layout identical to that baseline unless the user explicitly asked to change them. Treat the built-in / closet / TV / mirror / moulding as a **rigid assembly** for moves: translate vertically or horizontally as a whole — do not stretch, squash, or re-center the composition for aesthetics."
+      ? refinementBaselineAttachmentPosition === "last"
+        ? "REFINEMENT — DELTA UPDATE: The **last** attached reference image is the previous planner concept rendering — treat it as the baseline. Apply ONLY the changes implied by the homeowner's latest feedback and the assistant reply. Keep room architecture, wall color, materials, trim character, and overall layout identical to that baseline unless the user explicitly asked to change them. Treat the built-in / closet / TV / mirror / moulding as a **rigid assembly** for moves: translate vertically or horizontally as a whole — do not stretch, squash, or re-center the composition for aesthetics."
+        : "REFINEMENT — DELTA UPDATE: The FIRST attached image is the previous planner concept rendering — treat it as the baseline. Apply ONLY the changes implied by the homeowner's latest feedback and the assistant reply. Keep room architecture, wall color, materials, trim character, and overall layout identical to that baseline unless the user explicitly asked to change them. Treat the built-in / closet / TV / mirror / moulding as a **rigid assembly** for moves: translate vertically or horizontally as a whole — do not stretch, squash, or re-center the composition for aesthetics."
       : "REFINEMENT — No baseline concept image was attached; infer carefully from space references and transcript.";
 
     const spaceNote = hasUploadedSpacePhoto
-      ? "Additional reference image(s) after the baseline show the real space — use for proportion and trim alignment when editing."
+      ? refinementBaselineAttachmentPosition === "last"
+        ? "Room / space photos are attached **before** the baseline; they are **Image A** per the structural blueprint instructions in the main prompt — match that real space. Use the baseline sketch only for what changed since that render."
+        : "Additional reference image(s) after the baseline show the real space — use for proportion and trim alignment when editing."
       : "";
 
     userGoal = [

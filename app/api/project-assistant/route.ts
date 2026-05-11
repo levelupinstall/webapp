@@ -1,3 +1,4 @@
+import sharp from "sharp";
 import { NextResponse } from "next/server";
 import { getSessionFromCookie } from "@/lib/client-portal-auth";
 import {
@@ -46,7 +47,11 @@ import {
 import { PLANNER_ASSISTANT_SYSTEM } from "@/lib/planner-assistant-prompt";
 import { PLANNER_ASSISTANT_NAME } from "@/lib/planner-brand";
 import { addClientSpacePhoto, appendAiPlannerActivity } from "@/lib/client-portal-store";
-import { renderShelvingBlueprintToPng } from "@/lib/blueprint-engine";
+import {
+  blueprintPlanToSvgString,
+  generateUniversalBlueprint,
+  mapDesignBucketToUniversalCategory,
+} from "@/lib/blueprint-engine";
 
 /** After this many assistant turns that included a concept sketch, steer toward in-person consult. */
 const SKETCH_ROUNDS_BEFORE_IN_PERSON_NUDGE = 5;
@@ -138,13 +143,13 @@ function userApprovedFirstRender(text: string): boolean {
 const MAX_CONTACT_ONLY_PHASE4_REPLY_CHARS = 520;
 
 /**
- * Phase 4 gate cleared for first sketch: after the design gate was asked, the homeowner gave an
- * explicit **go ahead** / **proceed** once Alex asked for layout lock (structural blueprint + first
- * sketch), or legacy contact-completion heuristics when phone/callback were still missing.
+ * Phase 4 gate cleared for first sketch: after the design gate was asked, the homeowner answered
+ * in the affirmative / “nothing else” sense, **or** they gave **go ahead** / **proceed** once Alex
+ * asked for layout lock. Phone and callback are **not** prerequisites for the first AI render.
  */
 function firstRenderPhaseFourCleared(
   lastUserText: string,
-  allUserText: string,
+  _allUserText: string,
   messages: PlannerClientMessage[],
 ): boolean {
   const layoutGoAheadAsked = assistantAskedLayoutGoAheadPrompt(messages);
@@ -155,12 +160,10 @@ function firstRenderPhaseFourCleared(
   }
   if (!designGateAsked) return false;
 
-  if (!hasPhoneNumber(allUserText) || !hasCallWindow(allUserText)) return false;
-
   const raw = lastUserText.trim();
   if (!raw || raw.length > MAX_CONTACT_ONLY_PHASE4_REPLY_CHARS) return false;
 
-  return hasPhoneNumber(lastUserText) || hasCallWindow(lastUserText);
+  return userApprovedFirstRender(lastUserText);
 }
 
 function buildPlannerSystemInstruction(params: {
@@ -212,7 +215,7 @@ Stay concise; end with **one** sharp **question**. Prefer \`[PHASE:refine]\` whe
   if (!params.hasPhotoContextInSession && params.northStarReadyForPhotoPrompt) {
     chunks.push(`
 ## Session hint (photo invite — early Phase 1)
-The homeowner has signaled enough **work category** + **style direction** to invite pictures. Ask for clear photos of the space **on this turn or soon** when helpful — include \`[PHOTO_PROMPT]\` when you invite uploads. This **does not** mean a first concept sketch is coming yet; the platform only attaches the **first** rendering after photos, measurements, budget, **Phase 4** layout confirmation (Layout Type + recap + gate question + homeowner **go ahead**), and the intake signals the server tracks (phone/callback are for **handoff**, not that first attachment).`);
+The homeowner has signaled enough **work category** + **style direction** to invite pictures. Ask for clear photos of the space **on this turn or soon** when helpful — include \`[PHOTO_PROMPT]\` when you invite uploads. This **does not** mean a first concept sketch is coming yet; the platform only attaches the **first** rendering after photos, measurements, budget, **Phase 4** layout confirmation (Layout Type + recap + gate question + homeowner **go ahead**). Phone and callback are collected **later** for handoff — **not** for unlocking that first attachment.`);
   }
 
   if (params.suggestInPersonAfterManySketches) {
@@ -233,29 +236,31 @@ The homeowner sounds **happy with the design direction** or **ready to move forw
 ## Session hint (required intake)
 Budget context is missing or unclear. Ask for a realistic budget target before deeper recommendations and tailor the direction to that budget.`);
   }
-  if (!params.hasPhone) {
+  const deferContactNudgeUntilAfterConcept = params.priorTurnHadConceptImage;
+  if (deferContactNudgeUntilAfterConcept && !params.hasPhone) {
     chunks.push(`
-## Session hint (proposal handoff — not a first-sketch gate)
-Phone number is still missing for **Level Up’s follow-up after you’re happy with the direction**. Ask for the best number when natural — **do not** say the **first** AI concept sketch is withheld until they provide it; the platform does not use phone as a prerequisite for that first attachment.`);
+## Session hint (proposal handoff — after a design direction exists)
+Phone number is still missing for **Level Up’s follow-up after they’re happy with the direction**. Ask for the best number when natural — **do not** say any AI sketch is withheld until they provide it.`);
   }
-  if (!params.hasCallWindow) {
+  if (deferContactNudgeUntilAfterConcept && !params.hasCallWindow) {
     chunks.push(`
-## Session hint (proposal handoff — not a first-sketch gate)
-Callback timing is still missing for **scheduling / follow-up**. Ask for ideal days or times when natural — **do not** say the **first** AI concept sketch is withheld until they provide it.`);
+## Session hint (proposal handoff — after a design direction exists)
+Callback timing is still missing for **scheduling / follow-up**. Ask for ideal days or times when natural — **do not** say any AI sketch is withheld until they provide it.`);
   }
 
   if (params.firstRenderCheckMode === "ask_now") {
     chunks.push(`
 ## Phase 4 — Layout confirmation & rendering gate (required)
 Do **NOT** generate or imply that a first image or structural line drawing is ready or attached.
-Ask **3–5 short follow-ups** mixing **Category A** (remaining survey: obstructions, architecture, adjacency) with **Category B** (final scope adds/removals).
+The platform has detected **space photos**, **rough dimensions**, **budget context**, and **Phase 1** signals — so you are cleared to move into **layout lock** *when* your recap is truly complete. If you still need one more measurement, obstruction check, or scope detail, **gather that first** this turn with a normal question — **do not** use the verbatim gate question until the **same** turn where you deliver the full recap below.
+Ask **3–5 short follow-ups** mixing **Category A** (remaining survey: obstructions, architecture, adjacency) with **Category B** (final scope adds/removals) **before** that recap turn when anything material is still open.
 Apply **spatial logic**: tallest vertical = Height; shorter horizontal = Depth; remaining horizontal = Width. Closets often ~24 inches deep — if numbers look swapped, clarify **before** the recap.
 **Units:** Recap dimensions in the **homeowner’s preferred units** (what they used in chat). If they ever gave a **bare number without a unit**, you must have asked whether they meant inches, centimeters, etc. — do **not** guess.
 **Layout Type (required):** In your recap, you **must** explicitly name the **Layout Type** (short carpenter label, e.g. *Double-hang closet*, *Board-and-batten trim*, *Media wall with shelving*).
 **Recap:** Include **primary Width × Height × Depth** and **key obstructions** (or state none noted).
 Include **one recap sentence** in this template (fill brackets):  
 "We're confirming a [Layout Type] — [Style] [Category] at roughly [Width × Height × Depth **in their units**], with obstructions noted as [obstructions or none]."
-**THE GATE:** Your **final** question this turn **must be verbatim**:  
+**THE GATE:** Your **final** question this turn **must be verbatim** **only** when you are delivering that complete recap in the same message:  
 "Is there anything else to consider before I create the first design idea for you?"
 After they later confirm nothing else is missing, you **must** ask for an explicit **go ahead** / **proceed** before the platform may run the structural blueprint and first sketch — explain that this locks the layout type for the correct structural guide.`);
   } else if (params.firstRenderCheckMode === "awaiting_user_confirmation") {
@@ -595,7 +600,10 @@ export async function POST(request: Request) {
       : [];
 
     const conceptReferenceParts = [...sketchReferenceParts, ...latestImageParts];
-    /** Prior concept first (delta baseline), then space uploads — image model order. */
+    /**
+     * Default image order when no structural blueprint: refinement baseline first, then space photos.
+     * When a blueprint PNG is attached, order becomes room → blueprint → baseline (see `structuralGuideDirective`).
+     */
     const combinedConceptReferenceParts = [
       ...refinementBaseParts,
       ...conceptReferenceParts,
@@ -879,6 +887,16 @@ export async function POST(request: Request) {
           extractionTranscript: specTranscript,
         });
 
+        const specForBlueprintPreview =
+          harvest.spec.width != null && harvest.spec.height != null
+            ? harvest.spec
+            : correctedSpec.width != null && correctedSpec.height != null
+              ? correctedSpec
+              : null;
+        const useStructuralBlueprintImageOrder =
+          (latestImageParts.length > 0 || sketchReferenceFiles.length > 0) &&
+          specForBlueprintPreview != null;
+
         if (useHarvestPipeline) {
           const bundle = buildHarvestConceptPromptBundle({
             harvest,
@@ -888,6 +906,10 @@ export async function POST(request: Request) {
             northStarGoalSummary,
             lastUserFeedback: lastUserText,
             visualMode,
+            refinementBaselineAttachmentPosition:
+              hasRefinementBaseline && useStructuralBlueprintImageOrder
+                ? "last"
+                : "first",
           });
           basePrompt = `${bundle.promptContext}\n\n--- Conversation excerpt ---\n\n${transcriptRecent}\n\n${PLANNER_ASSISTANT_NAME} reply:\n${cleanReply.slice(0, 6000)}${exploratoryNote}`;
           baseGoal = bundle.userGoal;
@@ -905,6 +927,17 @@ export async function POST(request: Request) {
               conceptRenderSpec.shelfVerticalSpacingIn ?? null,
           }
         : null;
+      const mergedForBlueprint = mergePlannerFixtureCounts(
+        rawSpec ? applyFullCarpenterPipeline(rawSpec, specTranscript) : emptyPlannerVisualSpec(),
+        specTranscript,
+      );
+      const specForBlueprint =
+        conceptRenderSpec?.width != null && conceptRenderSpec?.height != null
+          ? conceptRenderSpec
+          : mergedForBlueprint.width != null && mergedForBlueprint.height != null
+            ? mergedForBlueprint
+            : null;
+
       const categoryAnchors = {
         categoryBucket: categoryBucketForScale,
         hasUserProvidedPhoto,
@@ -917,20 +950,36 @@ export async function POST(request: Request) {
         latestImageParts.length > 0 || sketchReferenceFiles.length > 0;
       if (
         hasRoomPhotoForBlueprint &&
-        conceptRenderSpec?.width != null &&
-        conceptRenderSpec.height != null &&
-        conceptRenderSpec.shelfCount != null &&
-        conceptRenderSpec.shelfCount >= 1
+        specForBlueprint != null &&
+        specForBlueprint.width != null &&
+        specForBlueprint.height != null
       ) {
         try {
-          const png = await renderShelvingBlueprintToPng(
-            {
-              widthIn: conceptRenderSpec.width,
-              heightIn: conceptRenderSpec.height,
-              depthIn: conceptRenderSpec.depth ?? undefined,
-            },
-            conceptRenderSpec.shelfCount,
+          const blueprintCategory = mapDesignBucketToUniversalCategory(
+            categoryBucketForScale,
           );
+          const plan = generateUniversalBlueprint(blueprintCategory, {
+            widthIn: specForBlueprint.width,
+            heightIn: specForBlueprint.height,
+            depthIn: specForBlueprint.depth,
+            shelfCount: specForBlueprint.shelfCount,
+            closetRodCount: specForBlueprint.closetRodCount,
+            drawerCount: specForBlueprint.drawerCount,
+            transcriptHint: specTranscript.slice(-12_000),
+          });
+          console.log(
+            "[project-assistant] Universal blueprint plan (normalized coordinates):",
+            JSON.stringify({
+              category: plan.category,
+              lines: plan.lines,
+              rects: plan.rects,
+              noBuildZones: plan.noBuildZones,
+              meta: plan.meta,
+            }),
+          );
+          const png = await sharp(Buffer.from(blueprintPlanToSvgString(plan), "utf8"))
+            .png()
+            .toBuffer();
           blueprintReferenceParts = [
             {
               inline_data: {
@@ -941,20 +990,34 @@ export async function POST(request: Request) {
           ];
         } catch (err) {
           console.warn(
-            "[project-assistant] shelving blueprint PNG failed:",
+            "[project-assistant] universal blueprint PNG failed:",
             err instanceof Error ? err.message : err,
           );
         }
       }
 
+      const hasRefinementBaselineImage = refinementBaseParts.length > 0;
       const conceptReferenceWithBlueprint =
         blueprintReferenceParts.length > 0
-          ? [...blueprintReferenceParts, ...combinedConceptReferenceParts]
+          ? [...conceptReferenceParts, ...blueprintReferenceParts, ...refinementBaseParts]
           : combinedConceptReferenceParts;
 
+      const structuralAbCore =
+        "Image A is the room. Image B is the structural blueprint. Render the design from Image B into the room in Image A. DO NOT ADD EXTRA ELEMENTS.";
       const structuralGuideDirective =
         blueprintReferenceParts.length > 0
-          ? 'Use the attached line drawing as the exact structural guide for the rendering. The first reference image after this prompt is a schematic elevation (white lines on black): the rectangle is the unit width × height; each horizontal white line is a shelf level. Match shelf count and vertical shelf positions to this diagram when integrating the homeowner room photo(s).'
+          ? hasRefinementBaselineImage
+            ? `Reference attachment order (after the main text):
+1) **Image A** — room / space photos (homeowner real space).
+2) **Image B** — structural blueprint: black field with **pure white** lines and rectangles only.
+3) **Prior concept baseline** — **last** reference image only; use for delta edits vs. the previous sketch (not as the room).
+
+${structuralAbCore}`
+            : `Reference attachment order (after the main text):
+1) **Image A** — room / space photos from the homeowner.
+2) **Image B** — structural blueprint: black field with **pure white** lines and rectangles only.
+
+${structuralAbCore}`
           : undefined;
 
       console.log("--- RENDERING START ---");

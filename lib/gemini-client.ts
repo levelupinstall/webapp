@@ -791,8 +791,7 @@ export async function geminiGenerateConceptImage(params: {
   /** Post-extraction directive: dimensions, materials, scale injection (image model only). */
   extractedVisualDirective?: string;
   /**
-   * When a schematic line drawing is attached as the first reference image, append this
-   * instruction block into the main text so the model reads it before the images.
+   * Structural blueprint block: images are attached **after** this text in the order described in the directive.
    */
   structuralGuideDirective?: string;
 }): Promise<GeminiGenerateResult | { error: string }> {
@@ -811,7 +810,7 @@ ${params.extractedVisualDirective.trim()}
     ? `
 
 ---
-Structural line drawing (attached as the first reference image after this text):
+Structural blueprint (reference images are attached after this text in the order described below):
 ${params.structuralGuideDirective.trim()}
 `
     : "";
