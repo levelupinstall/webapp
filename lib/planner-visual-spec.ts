@@ -961,7 +961,9 @@ export function buildExtractedVisualDirective(
   spec: PlannerVisualSpec,
   ctx: ExtractedDirectiveScaleContext,
 ): string {
-  const segments: string[] = [];
+  const segments: string[] = [
+    "If a black-field / white-line structural schematic (**Image B**) appears among the reference images, match **visible shelf tiers, rod lines, drawer blocks, and trim bands** to that schematic’s wall-plane layout. Use the measurements and counts below for **scale and materials**; if any count or spacing **disagrees** with Image B, **follow Image B** for layout geometry.",
+  ];
 
   const dimParts: string[] = [];
   if (spec.width !== null) dimParts.push(`${spec.width}" W`);

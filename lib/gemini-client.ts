@@ -810,8 +810,10 @@ ${params.extractedVisualDirective.trim()}
     ? `
 
 ---
-Structural blueprint (reference images are attached after this text in the order described below):
+MANDATORY — structural blueprint (read **last** before drawing; images are attached **immediately after** this entire text, in the order described below):
 ${params.structuralGuideDirective.trim()}
+
+**Precedence:** Image B (black field, white linework) is the **authority** for **what** appears on the install wall (shelf tiers, divisions, closet rods/drawers blocks, trim bands, openings) and **where** each element sits on that **elevation**. Image A is the **authority** for **perspective**, architecture, and finishes of the real room. Project the geometry from B onto the wall plane visible in A. If conversation text, harvest notes, or extracted counts **conflict** with Image B about **placement or element count on the wall**, **Image B wins**. Do not substitute a “prettier” or more symmetric layout than B.
 `
     : "";
 
@@ -820,10 +822,10 @@ ${params.structuralGuideDirective.trim()}
 ${LEVEL_UP_IMAGE_GENERATION_SUFFIX}
 
 Project / homeowner context:
-${params.promptContext.slice(0, 12000)}${extractionBlock}${structuralBlock}
+${params.promptContext.slice(0, 12000)}${extractionBlock}
 
 Specific visualization request:
-${params.userGoal.slice(0, 4000)}`;
+${params.userGoal.slice(0, 4000)}${structuralBlock}`;
 
   const parts: ContentPart[] = [
     { text: fullPrompt },
