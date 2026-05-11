@@ -28,14 +28,17 @@ import {
   buildNorthStarGoalSummaryFromMessages,
   harvestPlannerImageContextFromTranscript,
   logHarvestAssumptions,
+  resolveEffectiveWorkCategoryForHarvest,
   type HarvestPromptVisualMode,
 } from "@/lib/planner-image-context-harvest";
 import {
   applyFullCarpenterPipeline,
   buildAdaptiveScaleInjection,
   buildExtractedVisualDirective,
+  emptyPlannerVisualSpec,
   extractCeilingHeightFeetFromTranscript,
   inferDesignCategoryBucket,
+  mergePlannerFixtureCounts,
   transcriptSuggestsCloset,
   type PlannerVisualSpec,
 } from "@/lib/planner-visual-spec";
@@ -825,7 +828,10 @@ export async function POST(request: Request) {
 
       if (!plannerHarvestV1) {
         if (rawSpec) {
-          const corrected = applyFullCarpenterPipeline(rawSpec, specTranscript);
+          const corrected = mergePlannerFixtureCounts(
+            applyFullCarpenterPipeline(rawSpec, specTranscript),
+            specTranscript,
+          );
           extractedVisualDirective = buildExtractedVisualDirective(corrected, {
             hasUserProvidedPhoto,
             isCloset: isClosetScope,
@@ -833,11 +839,22 @@ export async function POST(request: Request) {
           });
         }
       } else {
-        const correctedSpec = rawSpec
-          ? applyFullCarpenterPipeline(rawSpec, specTranscript)
-          : null;
-        const { workCategory } = deriveNorthStarLabelsFromUserText(allUserText);
+        const harvestSourceTranscript =
+          plannerHarvestFullExtract && cappedFullHarvestTranscript.length > 0
+            ? cappedFullHarvestTranscript
+            : extractionWindowTranscript;
+
+        const correctedSpec = mergePlannerFixtureCounts(
+          rawSpec ? applyFullCarpenterPipeline(rawSpec, specTranscript) : emptyPlannerVisualSpec(),
+          specTranscript,
+        );
+
         const northStarGoalSummary = buildNorthStarGoalSummaryFromMessages(messages);
+        const effectiveWorkCategory = resolveEffectiveWorkCategoryForHarvest({
+          northStarHomeownerOnly: deriveNorthStarLabelsFromUserText(allUserText).workCategory,
+          extractionTranscript: harvestSourceTranscript,
+          designCategory: correctedSpec.designCategory ?? null,
+        });
 
         const hasSpaceReference = conceptReferenceParts.length > 0;
         const hasRefinementBaseline = refinementBaseParts.length > 0;
@@ -855,16 +872,11 @@ export async function POST(request: Request) {
             ? "refinement-delta"
             : "first-render";
 
-        const harvestSourceTranscript =
-          plannerHarvestFullExtract && cappedFullHarvestTranscript.length > 0
-            ? cappedFullHarvestTranscript
-            : extractionWindowTranscript;
-
         let harvest = harvestPlannerImageContextFromTranscript({
           extractionTranscript: harvestSourceTranscript,
           baseSpec: correctedSpec,
         });
-        harvest = applyHarvestSafetyCategoryFallbacks(harvest, workCategory);
+        harvest = applyHarvestSafetyCategoryFallbacks(harvest, effectiveWorkCategory);
         logHarvestAssumptions("harvest", harvest.assumptionsLogged);
 
         extractedVisualDirective = buildExtractedVisualDirective(harvest.spec, {
@@ -888,13 +900,23 @@ export async function POST(request: Request) {
         }
       }
 
-      for (let attempt = 0; attempt < 2; attempt++) {
+      let prevOkNoImages = false;
+      for (let attempt = 0; attempt < 3; attempt++) {
+        if (attempt >= 1 && prevOkNoImages) {
+          await new Promise((r) => setTimeout(r, attempt === 1 ? 800 : 1400));
+        }
+        prevOkNoImages = false;
+
+        const userGoalAug =
+          attempt === 0
+            ? baseGoal
+            : attempt === 1
+              ? `${baseGoal}\n\n(Second attempt: output must include one clear IMAGE part showing the finish-carpentry concept.)`
+              : `${baseGoal}\n\n(Third attempt: mandatory — emit at least one IMAGE part; no text-only replies; prioritize a single clear finish-carpentry concept render.)`;
+
         const visual = await geminiGenerateConceptImage({
           promptContext: basePrompt,
-          userGoal:
-            attempt === 0
-              ? baseGoal
-              : `${baseGoal}\n\n(Second attempt: output must include one clear IMAGE part showing the finish-carpentry concept.)`,
+          userGoal: userGoalAug,
           referenceImageParts:
             combinedConceptReferenceParts.length > 0
               ? combinedConceptReferenceParts
@@ -907,6 +929,9 @@ export async function POST(request: Request) {
             responseImages.push({ mimeType: img.mimeType, data: img.dataBase64 });
           }
           break;
+        }
+        if (!("error" in visual) && visual.images.length === 0) {
+          prevOkNoImages = true;
         }
         if ("error" in visual) {
           console.warn(

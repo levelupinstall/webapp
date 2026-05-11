@@ -27,7 +27,7 @@ export function deriveNorthStarLabelsFromUserText(userMessagesCombined: string):
   } else if (/\btrim\b|crown|baseboard|casing|wainscot/i.test(raw)) {
     workCategory = "Trim / millwork";
   } else if (
-    /\bshelf|shelving|bookcases?\b|built[\s-]?ins?\b|built\s+in|cabinet\s+run|storage\s+wall|mudroom|pantry|mantel|ledge|\bmirror\b/i.test(
+    /\bshelves\b|\bshelf\b|shelving|bookcases?\b|built[\s-]?ins?\b|built\s+in|cabinet\s+run|storage\s+wall|mudroom|pantry|mantel|ledge|\bmirror\b/i.test(
       raw,
     )
   ) {

@@ -13,7 +13,7 @@ import {
   generateWorkProposalMarkdown,
   defaultProposalTitle,
 } from "@/lib/work-proposal-ai";
-import { applyFullCarpenterPipeline, type PlannerVisualSpec } from "@/lib/planner-visual-spec";
+import { applyFullCarpenterPipeline, mergePlannerFixtureCounts, type PlannerVisualSpec } from "@/lib/planner-visual-spec";
 import { prisma } from "@/lib/prisma";
 import type { PlannerSubmitDesignExtract } from "@/lib/planner-submit-design-types";
 import {
@@ -90,7 +90,9 @@ async function resolvePlannerSubmitExtraction(
     (await geminiExtractPlannerSubmitDesign(transcript)) ?? blankExtract();
 
   const visRaw = await geminiExtractPlannerVisualSpec(transcript);
-  const vis = visRaw ? applyFullCarpenterPipeline(visRaw, transcript) : null;
+  const vis = visRaw
+    ? mergePlannerFixtureCounts(applyFullCarpenterPipeline(visRaw, transcript), transcript)
+    : null;
   if (vis) {
     e = mergeVisualIntoSubmit(e, vis);
   }

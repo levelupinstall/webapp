@@ -6,9 +6,57 @@ import { deriveNorthStarLabelsFromUserText } from "@/lib/planner-intake-detect";
 import { stripPlannerPhaseMarkers } from "@/lib/planner-phase-utils";
 import { PLANNER_ASSISTANT_NAME } from "@/lib/planner-brand";
 import {
+  inferDesignCategoryBucket,
+  mergePlannerFixtureCounts,
   transcriptSuggestsCloset,
+  emptyPlannerVisualSpec,
+  workCategoryLabelFromDesignBucket,
   type PlannerVisualSpec,
 } from "@/lib/planner-visual-spec";
+
+function heuristicWorkCategoryFromDesignCategoryLabel(
+  designCategory: string | null,
+): string | null {
+  const raw = designCategory?.trim();
+  if (!raw) return null;
+  const t = raw.toLowerCase();
+  if (/\b(tv|television|media\s+wall|media\b)\b/i.test(t)) return "TV / media wall";
+  if (
+    /\bcloset\b/i.test(t) ||
+    /\bwalk[\s-]?in\b/i.test(t) ||
+    /\breach[\s-]?in\b/i.test(t)
+  )
+    return "Closet";
+  if (/\b(trim|crown|baseboard|casing|wainscot)\b/i.test(t)) return "Trim / millwork";
+  if (
+    /\b(shelf|shelves|shelving|built|bookcase|storage\s+wall|cabinet|mudroom|pantry)\b/i.test(t)
+  ) {
+    return "Shelving / built-ins";
+  }
+  return null;
+}
+
+/** Effective North Star category for harvest fallbacks (prioritize intake labels, then transcript/category heuristics). */
+export function resolveEffectiveWorkCategoryForHarvest(params: {
+  northStarHomeownerOnly: string | null;
+  extractionTranscript: string;
+  designCategory: string | null;
+}): string | null {
+  if (params.northStarHomeownerOnly?.trim()) {
+    return params.northStarHomeownerOnly.trim();
+  }
+  const fromTranscript = deriveNorthStarLabelsFromUserText(
+    params.extractionTranscript,
+  ).workCategory;
+  if (fromTranscript) return fromTranscript;
+  const fromDesign = heuristicWorkCategoryFromDesignCategoryLabel(
+    params.designCategory,
+  );
+  if (fromDesign) return fromDesign;
+  return workCategoryLabelFromDesignBucket(
+    inferDesignCategoryBucket(params.extractionTranscript),
+  );
+}
 
 export type HarvestedPlannerImageContext = {
   phase1Style: string | null;
@@ -123,20 +171,11 @@ export function harvestPlannerImageContextFromTranscript(
 
   let spec: PlannerVisualSpec = params.baseSpec
     ? { ...params.baseSpec }
-    : {
-        width: null,
-        height: null,
-        depth: null,
-        material: null,
-        style: null,
-        designCategory: null,
-        scopeNotes: null,
-        floor: null,
-        isCondo: null,
-      };
+    : emptyPlannerVisualSpec();
 
   const isCloset = transcriptSuggestsCloset(params.extractionTranscript);
   spec = applyMissingDimensionDefaults(spec, isCloset, assumptions);
+  spec = mergePlannerFixtureCounts(spec, params.extractionTranscript);
 
   const hints = extractVisionAndScopeHints(params.extractionTranscript);
   const phase3VisionSummary =
@@ -357,6 +396,21 @@ export function buildHarvestConceptPromptBundle(params: {
       .join("\n\n");
   }
 
+  const fc = harvest.spec;
+  const hasFixtureCounts =
+    fc.shelfCount !== null || fc.drawerCount !== null || fc.closetRodCount !== null;
+  const hasSpacing = fc.shelfVerticalSpacingIn !== null;
+  if (hasFixtureCounts || hasSpacing) {
+    const parts: string[] = [];
+    if (fc.shelfCount !== null) parts.push(`${fc.shelfCount} shelf(es)`);
+    if (fc.drawerCount !== null) parts.push(`${fc.drawerCount} drawer(s)`);
+    if (fc.closetRodCount !== null) parts.push(`${fc.closetRodCount} hanging rod(s)`);
+    if (fc.shelfVerticalSpacingIn !== null) {
+      parts.push(`~${fc.shelfVerticalSpacingIn}" vertical spacing between shelf tiers`);
+    }
+    userGoal = `${userGoal}\n\nReinforce exact layout numbers in the render: ${parts.join(", ")} — match counts and stated spacing; no extras.`;
+  }
+
   const promptContext = [
     "## Harvested intake (all phases)",
     `Mode: ${visualMode}`,
@@ -365,6 +419,9 @@ export function buildHarvestConceptPromptBundle(params: {
     `Phase 3 — Vision / site: ${harvest.phase3VisionSummary ?? "—"}`,
     `Phase 4 — Scope adds/removals: ${harvest.phase4ScopeSummary ?? "—"}`,
     harvest.spec.scopeNotes ? `Scope notes: ${harvest.spec.scopeNotes}` : "",
+    harvest.spec.shelfVerticalSpacingIn !== null
+      ? `Stated shelf tier spacing: ${harvest.spec.shelfVerticalSpacingIn}" (vertical)`
+      : "",
   ]
     .filter(Boolean)
     .join("\n");

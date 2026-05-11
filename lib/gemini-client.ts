@@ -13,6 +13,10 @@ import type { PlannerSubmitDesignExtract } from "@/lib/planner-submit-design-typ
 
 const GEMINI_API_BASE = "https://generativelanguage.googleapis.com/v1beta";
 
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 export type GeminiInlineImage = {
   mimeType: string;
   dataBase64: string;
@@ -173,6 +177,8 @@ export async function geminiGenerateContent(params: {
   generationConfig?: Record<string, unknown>;
   /** Grounding with Google Search — real-time retail/product facts (billable; see Gemini pricing). */
   tools?: Array<Record<string, unknown>>;
+  /** Retry on transient HTTP errors (429, 503) with backoff — up to 3 attempts total. */
+  retryTransientErrors?: boolean;
 }): Promise<{ ok: true; json: unknown } | { ok: false; status: number; body: string }> {
   const apiKey = getApiKey();
   if (!apiKey) {
@@ -202,28 +208,46 @@ export async function geminiGenerateContent(params: {
     body.tools = params.tools;
   }
 
-  const res = await fetch(url, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "x-goog-api-key": apiKey,
-    },
-    body: JSON.stringify(body),
-  });
+  const payload = JSON.stringify(body);
+  const maxAttempts = params.retryTransientErrors ? 3 : 1;
 
-  const raw = await res.text();
-  let json: unknown;
-  try {
-    json = JSON.parse(raw) as unknown;
-  } catch {
-    return { ok: false, status: res.status, body: raw.slice(0, 500) };
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    if (attempt > 0 && params.retryTransientErrors) {
+      await sleep(attempt === 1 ? 400 : 1200);
+    }
+
+    const res = await fetch(url, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-goog-api-key": apiKey,
+      },
+      body: payload,
+    });
+
+    const raw = await res.text();
+    let json: unknown;
+    try {
+      json = JSON.parse(raw) as unknown;
+    } catch {
+      return { ok: false, status: res.status, body: raw.slice(0, 500) };
+    }
+
+    if (!res.ok) {
+      const retryable =
+        params.retryTransientErrors &&
+        (res.status === 429 || res.status === 503) &&
+        attempt < maxAttempts - 1;
+      if (!retryable) {
+        return { ok: false, status: res.status, body: raw.slice(0, 800) };
+      }
+      continue;
+    }
+
+    return { ok: true, json };
   }
 
-  if (!res.ok) {
-    return { ok: false, status: res.status, body: raw.slice(0, 800) };
-  }
-
-  return { ok: true, json };
+  return { ok: false, status: 500, body: "unexpected retry exhaustion" };
 }
 
 /** Plain text reply (chat). */
@@ -273,6 +297,7 @@ export async function geminiPlannerMultiTurn(params: {
     model,
     systemInstruction: params.systemInstruction,
     contents: params.contents,
+    retryTransientErrors: true,
   });
 
   if (!result.ok) {
@@ -320,9 +345,18 @@ Output ONLY valid JSON with exactly these keys (no markdown fences, no commentar
 - "scopeNotes": string or null — 1–4 sentences: primary use case, obstructions or removals mentioned, architecture cues from photos when discussed; NEVER prices or SKUs
 - "floor": number or null — storey / finished floor level when stated (e.g. 1 main, 2 second floor); otherwise null
 - "isCondo": boolean or null — true if condo, apartment, or strata/stacked dwelling rules/access clearly apply; false if detached house clearly indicated; otherwise null
+- "shelfCount": integer or null — number of visible shelf boards/surfaces the homeowner asked for (e.g. "3 shelves"); null if unknown
+- "drawerCount": integer or null — number of drawers stated; null if unknown
+- "closetRodCount": integer or null — hanging rods / closet bars / garment rods (e.g. "2 hanging bars", "double hang" = 2 rods, "triple hang" = 3); null if unknown
+- "shelfVerticalSpacingIn": number or null — inches between shelf tiers when the homeowner stated vertical spacing (e.g. "14 inches between each shelf"); null if unknown or only overall unit height was given
 
 Rules:
+- **Output inches as numbers** for width, height, depth, and shelfVerticalSpacingIn. When the homeowner used **mm, cm, or m**, convert to inches (round to one decimal when helpful). When they used **feet or inches**, convert feet to inches for width/height/depth.
+- Phrases like **about, approximately, around, roughly, ~, close to, give or take** still carry a real target — **do not omit** the measurement; use the stated number as the value (same as an exact statement unless they give an explicit range — then use the midpoint or the clearest single value).
 - Use numbers only when explicitly stated or clearly inferable; otherwise null. Do not invent precise measurements.
+- Map homeowner size language onto **width / height / depth** (inches) when they describe the overall run or unit: e.g. "8 foot span along the wall" → width 96; "about 2.4 m wide" → convert to inches for width; "84 inches tall" / "7 foot tall unit" → height in inches; "300 mm deep shelves" → depth in inches when it describes shelf or cabinet depth into the room or cavity.
+- Put **only** tier-to-tier or "between shelves" vertical spacing into **shelfVerticalSpacingIn** (in inches after conversion), not the full unit height.
+- Capture **explicit counts** from the transcript for shelves, drawers, and closet hanging rods/bars (including “double hang” / “triple hang” as rod counts when that’s what the homeowner means).
 - If only one horizontal is given for a closet run, map it to width when it reads like a wall span.
 - **Pricing isolation:** Do NOT put call-out fees, hourly labor rates, "$150", dollar figures, or "/hour" language into ANY field — omit pricing entirely from this JSON (those signals stay in other backend systems only, never echoed here).
 `;
@@ -779,6 +813,7 @@ ${params.userGoal.slice(0, 4000)}`;
     generationConfig: {
       responseModalities: ["TEXT", "IMAGE"],
     },
+    retryTransientErrors: true,
   });
 
   if (!result.ok) {
