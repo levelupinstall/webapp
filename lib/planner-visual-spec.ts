@@ -71,14 +71,24 @@ export type AdaptiveScaleOptions = {
 export function buildAdaptiveScaleInjection(opts: AdaptiveScaleOptions): string {
   const segments: string[] = [];
 
+  const ceilingIn =
+    opts.ceilingHeightFeet !== null && Number.isFinite(opts.ceilingHeightFeet)
+      ? opts.ceilingHeightFeet * 12
+      : null;
+
   if (opts.hasUserProvidedPhoto) {
     segments.push(
       "CRITICAL — Reference photo authority: Match the visible ceiling height (floor-to-ceiling proportion), crown molding, baseboard height and profile, door and window casing, and other trim exactly as shown in the attached homeowner photo(s). Do not inflate ceiling height, stretch verticals, or change trim scale relative to that imagery — the photograph defines ceiling line and trim character.",
     );
-  } else if (opts.ceilingHeightFeet !== null && Number.isFinite(opts.ceilingHeightFeet)) {
-    const ft = opts.ceilingHeightFeet;
-    const label = ft === Math.floor(ft) ? String(Math.round(ft)) : String(ft);
-    segments.push(`Render with ${label} foot ceiling height (no reference photo — transcript-derived).`);
+    if (ceilingIn !== null) {
+      segments.push(
+        `CRITICAL — Ceiling vertical master: use the reference photo for perspective/trim cues, then rescale verticals so floor-to-ceiling equals exactly ${Math.round(ceilingIn * 10) / 10} inches. Treat ceiling as the absolute Y-axis limit (floor=0, ceiling=${Math.round(ceilingIn * 10) / 10}).`,
+      );
+    }
+  } else if (ceilingIn !== null) {
+    segments.push(
+      `CRITICAL — Ceiling vertical master: set floor-to-ceiling vertical height to exactly ${Math.round(ceilingIn * 10) / 10} inches (absolute Y-axis limit).`,
+    );
   }
 
   segments.push(
@@ -93,7 +103,7 @@ export function buildAdaptiveScaleInjection(opts: AdaptiveScaleOptions): string 
     );
   } else if (bucket === "tv_wall") {
     segments.push(
-      "Category scale anchors — TV / media wall: reference a typical flat-panel TV module width (~42–65\") against an adjacent standard interior door frame (~28–36\" clear opening) and duplex outlet vertical placement (~12–18\" AFF to bottom of plate when inferring); keep bracket depth realistic.",
+      "Category scale anchors — TV / media wall: reference a typical flat-panel TV module width (~42–65\") against an adjacent standard interior door frame (~28–36\" clear opening) and duplex outlet vertical placement relative to the ceiling anchor; keep bracket depth realistic.",
     );
     segments.push(
       "Secondary anchors where visible: baseboard height and crown/ceiling line from the reference photo.",
@@ -107,7 +117,7 @@ export function buildAdaptiveScaleInjection(opts: AdaptiveScaleOptions): string 
       "Category scale anchors — shelving / built-ins: use standard interior door leaf height (~80\") and hinge-side jamb as vertical calibration for bookcase stacks and spans.",
     );
     segments.push(
-      "Secondary anchors where visible: outlets at typical bedside/kitchen counter bands only when applicable.",
+      "Secondary anchors where visible: outlets at typical bedside/kitchen counter bands only when applicable (proportional to the ceiling vertical master when ceiling height is known).",
     );
   } else {
     segments.push(
@@ -116,6 +126,9 @@ export function buildAdaptiveScaleInjection(opts: AdaptiveScaleOptions): string 
   }
 
   segments.push(
+    `CRITICAL — Outlet proportional sanity check (when ceiling is known): a standard outlet faceplate is about 4.5 inches tall. If an outlet is visible, ensure the faceplate occupies roughly ${ceilingIn !== null ? Math.round((4.5 / ceilingIn) * 1000) / 1000 : "~1/24"} of the total wall height from floor to ceiling. If it looks wildly off, keep the ceiling vertical master fixed (do not change ceiling height to “fit” the outlet).`,
+    `CRITICAL — Object placement Y-axis: when the transcript uses relative placement words without explicit inches-from-floor: “high/highER” => place the top shelf around 12 inches below the ceiling line; “low/lower” => place it around 24 inches below the ceiling line. Keep all shelf/TV top edges at or below the ceiling (no overshoot).`,
+    "CRITICAL — Negative constraint: never let the shelving unit or TV exceed the ceiling height. If the requested height would exceed the ceiling, clamp the top to the ceiling line (with a small clearance) instead of stretching the room taller.",
     "Photorealistic; no wide-angle distortion; maintaining 1:1 realistic carpentry proportions.",
   );
 
