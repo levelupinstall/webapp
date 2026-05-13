@@ -52,6 +52,12 @@ import {
   generateUniversalBlueprint,
   mapDesignBucketToUniversalCategory,
 } from "@/lib/blueprint-engine";
+import {
+  buildControlNetPromptParts,
+  replicateConceptConfigured,
+  replicateConceptProviderEnabled,
+  runReplicateSdxlControlNetConcept,
+} from "@/lib/replicate-sdxl-controlnet-concept";
 
 /** After this many assistant turns that included a concept sketch, steer toward in-person consult. */
 const SKETCH_ROUNDS_BEFORE_IN_PERSON_NUDGE = 5;
@@ -946,6 +952,7 @@ export async function POST(request: Request) {
       };
 
       let blueprintReferenceParts: ContentPart[] = [];
+      let blueprintPngBuffer: Buffer | null = null;
       const hasRoomPhotoForBlueprint =
         latestImageParts.length > 0 || sketchReferenceFiles.length > 0;
       if (
@@ -980,6 +987,7 @@ export async function POST(request: Request) {
           const png = await sharp(Buffer.from(blueprintPlanToSvgString(plan), "utf8"))
             .png()
             .toBuffer();
+          blueprintPngBuffer = png;
           blueprintReferenceParts = [
             {
               inline_data: {
@@ -1020,6 +1028,20 @@ ${structuralAbCore}`
 ${structuralAbCore}`
           : undefined;
 
+      const primaryRoomFile = sketchReferenceFiles[0] ?? imageFiles[0] ?? null;
+      let primaryRoomBuffer: Buffer | null = null;
+      let primaryRoomMime = "image/jpeg";
+      if (primaryRoomFile && primaryRoomFile.size > 0) {
+        primaryRoomBuffer = Buffer.from(await primaryRoomFile.arrayBuffer());
+        primaryRoomMime = primaryRoomFile.type || "image/jpeg";
+      }
+
+      const tryReplicateControlNetFirst =
+        replicateConceptProviderEnabled() &&
+        replicateConceptConfigured() &&
+        blueprintPngBuffer != null &&
+        primaryRoomBuffer != null;
+
       console.log("--- RENDERING START ---");
       console.log("Target Dimensions:", harvestedDimensions);
       console.log("Scale Anchors Used:", categoryAnchors);
@@ -1039,6 +1061,30 @@ ${structuralAbCore}`
               : attempt === 2
                 ? `${baseGoal}\n\n(Third attempt: mandatory — emit at least one IMAGE part; no text-only replies; prioritize a single clear finish-carpentry concept render.)`
                 : `${baseGoal}\n\n(Fourth attempt: you MUST return one IMAGE inlineData part — no text-only response; single clearest concept render.)`;
+
+        if (tryReplicateControlNetFirst && attempt === 0) {
+          const { positive, negative } = buildControlNetPromptParts({
+            extractedVisualDirective,
+            userGoal: userGoalAug,
+          });
+          const rep = await runReplicateSdxlControlNetConcept({
+            roomImage: { mimeType: primaryRoomMime, buffer: primaryRoomBuffer! },
+            blueprintPng: blueprintPngBuffer!,
+            positivePrompt: positive,
+            negativePrompt: negative,
+          });
+          if (rep.ok && rep.images.length > 0) {
+            console.info("[project-assistant] Replicate SDXL ControlNet concept render succeeded");
+            for (const img of rep.images) {
+              responseImages.push({ mimeType: img.mimeType, data: img.dataBase64 });
+            }
+            break;
+          }
+          console.warn(
+            "[project-assistant] Replicate SDXL ControlNet failed, falling back to Gemini:",
+            !rep.ok ? rep.error : "no images",
+          );
+        }
 
         const visual = await geminiGenerateConceptImage({
           promptContext: basePrompt,
