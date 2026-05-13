@@ -6,8 +6,8 @@
  * - REPLICATE_API_TOKEN (required)
  * - REPLICATE_SDXL_MULTICN_VERSION (default: pinned fofr/sdxl-multi-controlnet-lora latest)
  * - REPLICATE_CONTROLNET_1 (default: lineart — good for schematic linework; try edge_canny if needed)
- * - REPLICATE_PROMPT_STRENGTH (default 0.42 — conservative to preserve room)
- * - REPLICATE_CN1_CONDITIONING_SCALE (default 0.92)
+ * - REPLICATE_PROMPT_STRENGTH (default 0.32 — conservative img2img / room fidelity)
+ * - REPLICATE_CN1_CONDITIONING_SCALE (default 0.88)
  * - REPLICATE_NUM_INFERENCE_STEPS (default 28)
  * - REPLICATE_APPLY_WATERMARK (default false)
  * - REPLICATE_DISABLE_SAFETY_CHECKER (default true — home interiors often false-positive)
@@ -131,8 +131,8 @@ export async function runReplicateSdxlControlNetConcept(
 
   const version = envTrim("REPLICATE_SDXL_MULTICN_VERSION") ?? DEFAULT_VERSION;
   const controlnet1 = envTrim("REPLICATE_CONTROLNET_1") ?? "lineart";
-  const promptStrength = Number(envTrim("REPLICATE_PROMPT_STRENGTH") ?? "0.42");
-  const cn1Scale = Number(envTrim("REPLICATE_CN1_CONDITIONING_SCALE") ?? "0.92");
+  const promptStrength = Number(envTrim("REPLICATE_PROMPT_STRENGTH") ?? "0.32");
+  const cn1Scale = Number(envTrim("REPLICATE_CN1_CONDITIONING_SCALE") ?? "0.88");
   const steps = Math.min(80, Math.max(10, Number(envTrim("REPLICATE_NUM_INFERENCE_STEPS") ?? "28")));
   const guidance = Number(envTrim("REPLICATE_GUIDANCE_SCALE") ?? "7.5");
   const applyWatermark =
@@ -156,13 +156,13 @@ export async function runReplicateSdxlControlNetConcept(
     scheduler: "K_EULER",
     num_inference_steps: steps,
     guidance_scale: guidance,
-    prompt_strength: Math.min(1, Math.max(0.05, Number.isFinite(promptStrength) ? promptStrength : 0.42)),
+    prompt_strength: Math.min(1, Math.max(0.05, Number.isFinite(promptStrength) ? promptStrength : 0.32)),
     refine: "no_refiner",
     apply_watermark: applyWatermark,
     disable_safety_checker: disableSafety,
     controlnet_1: controlnet1,
     controlnet_1_image: bpUri,
-    controlnet_1_conditioning_scale: Math.min(4, Math.max(0, Number.isFinite(cn1Scale) ? cn1Scale : 0.92)),
+    controlnet_1_conditioning_scale: Math.min(4, Math.max(0, Number.isFinite(cn1Scale) ? cn1Scale : 0.88)),
     controlnet_1_start: 0,
     controlnet_1_end: 1,
     controlnet_2: "none",

@@ -58,6 +58,11 @@ import {
   replicateConceptProviderEnabled,
   runReplicateSdxlControlNetConcept,
 } from "@/lib/replicate-sdxl-controlnet-concept";
+import { detectBlueprintLayoutConflicts } from "@/lib/planner-render-guard";
+import {
+  appendLayoutConflictNotice,
+  appendVisualizationUnavailableNotice,
+} from "@/lib/planner-render-outcome-messages";
 
 /** After this many assistant turns that included a concept sketch, steer toward in-person consult. */
 const SKETCH_ROUNDS_BEFORE_IN_PERSON_NUDGE = 5;
@@ -216,7 +221,7 @@ They attached **space / material photos**. Thank them briefly, then perform a **
 - **Obstructions:** outlets, vents, switches that conflict with the install type you discussed.
 - **Architecture:** trim, baseboards, ceiling character — tie observations to their **style** direction.
 - **Removals:** ONLY ask about removing something **visible** in the image (e.g. wire rack); never invent off-photo clutter.
-Stay concise; end with **one** sharp **question**. Prefer \`[PHASE:refine]\` when iterating visually after photos exist.`);
+Stay concise; end with **one** sharp **question**. Use \`[PHASE:recommend]\` until a concept sketch has been shown in this thread; after the first sketch exists, use \`[PHASE:refine]\` when iterating on visuals.`);
   }
   if (!params.hasPhotoContextInSession && params.northStarReadyForPhotoPrompt) {
     chunks.push(`
@@ -717,8 +722,12 @@ export async function POST(request: Request) {
         .trim();
     }
 
-    const { cleanReply: cleanReplyRaw, phase, showPhotoUploader } =
-      extractPlannerPhase(replyForPhase);
+    const {
+      cleanReply: cleanReplyRaw,
+      phase: phaseFromModel,
+      showPhotoUploader,
+    } = extractPlannerPhase(replyForPhase);
+    let phase = phaseFromModel;
 
     const genericBlankSketchEligible =
       substantiveForGenericSketch &&
@@ -953,6 +962,7 @@ export async function POST(request: Request) {
 
       let blueprintReferenceParts: ContentPart[] = [];
       let blueprintPngBuffer: Buffer | null = null;
+      let layoutConflicts: ReturnType<typeof detectBlueprintLayoutConflicts> = [];
       const hasRoomPhotoForBlueprint =
         latestImageParts.length > 0 || sketchReferenceFiles.length > 0;
       if (
@@ -974,28 +984,36 @@ export async function POST(request: Request) {
             drawerCount: specForBlueprint.drawerCount,
             transcriptHint: specTranscript.slice(-12_000),
           });
-          console.log(
-            "[project-assistant] Universal blueprint plan (normalized coordinates):",
-            JSON.stringify({
-              category: plan.category,
-              lines: plan.lines,
-              rects: plan.rects,
-              noBuildZones: plan.noBuildZones,
-              meta: plan.meta,
-            }),
-          );
-          const png = await sharp(Buffer.from(blueprintPlanToSvgString(plan), "utf8"))
-            .png()
-            .toBuffer();
-          blueprintPngBuffer = png;
-          blueprintReferenceParts = [
-            {
-              inline_data: {
-                mime_type: "image/png",
-                data: png.toString("base64"),
+          layoutConflicts = detectBlueprintLayoutConflicts(plan, specForBlueprint);
+          if (layoutConflicts.length > 0) {
+            console.warn(
+              "[project-assistant] Blueprint vs. spec conflict — skipping visualization:",
+              layoutConflicts.map((c) => c.code),
+            );
+          } else {
+            console.log(
+              "[project-assistant] Universal blueprint plan (normalized coordinates):",
+              JSON.stringify({
+                category: plan.category,
+                lines: plan.lines,
+                rects: plan.rects,
+                noBuildZones: plan.noBuildZones,
+                meta: plan.meta,
+              }),
+            );
+            const png = await sharp(Buffer.from(blueprintPlanToSvgString(plan), "utf8"))
+              .png()
+              .toBuffer();
+            blueprintPngBuffer = png;
+            blueprintReferenceParts = [
+              {
+                inline_data: {
+                  mime_type: "image/png",
+                  data: png.toString("base64"),
+                },
               },
-            },
-          ];
+            ];
+          }
         } catch (err) {
           console.warn(
             "[project-assistant] universal blueprint PNG failed:",
@@ -1042,88 +1060,127 @@ ${structuralAbCore}`
         blueprintPngBuffer != null &&
         primaryRoomBuffer != null;
 
+      const skipGeminiConceptImageAccuracy = tryReplicateControlNetFirst;
+
       console.log("--- RENDERING START ---");
       console.log("Target Dimensions:", harvestedDimensions);
       console.log("Scale Anchors Used:", categoryAnchors);
+      console.log(
+        "[project-assistant] Layout conflicts:",
+        layoutConflicts.length ? layoutConflicts.map((c) => c.code) : "(none)",
+      );
 
-      let prevOkNoImages = false;
-      for (let attempt = 0; attempt < 4; attempt++) {
-        if (attempt >= 1 && prevOkNoImages) {
-          await new Promise((r) => setTimeout(r, attempt === 1 ? 800 : attempt === 2 ? 1400 : 2000));
+      let renderOutcomeNoticeAppended = false;
+      let imageGenerationFailureDetail: string | null = null;
+
+      if (layoutConflicts.length > 0) {
+        cleanReply = stripMisleadingImageDeliveryClaims(cleanReply);
+        cleanReply = appendLayoutConflictNotice(cleanReply, layoutConflicts);
+        renderOutcomeNoticeAppended = true;
+      } else if (skipGeminiConceptImageAccuracy) {
+        const { positive, negative } = buildControlNetPromptParts({
+          extractedVisualDirective,
+          userGoal: baseGoal,
+        });
+        const rep = await runReplicateSdxlControlNetConcept({
+          roomImage: { mimeType: primaryRoomMime, buffer: primaryRoomBuffer! },
+          blueprintPng: blueprintPngBuffer!,
+          positivePrompt: positive,
+          negativePrompt: negative,
+        });
+        if (rep.ok && rep.images.length > 0) {
+          console.info("[project-assistant] Replicate SDXL ControlNet concept render succeeded");
+          for (const img of rep.images) {
+            responseImages.push({ mimeType: img.mimeType, data: img.dataBase64 });
+          }
+        } else {
+          imageGenerationFailureDetail = !rep.ok ? rep.error : "no output image";
+          console.warn(
+            "[project-assistant] Replicate SDXL ControlNet failed (no Gemini image fallback in this accuracy path):",
+            imageGenerationFailureDetail,
+          );
         }
-        prevOkNoImages = false;
+      } else {
+        let prevOkNoImages = false;
+        for (let attempt = 0; attempt < 4; attempt++) {
+          if (attempt >= 1 && prevOkNoImages) {
+            await new Promise((r) => setTimeout(r, attempt === 1 ? 800 : attempt === 2 ? 1400 : 2000));
+          }
+          prevOkNoImages = false;
 
-        const userGoalAug =
-          attempt === 0
-            ? baseGoal
-            : attempt === 1
-              ? `${baseGoal}\n\n(Second attempt: output must include one clear IMAGE part showing the finish-carpentry concept.)`
-              : attempt === 2
-                ? `${baseGoal}\n\n(Third attempt: mandatory — emit at least one IMAGE part; no text-only replies; prioritize a single clear finish-carpentry concept render.)`
-                : `${baseGoal}\n\n(Fourth attempt: you MUST return one IMAGE inlineData part — no text-only response; single clearest concept render.)`;
+          const userGoalAug =
+            attempt === 0
+              ? baseGoal
+              : attempt === 1
+                ? `${baseGoal}\n\n(Second attempt: output must include one clear IMAGE part showing the finish-carpentry concept.)`
+                : attempt === 2
+                  ? `${baseGoal}\n\n(Third attempt: mandatory — emit at least one IMAGE part; no text-only replies; prioritize a single clear finish-carpentry concept render.)`
+                  : `${baseGoal}\n\n(Fourth attempt: you MUST return one IMAGE inlineData part — no text-only response; single clearest concept render.)`;
 
-        if (tryReplicateControlNetFirst && attempt === 0) {
-          const { positive, negative } = buildControlNetPromptParts({
-            extractedVisualDirective,
+          const visual = await geminiGenerateConceptImage({
+            promptContext: basePrompt,
             userGoal: userGoalAug,
+            referenceImageParts:
+              conceptReferenceWithBlueprint.length > 0
+                ? conceptReferenceWithBlueprint
+                : undefined,
+            extractedVisualDirective,
+            structuralGuideDirective,
           });
-          const rep = await runReplicateSdxlControlNetConcept({
-            roomImage: { mimeType: primaryRoomMime, buffer: primaryRoomBuffer! },
-            blueprintPng: blueprintPngBuffer!,
-            positivePrompt: positive,
-            negativePrompt: negative,
-          });
-          if (rep.ok && rep.images.length > 0) {
-            console.info("[project-assistant] Replicate SDXL ControlNet concept render succeeded");
-            for (const img of rep.images) {
+
+          if (!("error" in visual) && visual.images.length > 0) {
+            for (const img of visual.images) {
               responseImages.push({ mimeType: img.mimeType, data: img.dataBase64 });
             }
             break;
           }
-          console.warn(
-            "[project-assistant] Replicate SDXL ControlNet failed, falling back to Gemini:",
-            !rep.ok ? rep.error : "no images",
-          );
-        }
-
-        const visual = await geminiGenerateConceptImage({
-          promptContext: basePrompt,
-          userGoal: userGoalAug,
-          referenceImageParts:
-            conceptReferenceWithBlueprint.length > 0
-              ? conceptReferenceWithBlueprint
-              : undefined,
-          extractedVisualDirective,
-          structuralGuideDirective,
-        });
-
-        if (!("error" in visual) && visual.images.length > 0) {
-          for (const img of visual.images) {
-            responseImages.push({ mimeType: img.mimeType, data: img.dataBase64 });
+          if (!("error" in visual) && visual.images.length === 0) {
+            prevOkNoImages = true;
+            if (attempt === 3) {
+              imageGenerationFailureDetail = "Gemini returned no image parts";
+            }
           }
-          break;
-        }
-        if (!("error" in visual) && visual.images.length === 0) {
-          prevOkNoImages = true;
-        }
-        if ("error" in visual) {
-          console.warn(
-            "[project-assistant] geminiGenerateConceptImage error:",
-            visual.error,
-          );
-        } else if (visual.images.length === 0) {
-          const fr = visual.candidateFinishReason;
-          console.warn(
-            "[project-assistant] geminiGenerateConceptImage returned no image parts",
-            fr ? { candidateFinishReason: fr } : {},
-          );
+          if ("error" in visual) {
+            console.warn(
+              "[project-assistant] geminiGenerateConceptImage error:",
+              visual.error,
+            );
+            imageGenerationFailureDetail = visual.error;
+          } else if (visual.images.length === 0) {
+            const fr = visual.candidateFinishReason;
+            console.warn(
+              "[project-assistant] geminiGenerateConceptImage returned no image parts",
+              fr ? { candidateFinishReason: fr } : {},
+            );
+          }
         }
       }
 
+      if (responseImages.length === 0) {
+        if (!renderOutcomeNoticeAppended) {
+          cleanReply = stripMisleadingImageDeliveryClaims(cleanReply);
+          cleanReply = appendVisualizationUnavailableNotice(cleanReply, {
+            technicalDetail: imageGenerationFailureDetail,
+            skipIfConflictBlockPresent: false,
+          });
+          renderOutcomeNoticeAppended = true;
+        }
+      }
     }
 
     if (responseImages.length === 0) {
       cleanReply = stripMisleadingImageDeliveryClaims(cleanReply);
+    }
+
+    const anyConceptImageDeliveredBeforeOrNow =
+      priorTurnHadConceptImage ||
+      sketchRoundsDelivered > 0 ||
+      responseImages.length > 0;
+    if (phase === "refine" && !anyConceptImageDeliveredBeforeOrNow) {
+      phase = "recommend";
+      console.info(
+        "[project-assistant] Phase clamped refine→recommend: no concept image in session yet (model tagged refine before first sketch).",
+      );
     }
 
     const portalSession = await getSessionFromCookie();
