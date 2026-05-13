@@ -2255,6 +2255,171 @@ export default function AdminDashboard() {
                 </button>
                 {expandedClientId === c.id ? (
                   <div className="border-t border-zinc-800 px-4 py-4 space-y-4">
+                    <div className="rounded-lg border border-violet-900/40 bg-zinc-950/60 p-4">
+                      <h4 className="text-xs font-semibold uppercase text-violet-300">
+                        AI planner, blueprints &amp; customer uploads
+                      </h4>
+                      <p className="mt-1 text-xs text-zinc-500">
+                        Goals digest, structural drawings used for renders, and photos or videos the
+                        customer uploaded from the planner or portal.
+                      </p>
+
+                      {c.aiPlannerActivity.length === 0 ? (
+                        <p className="mt-4 text-sm text-zinc-600">
+                          No logged planner sessions yet (only logged when the client uses the planner
+                          while signed in).
+                        </p>
+                      ) : (
+                        <div className="mt-4 space-y-4">
+                          <div className="grid gap-4 lg:grid-cols-2">
+                            <div>
+                              <h5 className="text-[11px] font-semibold uppercase tracking-wide text-violet-400">
+                                Customer goals digest
+                              </h5>
+                              <p className="mt-1 text-xs text-zinc-500">
+                                Summarized from planner chat for quick rep review. Open the full log
+                                for every prompt and reply verbatim.
+                              </p>
+                              <div className="mt-2 max-h-72 overflow-y-auto rounded-lg border border-zinc-800 bg-black/25 p-3 text-sm leading-relaxed text-zinc-200">
+                                {(c.aiPlannerCrmSummary ?? "").trim() ? (
+                                  <div className="whitespace-pre-wrap">{c.aiPlannerCrmSummary}</div>
+                                ) : (
+                                  <span className="text-zinc-500">
+                                    No digest yet — it refreshes in the background after planner
+                                    activity when Gemini is configured on the server.
+                                  </span>
+                                )}
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() => setPlannerActivityLogClient(c)}
+                                className="mt-3 rounded-lg border border-zinc-600 bg-zinc-900 px-3 py-2 text-xs font-medium text-zinc-200 hover:border-violet-500/60 hover:text-white"
+                              >
+                                View full prompt &amp; reply log…
+                              </button>
+                            </div>
+                            <div>
+                              <h5 className="text-[11px] font-semibold uppercase tracking-wide text-violet-400">
+                                Structural blueprints (render inputs)
+                              </h5>
+                              <p className="mt-1 text-xs text-zinc-500">
+                                Line-drawing PNGs fed to the image pipeline (ControlNet) when a
+                                render runs.
+                              </p>
+                              {(c.aiPlannerBlueprintLog ?? []).length === 0 ? (
+                                <p className="mt-3 text-sm text-zinc-600">None captured yet.</p>
+                              ) : (
+                                <ul className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-3">
+                                  {(c.aiPlannerBlueprintLog ?? []).map((bp) => (
+                                    <li
+                                      key={bp.id}
+                                      className="overflow-hidden rounded-lg border border-zinc-800 bg-black/40"
+                                    >
+                                      <button
+                                        type="button"
+                                        onClick={() =>
+                                          setClientMediaPreview({
+                                            type: "image",
+                                            url: bp.dataUrl,
+                                            caption: `Blueprint · ${new Date(bp.createdAt).toLocaleString()}`,
+                                          })
+                                        }
+                                        className="block w-full text-left"
+                                      >
+                                        {/* eslint-disable-next-line @next/next/no-img-element -- admin CRM data URLs */}
+                                        <img
+                                          src={bp.dataUrl}
+                                          alt="Blueprint"
+                                          className="h-28 w-full bg-black/50 object-contain"
+                                        />
+                                        <span className="block border-t border-zinc-800 px-2 py-1 text-[10px] text-zinc-500">
+                                          {new Date(bp.createdAt).toLocaleString()}
+                                        </span>
+                                      </button>
+                                    </li>
+                                  ))}
+                                </ul>
+                              )}
+                            </div>
+                          </div>
+                          {c.aiPlannerActivity[0]?.conceptImages &&
+                          c.aiPlannerActivity[0]!.conceptImages!.length > 0 ? (
+                            <div>
+                              <p className="text-[11px] font-semibold uppercase tracking-wide text-zinc-500">
+                                Latest AI concept (most recent turn)
+                              </p>
+                              <div className="mt-2 flex flex-wrap gap-2">
+                                {c.aiPlannerActivity[0]!.conceptImages!.map((img, idx) => (
+                                  // eslint-disable-next-line @next/next/no-img-element -- admin CRM data URLs
+                                  <img
+                                    key={`latest-viz-${idx}`}
+                                    src={img.dataUrl}
+                                    alt={`Concept ${idx + 1}`}
+                                    className="h-24 max-w-[12rem] rounded-lg border border-zinc-700 object-contain"
+                                  />
+                                ))}
+                              </div>
+                            </div>
+                          ) : null}
+                          <p className="text-xs text-zinc-600">
+                            {c.aiPlannerActivity.length} logged planner turn
+                            {c.aiPlannerActivity.length === 1 ? "" : "s"} — space uploads use
+                            duplicate detection (perceptual hash + optional AI in borderline cases).
+                          </p>
+                        </div>
+                      )}
+
+                      <div className="mt-4 border-t border-zinc-800 pt-4">
+                        <h5 className="text-[11px] font-semibold uppercase tracking-wide text-zinc-400">
+                          Uploaded photos &amp; videos
+                        </h5>
+                        {(c.spacePhotos ?? []).length === 0 ? (
+                          <p className="mt-2 text-sm text-zinc-600">No customer media uploads yet.</p>
+                        ) : (
+                          <div className="mt-2 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                            {(c.spacePhotos ?? []).map((media) => (
+                              <button
+                                key={media.id}
+                                type="button"
+                                onClick={() =>
+                                  setClientMediaPreview({
+                                    type: media.type,
+                                    url: media.url,
+                                    caption: media.caption || "Customer upload",
+                                  })
+                                }
+                                className="overflow-hidden rounded-lg border border-zinc-800 bg-zinc-950/70 text-left hover:border-violet-500/60"
+                              >
+                                {media.type === "video" ? (
+                                  <video
+                                    src={media.url}
+                                    className="h-36 w-full bg-black object-cover"
+                                    muted
+                                    playsInline
+                                  />
+                                ) : (
+                                  // eslint-disable-next-line @next/next/no-img-element
+                                  <img
+                                    src={media.url}
+                                    alt={media.caption || "Customer upload"}
+                                    className="h-36 w-full bg-black object-cover"
+                                  />
+                                )}
+                                <div className="border-t border-zinc-800 px-2 py-1.5">
+                                  <p className="truncate text-xs text-zinc-300">
+                                    {media.caption || "Customer upload"}
+                                  </p>
+                                  <p className="text-[11px] text-zinc-500">
+                                    {new Date(media.uploadedAt).toLocaleString()}
+                                  </p>
+                                </div>
+                              </button>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
                     <div className="rounded-lg border border-zinc-700 bg-zinc-950/60 p-4">
                       <h4 className="text-xs font-semibold uppercase text-zinc-500">
                         Portal engagement
@@ -2396,58 +2561,6 @@ export default function AdminDashboard() {
                     />
 
                     <div>
-                      <h4 className="text-xs font-semibold uppercase text-zinc-500">
-                        Uploaded pictures and videos
-                      </h4>
-                      {(c.spacePhotos ?? []).length === 0 ? (
-                        <p className="mt-2 text-sm text-zinc-600">
-                          No customer media uploads yet.
-                        </p>
-                      ) : (
-                        <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-                          {(c.spacePhotos ?? []).map((media) => (
-                            <button
-                              key={media.id}
-                              type="button"
-                              onClick={() =>
-                                setClientMediaPreview({
-                                  type: media.type,
-                                  url: media.url,
-                                  caption: media.caption || "Customer upload",
-                                })
-                              }
-                              className="overflow-hidden rounded-lg border border-zinc-800 bg-zinc-950/70 text-left hover:border-violet-500/60"
-                            >
-                              {media.type === "video" ? (
-                                <video
-                                  src={media.url}
-                                  className="h-36 w-full bg-black object-cover"
-                                  muted
-                                  playsInline
-                                />
-                              ) : (
-                                // eslint-disable-next-line @next/next/no-img-element
-                                <img
-                                  src={media.url}
-                                  alt={media.caption || "Customer upload"}
-                                  className="h-36 w-full bg-black object-cover"
-                                />
-                              )}
-                              <div className="border-t border-zinc-800 px-2 py-1.5">
-                                <p className="truncate text-xs text-zinc-300">
-                                  {media.caption || "Customer upload"}
-                                </p>
-                                <p className="text-[11px] text-zinc-500">
-                                  {new Date(media.uploadedAt).toLocaleString()}
-                                </p>
-                              </div>
-                            </button>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-
-                    <div>
                       <h4 className="text-xs font-semibold uppercase text-zinc-500">Project status</h4>
                       <p className="mt-1 text-sm text-zinc-300">
                         <span className="text-violet-400">{c.projectStatus.phase}</span> ·{" "}
@@ -2486,118 +2599,6 @@ export default function AdminDashboard() {
                           )}
                         </ul>
                       </div>
-                    </div>
-
-                    <div className="rounded-lg border border-zinc-700 bg-zinc-950/50 p-4">
-                      <h4 className="text-xs font-semibold uppercase text-zinc-500">
-                        AI planner (CRM)
-                      </h4>
-                      {c.aiPlannerActivity.length === 0 ? (
-                        <p className="mt-2 text-sm text-zinc-600">
-                          No logged sessions yet (only logged when the client uses the planner while
-                          signed in).
-                        </p>
-                      ) : (
-                        <div className="mt-3 space-y-4">
-                          <div className="grid gap-4 lg:grid-cols-2">
-                            <div>
-                              <h5 className="text-[11px] font-semibold uppercase tracking-wide text-violet-400">
-                                Customer goals digest
-                              </h5>
-                              <p className="mt-1 text-xs text-zinc-500">
-                                Summarized from planner chat for quick rep review. Open the full log
-                                for every prompt and reply verbatim.
-                              </p>
-                              <div className="mt-2 max-h-72 overflow-y-auto rounded-lg border border-zinc-800 bg-black/25 p-3 text-sm leading-relaxed text-zinc-200">
-                                {(c.aiPlannerCrmSummary ?? "").trim() ? (
-                                  <div className="whitespace-pre-wrap">
-                                    {c.aiPlannerCrmSummary}
-                                  </div>
-                                ) : (
-                                  <span className="text-zinc-500">
-                                    No digest yet — it fills in after planner activity when Gemini is
-                                    configured on the server.
-                                  </span>
-                                )}
-                              </div>
-                              <button
-                                type="button"
-                                onClick={() => setPlannerActivityLogClient(c)}
-                                className="mt-3 rounded-lg border border-zinc-600 bg-zinc-900 px-3 py-2 text-xs font-medium text-zinc-200 hover:border-violet-500/60 hover:text-white"
-                              >
-                                View full prompt &amp; reply log…
-                              </button>
-                            </div>
-                            <div>
-                              <h5 className="text-[11px] font-semibold uppercase tracking-wide text-violet-400">
-                                Structural blueprints (render inputs)
-                              </h5>
-                              <p className="mt-1 text-xs text-zinc-500">
-                                Line-drawing PNGs fed to the image pipeline (ControlNet) when a
-                                render runs.
-                              </p>
-                              {(c.aiPlannerBlueprintLog ?? []).length === 0 ? (
-                                <p className="mt-3 text-sm text-zinc-600">None captured yet.</p>
-                              ) : (
-                                <ul className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-3">
-                                  {(c.aiPlannerBlueprintLog ?? []).map((bp) => (
-                                    <li
-                                      key={bp.id}
-                                      className="overflow-hidden rounded-lg border border-zinc-800 bg-black/40"
-                                    >
-                                      <button
-                                        type="button"
-                                        onClick={() =>
-                                          setClientMediaPreview({
-                                            type: "image",
-                                            url: bp.dataUrl,
-                                            caption: `Blueprint · ${new Date(bp.createdAt).toLocaleString()}`,
-                                          })
-                                        }
-                                        className="block w-full text-left"
-                                      >
-                                        {/* eslint-disable-next-line @next/next/no-img-element -- admin CRM data URLs */}
-                                        <img
-                                          src={bp.dataUrl}
-                                          alt="Blueprint"
-                                          className="h-28 w-full object-contain bg-black/50"
-                                        />
-                                        <span className="block border-t border-zinc-800 px-2 py-1 text-[10px] text-zinc-500">
-                                          {new Date(bp.createdAt).toLocaleString()}
-                                        </span>
-                                      </button>
-                                    </li>
-                                  ))}
-                                </ul>
-                              )}
-                            </div>
-                          </div>
-                          {c.aiPlannerActivity[0]?.conceptImages &&
-                          c.aiPlannerActivity[0]!.conceptImages!.length > 0 ? (
-                            <div>
-                              <p className="text-[11px] font-semibold uppercase tracking-wide text-zinc-500">
-                                Latest AI concept (most recent turn)
-                              </p>
-                              <div className="mt-2 flex flex-wrap gap-2">
-                                {c.aiPlannerActivity[0]!.conceptImages!.map((img, idx) => (
-                                  // eslint-disable-next-line @next/next/no-img-element -- admin CRM data URLs
-                                  <img
-                                    key={`latest-viz-${idx}`}
-                                    src={img.dataUrl}
-                                    alt={`Concept ${idx + 1}`}
-                                    className="h-24 max-w-[12rem] rounded-lg border border-zinc-700 object-contain"
-                                  />
-                                ))}
-                              </div>
-                            </div>
-                          ) : null}
-                          <p className="text-xs text-zinc-600">
-                            {c.aiPlannerActivity.length} logged planner turn
-                            {c.aiPlannerActivity.length === 1 ? "" : "s"} — space uploads use
-                            duplicate detection (perceptual hash + optional AI in borderline cases).
-                          </p>
-                        </div>
-                      )}
                     </div>
 
                     <div className="rounded-lg border border-rose-900/50 bg-rose-950/25 p-4">
