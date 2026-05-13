@@ -45,6 +45,11 @@ import {
   type PlannerVisualSpec,
 } from "@/lib/planner-visual-spec";
 import { PLANNER_ASSISTANT_SYSTEM } from "@/lib/planner-assistant-prompt";
+import {
+  extractPlannerRoomPhotoHints,
+  formatPlannerPhotoHintsForSystemInstruction,
+  formatPlannerPhotoHintsForTranscriptAppendix,
+} from "@/lib/planner-photo-hints";
 import { PLANNER_ASSISTANT_NAME } from "@/lib/planner-brand";
 import { addClientSpacePhoto, appendAiPlannerActivity } from "@/lib/client-portal-store";
 import {
@@ -193,6 +198,8 @@ function buildPlannerSystemInstruction(params: {
   firstRenderCheckMode: "none" | "ask_now" | "awaiting_user_confirmation";
   /** Category + style signals present — invite photos early; does not unlock first render. */
   northStarReadyForPhotoPrompt: boolean;
+  /** Optional multimodal vision hints for this turn’s uploads — not measurements. */
+  roomPhotoHintsBlock?: string;
 }): string {
   const chunks: string[] = [PLANNER_ASSISTANT_SYSTEM];
 
@@ -221,6 +228,7 @@ They attached **space / material photos**. Thank them briefly, then perform a **
 - **Obstructions:** outlets, vents, switches that conflict with the install type you discussed.
 - **Architecture:** trim, baseboards, ceiling character — tie observations to their **style** direction.
 - **Removals:** ONLY ask about removing something **visible** in the image (e.g. wire rack); never invent off-photo clutter.
+- **Measurements:** If you still need rough **envelope** numbers for shelving or built-ins, ask in **one** question for **span along the wall (width/length)**, **height**, and **depth** (shelf projection) together with **units** — do **not** ask for shelf depth alone.
 Stay concise; end with **one** sharp **question**. Use \`[PHASE:recommend]\` until a concept sketch has been shown in this thread; after the first sketch exists, use \`[PHASE:refine]\` when iterating on visuals.`);
   }
   if (!params.hasPhotoContextInSession && params.northStarReadyForPhotoPrompt) {
@@ -266,6 +274,7 @@ Do **NOT** generate or imply that a first image or structural line drawing is re
 The platform has detected **space photos**, **rough dimensions**, **budget context**, and **Phase 1** signals — so you are cleared to move into **layout lock** *when* your recap is truly complete. If you still need one more measurement, obstruction check, or scope detail, **gather that first** this turn with a normal question — **do not** use the verbatim gate question until the **same** turn where you deliver the full recap below.
 Ask **3–5 short follow-ups** mixing **Category A** (remaining survey: obstructions, architecture, adjacency) with **Category B** (final scope adds/removals) **before** that recap turn when anything material is still open.
 Apply **spatial logic**: tallest vertical = Height; shorter horizontal = Depth; remaining horizontal = Width. Closets often ~24 inches deep — if numbers look swapped, clarify **before** the recap.
+**Shelving / built-ins:** If you still need **shelf depth** (projection), ask in the **same** question for **width or length along the wall**, **height**, and **depth** together (rough + **units** each) — do **not** ask for shelf depth alone.
 **Units:** Recap dimensions in the **homeowner’s preferred units** (what they used in chat). If they ever gave a **bare number without a unit**, you must have asked whether they meant inches, centimeters, etc. — do **not** guess.
 **Layout Type (required):** In your recap, you **must** explicitly name the **Layout Type** (short carpenter label, e.g. *Double-hang closet*, *Board-and-batten trim*, *Media wall with shelving*).
 **Recap:** Include **primary Width × Height × Depth** and **key obstructions** (or state none noted).
@@ -281,6 +290,15 @@ You already asked the gate question about considering anything else before the f
 Do **NOT** repeat that exact question verbatim unless they asked you to restate it.
 If they confirmed nothing else matters and you have **not** yet asked for a **go ahead** / **proceed** to lock layout for the structural line drawing + first concept, ask now — they must reply with **go ahead** or **proceed** when the **Layout Type**, dimensions, and obstruction recap all look right.
 If they correct dimensions or layout type, restate **Layout Type** and **Width × Height × Depth** using spatial logic **in their units** before asking for go ahead again.`);
+  }
+
+  const hints = params.roomPhotoHintsBlock?.trim();
+  if (hints) {
+    chunks.push(`
+## Session hint (platform — latest upload vision hints)
+The block below is **not** a tape measure — it is **soft cues** from the image(s) they just sent (visibility, uncertainty, suggested **questions** to ask next). Use it to steer **Phase 3** and dimension follow-ups; **never** invent or assert inch/cm/mm room sizes from pixels alone. Prefer their **stated units** in chat.
+
+${hints}`);
   }
 
   return chunks.join("\n");
@@ -620,6 +638,33 @@ export async function POST(request: Request) {
       ...conceptReferenceParts,
     ];
 
+    let roomPhotoHintsTranscriptAppendix = "";
+    let roomPhotoHintsSystemBlock = "";
+    let roomPhotoHintsSummaryForActivity: string | undefined;
+    if (userAttachedPhotosThisTurn && latestImageParts.length > 0 && isGeminiConfigured()) {
+      const inlineOnly = latestImageParts.filter(
+        (p): p is ContentPart & { inline_data: { mime_type: string; data: string } } =>
+          "inline_data" in p &&
+          typeof p.inline_data.mime_type === "string" &&
+          typeof p.inline_data.data === "string" &&
+          p.inline_data.data.length >= 64,
+      );
+      try {
+        const hints = await extractPlannerRoomPhotoHints({
+          imageParts: inlineOnly,
+          lastUserMessage: lastUserText,
+        });
+        if (hints) {
+          roomPhotoHintsSystemBlock = formatPlannerPhotoHintsForSystemInstruction(hints);
+          roomPhotoHintsTranscriptAppendix =
+            formatPlannerPhotoHintsForTranscriptAppendix(hints);
+          roomPhotoHintsSummaryForActivity = roomPhotoHintsTranscriptAppendix.slice(0, 6000);
+        }
+      } catch (e) {
+        console.warn("[project-assistant] room photo hints extraction skipped:", e);
+      }
+    }
+
     /**
      * True when a concept sketch is plausibly generated after this reply.
      * Must count re-sent `sketchReferenceImages` (not only `images` this turn), otherwise
@@ -661,6 +706,9 @@ export async function POST(request: Request) {
             hasCallWindow: intakeHasCallWindow,
             firstRenderCheckMode,
             northStarReadyForPhotoPrompt,
+            ...(roomPhotoHintsSystemBlock.trim()
+              ? { roomPhotoHintsBlock: roomPhotoHintsSystemBlock }
+              : {}),
           })}\n\n${buildConversationMemoryHint(messages)}`,
           contents,
         });
@@ -798,10 +846,17 @@ export async function POST(request: Request) {
             .slice(-24_000)
         : "";
 
-      const specTranscript =
+      const specTranscriptCore =
         plannerHarvestFullExtract && cappedFullHarvestTranscript.length > 0
           ? cappedFullHarvestTranscript
           : extractionWindowTranscript;
+      const photoHintsAppendix = roomPhotoHintsTranscriptAppendix.trim();
+      const specTranscript =
+        photoHintsAppendix.length > 0
+          ? `${specTranscriptCore}\n\n--- Latest uploaded space photo(s): vision hints for extraction (not field measurements; confirm in chat) ---\n${photoHintsAppendix}`.slice(
+              -26_000,
+            )
+          : specTranscriptCore;
 
       const hasUserProvidedPhoto =
         combinedConceptReferenceParts.length > 0 || imageFiles.length > 0;
@@ -859,6 +914,14 @@ export async function POST(request: Request) {
             ? cappedFullHarvestTranscript
             : extractionWindowTranscript;
 
+        const photoHintsAppendixHarvest = roomPhotoHintsTranscriptAppendix.trim();
+        const harvestExtractionTranscript =
+          photoHintsAppendixHarvest.length > 0
+            ? `${harvestSourceTranscript}\n\n--- Latest uploaded space photo(s): vision hints for extraction (not field measurements; confirm in chat) ---\n${photoHintsAppendixHarvest}`.slice(
+                -26_000,
+              )
+            : harvestSourceTranscript;
+
         const correctedSpec = mergePlannerFixtureCounts(
           rawSpec ? applyFullCarpenterPipeline(rawSpec, specTranscript) : emptyPlannerVisualSpec(),
           specTranscript,
@@ -867,7 +930,7 @@ export async function POST(request: Request) {
         const northStarGoalSummary = buildNorthStarGoalSummaryFromMessages(messages);
         const effectiveWorkCategory = resolveEffectiveWorkCategoryForHarvest({
           northStarHomeownerOnly: deriveNorthStarLabelsFromUserText(allUserText).workCategory,
-          extractionTranscript: harvestSourceTranscript,
+          extractionTranscript: harvestExtractionTranscript,
           designCategory: correctedSpec.designCategory ?? null,
         });
 
@@ -888,11 +951,11 @@ export async function POST(request: Request) {
             : "first-render";
 
         let harvest = harvestPlannerImageContextFromTranscript({
-          extractionTranscript: harvestSourceTranscript,
+          extractionTranscript: harvestExtractionTranscript,
           baseSpec: correctedSpec,
         });
         harvest = applyHarvestSafetyCategoryFallbacks(harvest, effectiveWorkCategory, {
-          transcriptForDimFallback: harvestSourceTranscript,
+          transcriptForDimFallback: harvestExtractionTranscript,
         });
         logHarvestAssumptions("harvest", harvest.assumptionsLogged);
 
@@ -1213,6 +1276,9 @@ ${structuralAbCore}`
               (refinementBaseFile ? 1 : 0) +
               responseImages.length,
             ...(conceptImages.length ? { conceptImages } : {}),
+            ...(roomPhotoHintsSummaryForActivity?.trim()
+              ? { photoHintsSummary: roomPhotoHintsSummaryForActivity.trim() }
+              : {}),
           },
           { blueprintPng: blueprintPngForAdminLog },
         );

@@ -69,6 +69,8 @@ export type AiPlannerActivity = {
   imageCount: number;
   /** Concept visuals the planner attached this turn (for admin CRM). */
   conceptImages?: Array<{ mimeType: string; dataUrl: string }>;
+  /** Soft vision cues from this turn’s space photo(s) — not tape-measured. */
+  photoHintsSummary?: string;
 };
 
 /** Structural blueprint PNG captured when used for ControlNet (admin CRM). */
@@ -264,6 +266,11 @@ function parseAiActivity(value: Prisma.JsonValue): AiPlannerActivity[] {
       typeof replyFullRaw === "string" && replyFullRaw.trim()
         ? replyFullRaw.trim().slice(0, 24_000)
         : undefined;
+    const photoHintsRaw = row.photoHintsSummary;
+    const photoHintsSummary =
+      typeof photoHintsRaw === "string" && photoHintsRaw.trim()
+        ? photoHintsRaw.trim().slice(0, 6000)
+        : undefined;
 
     out.push({
       id,
@@ -275,6 +282,7 @@ function parseAiActivity(value: Prisma.JsonValue): AiPlannerActivity[] {
       ...(conceptImages?.length ? { conceptImages } : {}),
       ...(promptFull ? { promptFull } : {}),
       ...(replyFull ? { replyFull } : {}),
+      ...(photoHintsSummary ? { photoHintsSummary } : {}),
     });
   }
   return out;
