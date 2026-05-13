@@ -753,6 +753,7 @@ export async function POST(request: Request) {
     ];
 
     let cleanReply = cleanReplyRaw;
+    let blueprintPngForAdminLog: Buffer | null = null;
 
     if (allowConceptImage && responseImages.length === 0) {
       if (hasAnyPriorRender && refinementBaseParts.length === 0) {
@@ -1005,6 +1006,7 @@ export async function POST(request: Request) {
               .png()
               .toBuffer();
             blueprintPngBuffer = png;
+            blueprintPngForAdminLog = png;
             blueprintReferenceParts = [
               {
                 inline_data: {
@@ -1197,17 +1199,23 @@ ${structuralAbCore}`
           }
         }
         const conceptImages = conceptImagesForAdminCrm(responseImages);
-        await appendAiPlannerActivity(portalSession.userId, {
-          promptPreview: lastUserText.slice(0, 280) || "(photo)",
-          replyPreview: cleanReply.slice(0, 480),
-          intakeSummary: `phase:${phase};turns:${messages.length}`,
-          imageCount:
-            imageFiles.length +
-            sketchReferenceFiles.length +
-            (refinementBaseFile ? 1 : 0) +
-            responseImages.length,
-          ...(conceptImages.length ? { conceptImages } : {}),
-        });
+        await appendAiPlannerActivity(
+          portalSession.userId,
+          {
+            promptPreview: lastUserText.slice(0, 280) || "(photo)",
+            replyPreview: cleanReply.slice(0, 480),
+            promptFull: lastUserText.slice(0, 16_000),
+            replyFull: cleanReply.slice(0, 24_000),
+            intakeSummary: `phase:${phase};turns:${messages.length}`,
+            imageCount:
+              imageFiles.length +
+              sketchReferenceFiles.length +
+              (refinementBaseFile ? 1 : 0) +
+              responseImages.length,
+            ...(conceptImages.length ? { conceptImages } : {}),
+          },
+          { blueprintPng: blueprintPngForAdminLog },
+        );
       } catch {
         /* Activity logging must not break planner responses */
       }

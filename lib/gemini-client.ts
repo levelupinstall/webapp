@@ -854,3 +854,50 @@ ${params.userGoal.slice(0, 4000)}${structuralBlock}`;
 
   return extractParts(result.json);
 }
+
+/**
+ * Vision check: is the candidate interior photo essentially the same shot as the reference?
+ * Used for ambiguous near-duplicate space uploads (CRM / portal dedupe).
+ */
+export async function geminiConfirmDuplicateSpacePhoto(params: {
+  candidateJpegBase64: string;
+  referenceJpegBase64: string;
+}): Promise<boolean | null> {
+  if (!isGeminiConfigured()) return null;
+  const model = defaultGeminiTextModel();
+  const res = await geminiGenerateContent({
+    model,
+    systemInstruction:
+      "You compare two interior photos. Decide if they show the same scene and framing (re-upload / duplicate), not merely the same room from a different angle. Reply with exactly one word: DUPLICATE or DISTINCT.",
+    contents: [
+      {
+        role: "user",
+        parts: [
+          {
+            text: "Image 1 is the reference. Image 2 is the new upload. Are they duplicates (same photo or trivial re-crop/re-save)?",
+          },
+          {
+            inline_data: {
+              mime_type: "image/jpeg",
+              data: params.referenceJpegBase64,
+            },
+          },
+          {
+            inline_data: {
+              mime_type: "image/jpeg",
+              data: params.candidateJpegBase64,
+            },
+          },
+        ],
+      },
+    ],
+    generationConfig: { maxOutputTokens: 16, temperature: 0.1 },
+    retryTransientErrors: true,
+  });
+  if (!res.ok) return null;
+  const { text } = extractParts(res.json);
+  const t = text.trim().toUpperCase();
+  if (t.includes("DUPLICATE")) return true;
+  if (t.includes("DISTINCT")) return false;
+  return null;
+}

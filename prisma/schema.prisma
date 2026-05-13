@@ -32,6 +32,10 @@ model PortalUser {
   carpenterUploads  Json @default("[]") @map("carpenter_uploads")
   spacePhotos       Json @default("[]") @map("space_photos")
   aiPlannerActivity Json @default("[]") @map("ai_planner_activity")
+  /// Admin CRM: rolling AI digest of planner goals (text).
+  aiPlannerCrmSummary   String @default("") @map("ai_planner_crm_summary") @db.Text
+  /// Admin CRM: blueprint PNGs used for ControlNet renders (JSON array).
+  aiPlannerBlueprintLog Json @default("[]") @map("ai_planner_blueprint_log")
   portalAnalytics   Json @default("{}") @map("portal_analytics")
   communicationLog  Json @default("[]") @map("communication_log")
   /// Formal job proposals (draft → sent → accepted); JSON array of WorkProposal records.

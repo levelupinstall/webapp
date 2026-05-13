@@ -11,16 +11,10 @@ import {
 import { useRouter } from "next/navigation";
 import { JobCompletionSocialPanel } from "./job-completion-social-panel";
 import { WorkProposalsCrm, type WorkProposalRow } from "./work-proposals-crm";
-
-type AiPlannerActivity = {
-  id: string;
-  createdAt: string;
-  promptPreview: string;
-  replyPreview: string;
-  intakeSummary: string;
-  imageCount: number;
-  conceptImages?: Array<{ mimeType: string; dataUrl: string }>;
-};
+import type {
+  AiPlannerActivity,
+  AiPlannerBlueprintSnapshot,
+} from "@/lib/client-portal-store";
 
 type PortalClient = {
   id: string;
@@ -48,6 +42,10 @@ type PortalClient = {
     uploadedAt: string;
   }[];
   aiPlannerActivity: AiPlannerActivity[];
+  /** Admin CRM digest (Gemini) of planner goals. */
+  aiPlannerCrmSummary?: string;
+  /** Blueprint PNGs used for ControlNet renders. */
+  aiPlannerBlueprintLog?: AiPlannerBlueprintSnapshot[];
   lastLoginAt?: string | null;
   portalAnalytics?: {
     savedProjectsSectionOpens: number;
@@ -440,17 +438,10 @@ export default function AdminDashboard() {
   const [deleteClientBusyId, setDeleteClientBusyId] = useState<string | null>(null);
   const [portalDeleteConfirmClient, setPortalDeleteConfirmClient] =
     useState<PortalClient | null>(null);
+  const [plannerActivityLogClient, setPlannerActivityLogClient] = useState<PortalClient | null>(
+    null,
+  );
   const [expandedJobId, setExpandedJobId] = useState<string | null>(null);
-  const [balanceInvoiceDraft, setBalanceInvoiceDraft] = useState({
-    title: "",
-    dollars: "",
-    notes: "",
-  });
-  const [balanceInvoiceFlash, setBalanceInvoiceFlash] = useState<{
-    type: "ok" | "err";
-    message: string;
-  } | null>(null);
-  const [balanceInvoiceSubmitting, setBalanceInvoiceSubmitting] = useState(false);
 
   const [commLogDraft, setCommLogDraft] = useState<{
     channel: "email" | "sms" | "app_notice";
@@ -553,53 +544,11 @@ export default function AdminDashboard() {
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
-      setBalanceInvoiceDraft({ title: "", dollars: "", notes: "" });
-      setBalanceInvoiceFlash(null);
-    }, 0);
-    return () => window.clearTimeout(timer);
-  }, [expandedClientId]);
-
-  useEffect(() => {
-    const timer = window.setTimeout(() => {
       setCommLogDraft({ channel: "email", summary: "", detail: "" });
       setCommLogFlash(null);
     }, 0);
     return () => window.clearTimeout(timer);
   }, [expandedClientId]);
-
-  async function submitBalanceInvoice(clientId: string) {
-    setBalanceInvoiceFlash(null);
-    setBalanceInvoiceSubmitting(true);
-    try {
-      const res = await fetch("/api/admin/portal-balance-invoice", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          portalUserId: clientId,
-          projectName: balanceInvoiceDraft.title.trim() || "Project balance",
-          amountDollars: balanceInvoiceDraft.dollars,
-          lineItemsSummary: balanceInvoiceDraft.notes.trim() || undefined,
-        }),
-      });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        setBalanceInvoiceFlash({
-          type: "err",
-          message: typeof data.error === "string" ? data.error : "Could not create invoice.",
-        });
-        return;
-      }
-      setBalanceInvoiceDraft({ title: "", dollars: "", notes: "" });
-      setBalanceInvoiceFlash({
-        type: "ok",
-        message:
-          "Balance invoice created. The customer pays from Client Portal → Invoices (Stripe Checkout).",
-      });
-      await refreshOverview();
-    } finally {
-      setBalanceInvoiceSubmitting(false);
-    }
-  }
 
   async function submitPortalCommunication(clientId: string) {
     const summary = commLogDraft.summary.trim();
@@ -2541,76 +2490,7 @@ export default function AdminDashboard() {
 
                     <div className="rounded-lg border border-zinc-700 bg-zinc-950/50 p-4">
                       <h4 className="text-xs font-semibold uppercase text-zinc-500">
-                        Phase 2 billing — balance invoice (Stripe)
-                      </h4>
-                      <p className="mt-1 text-xs text-zinc-500">
-                        Creates a <span className="text-zinc-300">due</span> invoice. The customer sees
-                        it in their portal with <span className="text-zinc-300">Pay with Stripe</span>.
-                        Payment finalizes automatically via webhook (
-                        <code className="rounded bg-zinc-900 px-1 text-[10px]">checkout.session.completed</code>
-                        ).
-                      </p>
-                      <div className="mt-3 grid gap-3 sm:grid-cols-2">
-                        <label className="block text-xs text-zinc-500">
-                          Invoice title
-                          <input
-                            value={balanceInvoiceDraft.title}
-                            onChange={(e) =>
-                              setBalanceInvoiceDraft((d) => ({ ...d, title: e.target.value }))
-                            }
-                            placeholder="e.g. Mudroom built-in — labour & materials"
-                            className="mt-1 w-full rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2 text-sm text-white"
-                          />
-                        </label>
-                        <label className="block text-xs text-zinc-500">
-                          Amount (CAD)
-                          <input
-                            type="number"
-                            min={0.01}
-                            step={0.01}
-                            value={balanceInvoiceDraft.dollars}
-                            onChange={(e) =>
-                              setBalanceInvoiceDraft((d) => ({ ...d, dollars: e.target.value }))
-                            }
-                            placeholder="2500.00"
-                            className="mt-1 w-full rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2 text-sm text-white"
-                          />
-                        </label>
-                        <label className="block text-xs text-zinc-500 sm:col-span-2">
-                          Scope / line items (shown to customer &amp; on PDF)
-                          <textarea
-                            rows={3}
-                            value={balanceInvoiceDraft.notes}
-                            onChange={(e) =>
-                              setBalanceInvoiceDraft((d) => ({ ...d, notes: e.target.value }))
-                            }
-                            placeholder="Labour 12h @ $75… Materials: MDF, hardware…"
-                            className="mt-1 w-full rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2 text-sm text-white"
-                          />
-                        </label>
-                      </div>
-                      <button
-                        type="button"
-                        disabled={balanceInvoiceSubmitting}
-                        onClick={() => void submitBalanceInvoice(c.id)}
-                        className="mt-3 rounded-lg bg-violet-600 px-4 py-2 text-xs font-medium text-white hover:bg-violet-500 disabled:opacity-50"
-                      >
-                        {balanceInvoiceSubmitting ? "Creating…" : "Create balance invoice"}
-                      </button>
-                      {balanceInvoiceFlash ? (
-                        <p
-                          className={`mt-2 text-xs ${
-                            balanceInvoiceFlash.type === "ok" ? "text-emerald-400" : "text-rose-400"
-                          }`}
-                        >
-                          {balanceInvoiceFlash.message}
-                        </p>
-                      ) : null}
-                    </div>
-
-                    <div>
-                      <h4 className="text-xs font-semibold uppercase text-zinc-500">
-                        AI planner activity
+                        AI planner (CRM)
                       </h4>
                       {c.aiPlannerActivity.length === 0 ? (
                         <p className="mt-2 text-sm text-zinc-600">
@@ -2618,46 +2498,105 @@ export default function AdminDashboard() {
                           signed in).
                         </p>
                       ) : (
-                        <ul className="mt-3 space-y-3">
-                          {c.aiPlannerActivity.map((row) => (
-                            <li
-                              key={row.id}
-                              className="rounded-lg border border-zinc-800 bg-zinc-950/60 p-3 text-sm"
-                            >
-                              <p className="text-xs text-zinc-500">
-                                {new Date(row.createdAt).toLocaleString()} · {row.imageCount} image
-                                {row.imageCount === 1 ? "" : "s"}
+                        <div className="mt-3 space-y-4">
+                          <div className="grid gap-4 lg:grid-cols-2">
+                            <div>
+                              <h5 className="text-[11px] font-semibold uppercase tracking-wide text-violet-400">
+                                Customer goals digest
+                              </h5>
+                              <p className="mt-1 text-xs text-zinc-500">
+                                Summarized from planner chat for quick rep review. Open the full log
+                                for every prompt and reply verbatim.
                               </p>
-                              <p className="mt-2 text-zinc-300">
-                                <span className="text-zinc-500">Prompt:</span> {row.promptPreview}
-                              </p>
-                              <p className="mt-2 text-zinc-400">
-                                <span className="text-zinc-500">Reply:</span> {row.replyPreview}
-                              </p>
-                              {row.conceptImages && row.conceptImages.length > 0 ? (
-                                <div className="mt-3">
-                                  <p className="text-xs font-medium uppercase tracking-wide text-zinc-500">
-                                    AI concept visuals (this turn)
-                                  </p>
-                                  <div className="mt-2 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
-                                    {row.conceptImages.map((img, idx) => (
-                                      // eslint-disable-next-line @next/next/no-img-element -- admin CRM data URLs from planner archive
-                                      <img
-                                        key={`${row.id}-viz-${idx}`}
-                                        src={img.dataUrl}
-                                        alt={`Concept ${idx + 1}`}
-                                        className="max-h-52 w-full rounded-lg border border-zinc-700 bg-black/20 object-contain"
-                                      />
-                                    ))}
+                              <div className="mt-2 max-h-72 overflow-y-auto rounded-lg border border-zinc-800 bg-black/25 p-3 text-sm leading-relaxed text-zinc-200">
+                                {(c.aiPlannerCrmSummary ?? "").trim() ? (
+                                  <div className="whitespace-pre-wrap">
+                                    {c.aiPlannerCrmSummary}
                                   </div>
-                                </div>
-                              ) : null}
-                              <pre className="mt-2 whitespace-pre-wrap text-xs text-zinc-600">
-                                {row.intakeSummary}
-                              </pre>
-                            </li>
-                          ))}
-                        </ul>
+                                ) : (
+                                  <span className="text-zinc-500">
+                                    No digest yet — it fills in after planner activity when Gemini is
+                                    configured on the server.
+                                  </span>
+                                )}
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() => setPlannerActivityLogClient(c)}
+                                className="mt-3 rounded-lg border border-zinc-600 bg-zinc-900 px-3 py-2 text-xs font-medium text-zinc-200 hover:border-violet-500/60 hover:text-white"
+                              >
+                                View full prompt &amp; reply log…
+                              </button>
+                            </div>
+                            <div>
+                              <h5 className="text-[11px] font-semibold uppercase tracking-wide text-violet-400">
+                                Structural blueprints (render inputs)
+                              </h5>
+                              <p className="mt-1 text-xs text-zinc-500">
+                                Line-drawing PNGs fed to the image pipeline (ControlNet) when a
+                                render runs.
+                              </p>
+                              {(c.aiPlannerBlueprintLog ?? []).length === 0 ? (
+                                <p className="mt-3 text-sm text-zinc-600">None captured yet.</p>
+                              ) : (
+                                <ul className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-3">
+                                  {(c.aiPlannerBlueprintLog ?? []).map((bp) => (
+                                    <li
+                                      key={bp.id}
+                                      className="overflow-hidden rounded-lg border border-zinc-800 bg-black/40"
+                                    >
+                                      <button
+                                        type="button"
+                                        onClick={() =>
+                                          setClientMediaPreview({
+                                            type: "image",
+                                            url: bp.dataUrl,
+                                            caption: `Blueprint · ${new Date(bp.createdAt).toLocaleString()}`,
+                                          })
+                                        }
+                                        className="block w-full text-left"
+                                      >
+                                        {/* eslint-disable-next-line @next/next/no-img-element -- admin CRM data URLs */}
+                                        <img
+                                          src={bp.dataUrl}
+                                          alt="Blueprint"
+                                          className="h-28 w-full object-contain bg-black/50"
+                                        />
+                                        <span className="block border-t border-zinc-800 px-2 py-1 text-[10px] text-zinc-500">
+                                          {new Date(bp.createdAt).toLocaleString()}
+                                        </span>
+                                      </button>
+                                    </li>
+                                  ))}
+                                </ul>
+                              )}
+                            </div>
+                          </div>
+                          {c.aiPlannerActivity[0]?.conceptImages &&
+                          c.aiPlannerActivity[0]!.conceptImages!.length > 0 ? (
+                            <div>
+                              <p className="text-[11px] font-semibold uppercase tracking-wide text-zinc-500">
+                                Latest AI concept (most recent turn)
+                              </p>
+                              <div className="mt-2 flex flex-wrap gap-2">
+                                {c.aiPlannerActivity[0]!.conceptImages!.map((img, idx) => (
+                                  // eslint-disable-next-line @next/next/no-img-element -- admin CRM data URLs
+                                  <img
+                                    key={`latest-viz-${idx}`}
+                                    src={img.dataUrl}
+                                    alt={`Concept ${idx + 1}`}
+                                    className="h-24 max-w-[12rem] rounded-lg border border-zinc-700 object-contain"
+                                  />
+                                ))}
+                              </div>
+                            </div>
+                          ) : null}
+                          <p className="text-xs text-zinc-600">
+                            {c.aiPlannerActivity.length} logged planner turn
+                            {c.aiPlannerActivity.length === 1 ? "" : "s"} — space uploads use
+                            duplicate detection (perceptual hash + optional AI in borderline cases).
+                          </p>
+                        </div>
                       )}
                     </div>
 
@@ -2938,6 +2877,79 @@ export default function AdminDashboard() {
         </div>
       ) : null}
 
+      {plannerActivityLogClient ? (
+        <div className="fixed inset-0 z-[28] flex items-end justify-center bg-black/70 p-4 sm:items-center">
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="planner-log-title"
+            className="flex max-h-[90vh] w-full max-w-3xl flex-col overflow-hidden rounded-2xl border border-zinc-800 bg-zinc-900 shadow-2xl"
+          >
+            <div className="flex shrink-0 items-start justify-between border-b border-zinc-800 px-5 py-4">
+              <div>
+                <h2 id="planner-log-title" className="text-lg font-semibold text-white">
+                  Full planner log
+                </h2>
+                <p className="mt-1 text-xs text-zinc-500">
+                  {plannerActivityLogClient.fullName || plannerActivityLogClient.username} ·{" "}
+                  {plannerActivityLogClient.email}
+                </p>
+              </div>
+              <button
+                type="button"
+                className="rounded-lg px-3 py-1.5 text-sm text-zinc-400 hover:bg-zinc-800 hover:text-white"
+                onClick={() => setPlannerActivityLogClient(null)}
+              >
+                Close
+              </button>
+            </div>
+            <div className="min-h-0 flex-1 space-y-6 overflow-y-auto px-5 py-4">
+              {[...plannerActivityLogClient.aiPlannerActivity].reverse().map((row) => (
+                <article
+                  key={row.id}
+                  className="rounded-lg border border-zinc-800 bg-zinc-950/60 p-4 text-sm"
+                >
+                  <p className="text-xs text-zinc-500">
+                    {new Date(row.createdAt).toLocaleString()} · {row.imageCount} image
+                    {row.imageCount === 1 ? "" : "s"} sent · {row.intakeSummary}
+                  </p>
+                  <h3 className="mt-3 text-[11px] font-semibold uppercase tracking-wide text-zinc-400">
+                    Homeowner
+                  </h3>
+                  <pre className="mt-1 max-h-48 overflow-y-auto whitespace-pre-wrap rounded-md bg-black/30 p-2 text-zinc-200">
+                    {row.promptFull ?? row.promptPreview}
+                  </pre>
+                  <h3 className="mt-3 text-[11px] font-semibold uppercase tracking-wide text-zinc-400">
+                    Assistant
+                  </h3>
+                  <pre className="mt-1 max-h-56 overflow-y-auto whitespace-pre-wrap rounded-md bg-black/30 p-2 text-zinc-300">
+                    {row.replyFull ?? row.replyPreview}
+                  </pre>
+                  {row.conceptImages && row.conceptImages.length > 0 ? (
+                    <div className="mt-3">
+                      <p className="text-[11px] font-semibold uppercase text-zinc-500">
+                        Concept images (this turn)
+                      </p>
+                      <div className="mt-2 flex flex-wrap gap-2">
+                        {row.conceptImages.map((img, idx) => (
+                          // eslint-disable-next-line @next/next/no-img-element -- admin CRM data URLs
+                          <img
+                            key={`${row.id}-log-viz-${idx}`}
+                            src={img.dataUrl}
+                            alt={`Concept ${idx + 1}`}
+                            className="max-h-40 rounded-lg border border-zinc-700 object-contain"
+                          />
+                        ))}
+                      </div>
+                    </div>
+                  ) : null}
+                </article>
+              ))}
+            </div>
+          </div>
+        </div>
+      ) : null}
+
       {portalDeleteConfirmClient ? (
         <div className="fixed inset-0 z-[30] flex items-end justify-center bg-black/70 p-4 sm:items-center">
           <div
@@ -2965,7 +2977,7 @@ export default function AdminDashboard() {
               <li>Portal login and password are erased (database row deleted).</li>
               <li>
                 All portal data goes with it: ideas, photos, invoices shown in the portal, AI planner
-                activity, communication log.
+                activity, CRM digest, blueprint archive, communication log.
               </li>
               <li>
                 CRM booking rows tied only to this login may be removed; carpenter jobs stay, unlinked

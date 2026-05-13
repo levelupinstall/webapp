@@ -2,10 +2,18 @@ import type { PortalUser as PortalUserRow } from "@prisma/client";
 import { Prisma } from "@prisma/client";
 import { randomBytes, randomInt, randomUUID } from "crypto";
 import bcrypt from "bcryptjs";
+import sharp from "sharp";
 
 import { unlinkPortalUserFromAllCarpenterJobs } from "@/lib/carpenter-store";
 import { hashPasswordResetToken } from "@/lib/password-reset-token";
+import { geminiConfirmDuplicateSpacePhoto } from "@/lib/gemini-client";
 import { prisma } from "@/lib/prisma";
+import { recomputeAiPlannerCrmSummary } from "@/lib/planner-crm-summary";
+import {
+  decodeDataUrl,
+  findClosestImageHammingDistance,
+  findDuplicateSpacePhotoIndex,
+} from "@/lib/space-photo-dedupe";
 
 export type Idea = {
   id: string;
@@ -53,10 +61,23 @@ export type AiPlannerActivity = {
   createdAt: string;
   promptPreview: string;
   replyPreview: string;
+  /** Full last user message (admin transcript modal). */
+  promptFull?: string;
+  /** Full assistant reply for the turn (admin transcript modal). */
+  replyFull?: string;
   intakeSummary: string;
   imageCount: number;
   /** Concept visuals the planner attached this turn (for admin CRM). */
   conceptImages?: Array<{ mimeType: string; dataUrl: string }>;
+};
+
+/** Structural blueprint PNG captured when used for ControlNet (admin CRM). */
+export type AiPlannerBlueprintSnapshot = {
+  id: string;
+  createdAt: string;
+  dataUrl: string;
+  /** Links to `AiPlannerActivity.id` when logged from the planner API. */
+  activityId?: string;
 };
 
 export type WorkProposalStatus =
@@ -147,6 +168,10 @@ type UserRecord = {
   carpenterUploads: CarpenterUpload[];
   spacePhotos: CarpenterUpload[];
   aiPlannerActivity: AiPlannerActivity[];
+  /** Admin CRM: Gemini digest of planner goals (markdown). */
+  aiPlannerCrmSummary: string;
+  /** Admin CRM: blueprint PNGs used for renders. */
+  aiPlannerBlueprintLog: AiPlannerBlueprintSnapshot[];
   lastLoginAt?: string;
   portalAnalytics: PortalAnalytics;
   communicationLog: ClientCommunicationEntry[];
@@ -229,6 +254,17 @@ function parseAiActivity(value: Prisma.JsonValue): AiPlannerActivity[] {
       if (imgs.length) conceptImages = imgs;
     }
 
+    const promptFullRaw = row.promptFull;
+    const promptFull =
+      typeof promptFullRaw === "string" && promptFullRaw.trim()
+        ? promptFullRaw.trim().slice(0, 16_000)
+        : undefined;
+    const replyFullRaw = row.replyFull;
+    const replyFull =
+      typeof replyFullRaw === "string" && replyFullRaw.trim()
+        ? replyFullRaw.trim().slice(0, 24_000)
+        : undefined;
+
     out.push({
       id,
       createdAt: String(row.createdAt ?? new Date().toISOString()),
@@ -237,9 +273,32 @@ function parseAiActivity(value: Prisma.JsonValue): AiPlannerActivity[] {
       intakeSummary: String(row.intakeSummary ?? ""),
       imageCount: Math.max(0, Math.floor(Number(row.imageCount ?? 0)) || 0),
       ...(conceptImages?.length ? { conceptImages } : {}),
+      ...(promptFull ? { promptFull } : {}),
+      ...(replyFull ? { replyFull } : {}),
     });
   }
   return out;
+}
+
+function parseBlueprintLog(value: Prisma.JsonValue): AiPlannerBlueprintSnapshot[] {
+  if (!Array.isArray(value)) return [];
+  const list = value as unknown as Record<string, unknown>[];
+  const out: AiPlannerBlueprintSnapshot[] = [];
+  for (const row of list) {
+    if (!row || typeof row !== "object") continue;
+    const id = String(row.id ?? "").trim();
+    const dataUrl = String(row.dataUrl ?? "");
+    if (!id || !dataUrl.startsWith("data:image/") || dataUrl.length > 4_000_000) continue;
+    out.push({
+      id,
+      createdAt: String(row.createdAt ?? new Date().toISOString()),
+      dataUrl,
+      ...(typeof row.activityId === "string" && row.activityId.trim()
+        ? { activityId: row.activityId.trim() }
+        : {}),
+    });
+  }
+  return out.slice(0, 60);
 }
 
 function parseCommunicationLog(value: Prisma.JsonValue): ClientCommunicationEntry[] {
@@ -387,6 +446,9 @@ function rowToUserRecord(row: PortalUserRow): UserRecord {
     carpenterUploads: parseUploads(row.carpenterUploads),
     spacePhotos: parseUploads(row.spacePhotos),
     aiPlannerActivity: parseAiActivity(row.aiPlannerActivity),
+    aiPlannerCrmSummary:
+      typeof row.aiPlannerCrmSummary === "string" ? row.aiPlannerCrmSummary : "",
+    aiPlannerBlueprintLog: parseBlueprintLog(row.aiPlannerBlueprintLog),
     lastLoginAt: row.lastLoginAt?.toISOString(),
     portalAnalytics: parsePortalAnalytics(row.portalAnalytics),
     communicationLog: parseCommunicationLog(row.communicationLog),
@@ -404,6 +466,8 @@ function hydrateUser(user: UserRecord): UserRecord {
     carpenterUploads: user.carpenterUploads ?? [],
     spacePhotos: user.spacePhotos ?? [],
     aiPlannerActivity: user.aiPlannerActivity ?? [],
+    aiPlannerCrmSummary: user.aiPlannerCrmSummary ?? "",
+    aiPlannerBlueprintLog: user.aiPlannerBlueprintLog ?? [],
     invoices: user.invoices ?? [],
     portalAnalytics: user.portalAnalytics ?? {
       savedProjectsSectionOpens: 0,
@@ -424,6 +488,8 @@ async function persistJsonSnapshots(
     | "carpenterUploads"
     | "spacePhotos"
     | "aiPlannerActivity"
+    | "aiPlannerCrmSummary"
+    | "aiPlannerBlueprintLog"
     | "portalAnalytics"
     | "communicationLog"
     | "workProposals"
@@ -891,11 +957,58 @@ export async function addIdeaForUser(
 export async function addClientSpacePhoto(
   userId: string,
   params: { type: "image" | "video"; url: string; caption: string },
-) {
+): Promise<CarpenterUpload | null> {
   const row = await prisma.portalUser.findUnique({ where: { id: userId } });
   if (!row) throw new Error("User not found.");
 
   const user = rowToUserRecord(row);
+  const existing = user.spacePhotos ?? [];
+
+  if (params.type === "video") {
+    if (existing.some((e) => e.type === "video" && e.url === params.url)) {
+      return null;
+    }
+  } else {
+    if (existing.some((e) => e.type === "image" && e.url === params.url)) {
+      return null;
+    }
+    const dupIdx = await findDuplicateSpacePhotoIndex(existing, params.url, "image", {
+      maxHamming: 10,
+    });
+    if (dupIdx !== null) {
+      return null;
+    }
+    const closest = await findClosestImageHammingDistance(existing, params.url);
+    if (closest && closest.distance >= 11 && closest.distance <= 14) {
+      const ref = existing[closest.index];
+      if (ref?.type === "image") {
+        const refDecoded = decodeDataUrl(ref.url);
+        const candDecoded = decodeDataUrl(params.url);
+        if (refDecoded && candDecoded) {
+          try {
+            const refJpeg = await sharp(refDecoded.buffer)
+              .rotate()
+              .resize({ width: 512, height: 512, fit: "inside" })
+              .jpeg({ quality: 82 })
+              .toBuffer();
+            const candJpeg = await sharp(candDecoded.buffer)
+              .rotate()
+              .resize({ width: 512, height: 512, fit: "inside" })
+              .jpeg({ quality: 82 })
+              .toBuffer();
+            const aiDup = await geminiConfirmDuplicateSpacePhoto({
+              referenceJpegBase64: refJpeg.toString("base64"),
+              candidateJpegBase64: candJpeg.toString("base64"),
+            });
+            if (aiDup === true) return null;
+          } catch {
+            /* fall through — save upload if resize/Gemini fails */
+          }
+        }
+      }
+    }
+  }
+
   const upload: CarpenterUpload = {
     id: randomUUID(),
     type: params.type,
@@ -998,10 +1111,53 @@ export async function getUserPortalData(userId: string) {
   };
 }
 
+async function refreshPlannerCrmSummaryBackground(userId: string): Promise<void> {
+  const maxAttempts = 4;
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    const row = await prisma.portalUser.findUnique({ where: { id: userId } });
+    if (!row) return;
+    const user = rowToUserRecord(row);
+    const headId = user.aiPlannerActivity[0]?.id ?? "__none__";
+    const previousSummary = user.aiPlannerCrmSummary ?? "";
+    const turns = user.aiPlannerActivity.slice(0, 28).map((t) => ({
+      createdAt: t.createdAt,
+      prompt: (t.promptFull ?? t.promptPreview).trim(),
+      reply: (t.replyFull ?? t.replyPreview).trim(),
+    }));
+
+    let next: string | null = null;
+    try {
+      next = await recomputeAiPlannerCrmSummary({
+        previousSummary,
+        turnsNewestFirst: turns,
+      });
+    } catch (e) {
+      console.warn("[client-portal-store] CRM summary recompute failed:", e);
+      return;
+    }
+    if (!next?.trim()) return;
+    const text = next.trim().slice(0, 24_000);
+
+    const row2 = await prisma.portalUser.findUnique({ where: { id: userId } });
+    if (!row2) return;
+    const user2 = rowToUserRecord(row2);
+    const head2 = user2.aiPlannerActivity[0]?.id ?? "__none__";
+    if (head2 === headId) {
+      await prisma.portalUser.update({
+        where: { id: userId },
+        data: { aiPlannerCrmSummary: text },
+      });
+      return;
+    }
+    /* New planner activity arrived while Gemini was running — retry with fresher turns. */
+  }
+}
+
 export async function appendAiPlannerActivity(
   userId: string,
   entry: Omit<AiPlannerActivity, "id" | "createdAt">,
-) {
+  opts?: { blueprintPng?: Buffer | null },
+): Promise<AiPlannerActivity | null> {
   const row = await prisma.portalUser.findUnique({ where: { id: userId } });
   if (!row) return null;
 
@@ -1012,9 +1168,33 @@ export async function appendAiPlannerActivity(
     ...entry,
   };
   user.aiPlannerActivity.unshift(activity);
+
+  let blueprintLog = [...(user.aiPlannerBlueprintLog ?? [])];
+  const bp = opts?.blueprintPng;
+  if (bp && bp.length > 0 && bp.length < 4_000_000) {
+    const dataUrl = `data:image/png;base64,${bp.toString("base64")}`;
+    const last = blueprintLog[0];
+    if (!last || last.dataUrl !== dataUrl) {
+      blueprintLog.unshift({
+        id: randomUUID(),
+        createdAt: activity.createdAt,
+        dataUrl,
+        activityId: activity.id,
+      });
+      blueprintLog = blueprintLog.slice(0, 40);
+    }
+  }
+
   await persistJsonSnapshots(row.id, {
     aiPlannerActivity: user.aiPlannerActivity as unknown as Prisma.InputJsonValue,
+    aiPlannerBlueprintLog: blueprintLog as unknown as Prisma.InputJsonValue,
+    aiPlannerCrmSummary: user.aiPlannerCrmSummary ?? "",
   });
+
+  void refreshPlannerCrmSummaryBackground(userId).catch((err) => {
+    console.warn("[client-portal-store] Background CRM summary refresh failed:", err);
+  });
+
   return activity;
 }
 
@@ -1312,6 +1492,8 @@ export async function listPortalUsersForAdmin() {
       carpenterUploads: user.carpenterUploads || [],
       spacePhotos: user.spacePhotos || [],
       aiPlannerActivity: user.aiPlannerActivity || [],
+      aiPlannerCrmSummary: user.aiPlannerCrmSummary ?? "",
+      aiPlannerBlueprintLog: user.aiPlannerBlueprintLog ?? [],
       lastLoginAt: user.lastLoginAt ?? null,
       portalAnalytics: user.portalAnalytics ?? {
         savedProjectsSectionOpens: 0,

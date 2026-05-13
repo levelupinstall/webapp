@@ -33,7 +33,7 @@ export async function POST(request: Request) {
       url,
       caption: body.caption ?? "",
     });
-    return NextResponse.json({ upload });
+    return NextResponse.json({ upload, skippedDuplicate: upload == null });
   } catch {
     return NextResponse.json({ error: "Could not save upload." }, { status: 400 });
   }
