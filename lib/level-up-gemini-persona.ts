@@ -27,7 +27,18 @@ Function over form. Short optional caption may describe **layout and trim charac
 
 Grounded, expert, and efficient. No fluff. Speak as a helpful assistant who understands the practicalities of a job site and the importance of a clean finish.`;
 
-/** Extra instructions when the model must output a concept image (Nano Banana / flash-image). */
+/** Compact system block for concept image generation (not Alex chat). */
+export const LEVEL_UP_IMAGE_RENDER_SYSTEM = `You generate ONE photorealistic finish-carpentry concept image for Level Up Install.
+
+Rules:
+- Realistic, buildable work only — ordinary tools and joinery; no fantasy architecture.
+- Generic neutral finishes — no retailer logos, price tags, SKUs, or store signage.
+- Obey exact fixture counts and dimensions given in the request — never add extra shelves, drawers, or modules to fill space.
+- When a previous concept image is attached as the last reference, treat it as the baseline: edit ONLY what the homeowner asked to change; keep shelf count, spacing, style, and room identical otherwise.
+- When room photos are attached, match that real space (walls, trim, proportions); do not substitute a generic room.
+- Optional short caption: layout and trim character only — no shopping list or prices.`;
+
+/** Extra instructions when the model must output a concept image (legacy full block; prefer LEVEL_UP_IMAGE_RENDER_SYSTEM). */
 export const LEVEL_UP_IMAGE_GENERATION_SUFFIX = `
 Produce ONE concept image plus short caption text if helpful. The image must:
 - Depict only realistic, buildable finish carpentry using ordinary tools and joinery.
@@ -40,4 +51,12 @@ Produce ONE concept image plus short caption text if helpful. The image must:
 - When reference photos of the homeowner's actual space are supplied with the request, treat them as the spatial anchor: interpret layout, openings, ceiling height cues, and proportions from those photos; each revised concept should apply the stated feedback while staying consistent with that real room, not a generic stand-in space.
 - When **no** reference photos are supplied, render the concept in a **neutral blank studio room** (simple walls/floor, no identifiable real home): a clear vignette so they can judge proportions and style only—not their literal space.
 - When the same request includes a **MANDATORY — structural blueprint** section naming **Image A** (room) and **Image B** (schematic), the schematic defines **wall-plane layout geometry** (shelf lines, modules, trim runs). Treat that schematic as **binding** for that geometry; use the room photo for perspective and surfaces only — do not invent a different shelf or trim layout than the schematic.
+`;
+
+/** Refinement-only addendum (paired with LEVEL_UP_IMAGE_RENDER_SYSTEM). */
+export const LEVEL_UP_IMAGE_REFINEMENT_SUFFIX = `
+REFINEMENT MODE:
+- The LAST attached image is the prior concept render — copy it except for the single change requested.
+- Do NOT re-layout the room, change shelf count, shelf length, or style unless the homeowner explicitly asked.
+- Removing furniture or props (e.g. a table) should leave shelves and wall treatment unchanged from the baseline image.
 `;

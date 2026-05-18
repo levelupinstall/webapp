@@ -1046,3 +1046,96 @@ export function buildExtractedVisualDirective(
 
   return segments.join(" ");
 }
+
+export type ImageRenderDirectiveMode = "first-render" | "refinement-delta";
+
+/**
+ * Image-model directive — compact for refinement; focused scale for first render (no chat persona).
+ */
+export function buildImageRenderDirective(
+  spec: PlannerVisualSpec,
+  ctx: ExtractedDirectiveScaleContext,
+  mode: ImageRenderDirectiveMode,
+): string {
+  const bucket = inferDesignCategoryBucket(
+    `${spec.designCategory ?? ""} ${ctx.extractionTranscript}`,
+  );
+  const isCloset = ctx.isCloset || bucket === "closet";
+
+  const layoutLines: string[] = [];
+  const dimParts: string[] = [];
+  if (spec.width !== null) dimParts.push(`${spec.width}" W`);
+  if (spec.height !== null) dimParts.push(`${spec.height}" H`);
+  if (spec.depth !== null) dimParts.push(`${spec.depth}" D`);
+  if (dimParts.length > 0) {
+    layoutLines.push(`Envelope: ${dimParts.join(" × ")}.`);
+  }
+  if (spec.style) layoutLines.push(`Style: ${spec.style}.`);
+  if (spec.designCategory) layoutLines.push(`Category: ${spec.designCategory}.`);
+  if (spec.shelfCount !== null) {
+    layoutLines.push(`Exactly ${spec.shelfCount} visible shelf board(s) — no more, no fewer.`);
+  }
+  if (spec.shelfBoardSpanAlongWallIn !== null) {
+    layoutLines.push(`Each shelf board ≈ ${spec.shelfBoardSpanAlongWallIn}" long along the wall.`);
+  }
+  if (spec.shelfVerticalSpacingIn !== null) {
+    layoutLines.push(`≈ ${spec.shelfVerticalSpacingIn}" vertical spacing between shelf tiers.`);
+  }
+  if (spec.scopeNotes?.trim()) {
+    layoutLines.push(`Scope: ${spec.scopeNotes.trim().slice(0, 500)}.`);
+  }
+
+  if (mode === "refinement-delta") {
+    return [
+      "LOCK (preserve from baseline unless homeowner explicitly asked to change):",
+      layoutLines.join(" "),
+      "Match reference room photo proportions when space photos are attached.",
+      "Do not add closet rods, hangers, or extra fixtures unless listed above.",
+    ]
+      .filter(Boolean)
+      .join("\n");
+  }
+
+  const scaleParts: string[] = [];
+  if (ctx.hasUserProvidedPhoto) {
+    scaleParts.push(
+      "Match ceiling line, trim, and wall proportions from the attached room photo(s).",
+    );
+  }
+  if (isCloset) {
+    scaleParts.push(
+      buildAdaptiveScaleInjection({
+        hasUserProvidedPhoto: ctx.hasUserProvidedPhoto,
+        isCloset: true,
+        ceilingHeightFeet: extractCeilingHeightFeetFromTranscript(ctx.extractionTranscript),
+        categoryBucket: "closet",
+      }),
+    );
+  } else if (bucket === "tv_wall" || bucket === "trim_millwork") {
+    scaleParts.push(
+      buildAdaptiveScaleInjection({
+        hasUserProvidedPhoto: ctx.hasUserProvidedPhoto,
+        isCloset: false,
+        ceilingHeightFeet: extractCeilingHeightFeetFromTranscript(ctx.extractionTranscript),
+        categoryBucket: bucket,
+      }),
+    );
+  } else if (bucket === "shelving_builtin") {
+    scaleParts.push(
+      "Use a standard interior door frame (~80\" leaf) in view when possible for vertical scale.",
+    );
+    if (ctx.hasUserProvidedPhoto) {
+      scaleParts.push(
+        "Keep outlet and baseboard scale believable relative to the photo — do not stretch the room taller.",
+      );
+    }
+  }
+
+  return [
+    layoutLines.join(" "),
+    scaleParts.join(" "),
+    "Photorealistic; no wide-angle distortion; generic unbranded materials only.",
+  ]
+    .filter(Boolean)
+    .join("\n");
+}

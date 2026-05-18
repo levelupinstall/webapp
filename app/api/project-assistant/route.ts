@@ -35,8 +35,9 @@ import {
 import {
   applyFullCarpenterPipeline,
   buildAdaptiveScaleInjection,
-  buildExtractedVisualDirective,
+  buildImageRenderDirective,
   emptyPlannerVisualSpec,
+  type ImageRenderDirectiveMode,
   extractCeilingHeightFeetFromTranscript,
   inferDesignCategoryBucket,
   mergePlannerFixtureCounts,
@@ -597,13 +598,15 @@ export async function POST(request: Request) {
       conceptReferenceParts = [...portalSpacePhotoParts];
     }
     /**
-     * Default image order when no structural blueprint: refinement baseline first, then space photos.
-     * When a blueprint PNG is attached, order becomes room → blueprint → baseline (see `structuralGuideDirective`).
+     * Refinement: room/space photos first, prior concept render LAST (matches harvest + image prompt text).
+     * First render: space photos only (no baseline yet).
      */
-    const combinedConceptReferenceParts = [
-      ...refinementBaseParts,
-      ...conceptReferenceParts,
-    ];
+    const refinementWithBaseline =
+      (sketchRoundsDelivered > 0 || priorTurnHadConceptImage) &&
+      refinementBaseParts.length > 0;
+    const combinedConceptReferenceParts = refinementWithBaseline
+      ? [...conceptReferenceParts, ...refinementBaseParts]
+      : [...conceptReferenceParts];
 
     let roomPhotoHintsTranscriptAppendix = "";
     let roomPhotoHintsSystemBlock = "";
@@ -861,6 +864,10 @@ export async function POST(request: Request) {
       let basePrompt = `${transcriptRecent}\n\n${PLANNER_ASSISTANT_NAME} reply:\n${cleanReply.slice(0, 6000)}${exploratoryNote}`;
       let baseGoal =
         lastUserText.slice(0, 4000) || cleanReply.slice(0, 1200);
+      let conceptImageVisualMode: ImageRenderDirectiveMode =
+        hasAnyPriorRender && refinementBaseParts.length > 0
+          ? "refinement-delta"
+          : "first-render";
 
       if (!plannerHarvestV1) {
         if (rawSpec) {
@@ -869,11 +876,15 @@ export async function POST(request: Request) {
             specTranscript,
           );
           conceptRenderSpec = corrected;
-          extractedVisualDirective = buildExtractedVisualDirective(corrected, {
-            hasUserProvidedPhoto,
-            isCloset: isClosetScope,
-            extractionTranscript: specTranscript,
-          });
+          extractedVisualDirective = buildImageRenderDirective(
+            corrected,
+            {
+              hasUserProvidedPhoto,
+              isCloset: isClosetScope,
+              extractionTranscript: specTranscript,
+            },
+            conceptImageVisualMode,
+          );
         }
       } else {
         const harvestSourceTranscript =
@@ -916,6 +927,7 @@ export async function POST(request: Request) {
           hasAnyPriorRender && useHarvestPipeline
             ? "refinement-delta"
             : "first-render";
+        conceptImageVisualMode = visualMode;
 
         let harvest = harvestPlannerImageContextFromTranscript({
           extractionTranscript: harvestExtractionTranscript,
@@ -927,11 +939,15 @@ export async function POST(request: Request) {
         logHarvestAssumptions("harvest", harvest.assumptionsLogged);
 
         conceptRenderSpec = harvest.spec;
-        extractedVisualDirective = buildExtractedVisualDirective(harvest.spec, {
-          hasUserProvidedPhoto,
-          isCloset: isClosetScope,
-          extractionTranscript: specTranscript,
-        });
+        extractedVisualDirective = buildImageRenderDirective(
+          harvest.spec,
+          {
+            hasUserProvidedPhoto,
+            isCloset: isClosetScope,
+            extractionTranscript: specTranscript,
+          },
+          visualMode,
+        );
 
         if (useHarvestPipeline) {
           const bundle = buildHarvestConceptPromptBundle({
@@ -944,7 +960,11 @@ export async function POST(request: Request) {
             visualMode,
             refinementBaselineAttachmentPosition: hasRefinementBaseline ? "last" : "first",
           });
-          basePrompt = `${bundle.promptContext}\n\n--- Conversation excerpt ---\n\n${transcriptRecent}\n\n${PLANNER_ASSISTANT_NAME} reply:\n${cleanReply.slice(0, 6000)}${exploratoryNote}`;
+          if (visualMode === "refinement-delta") {
+            basePrompt = bundle.promptContext;
+          } else {
+            basePrompt = `${bundle.promptContext}${exploratoryNote}`;
+          }
           baseGoal = bundle.userGoal;
         }
       }
@@ -1003,6 +1023,7 @@ export async function POST(request: Request) {
           promptContext: basePrompt,
           userGoal: userGoalAug,
           extractedVisualDirective,
+          visualMode: conceptImageVisualMode,
         });
 
         const visual = await geminiGenerateConceptImage({
@@ -1010,6 +1031,7 @@ export async function POST(request: Request) {
           userGoal: userGoalAug,
           referenceImageParts: conceptReferenceForRender,
           extractedVisualDirective,
+          visualMode: conceptImageVisualMode,
         });
 
         conceptRenderAudit = {

@@ -222,6 +222,72 @@ export function buildNorthStarGoalSummaryFromMessages(
 
 export type HarvestPromptVisualMode = "first-render" | "refinement-delta";
 
+/** One-line layout spec for image prompts (first render or locked on refinement). */
+export function formatCompactLayoutSpec(harvest: HarvestedPlannerImageContext): string {
+  const fc = harvest.spec;
+  const w = harvest.phase2WidthIn;
+  const d = harvest.phase2DepthIn;
+  const style = harvest.phase1Style ?? "as discussed";
+  const parts: string[] = [];
+
+  if (fc.designCategory) parts.push(fc.designCategory);
+  else parts.push("finish carpentry concept");
+
+  parts.push(`${style} style`);
+
+  if (fc.shelfCount !== null) {
+    const floating =
+      /float/i.test(`${fc.designCategory ?? ""} ${harvest.phase4ScopeSummary ?? ""}`);
+    parts.push(
+      `${fc.shelfCount} ${floating ? "floating " : ""}shelf${fc.shelfCount === 1 ? "" : "ves"}`,
+    );
+  }
+
+  const dims: string[] = [];
+  if (fc.shelfBoardSpanAlongWallIn !== null) dims.push(`${fc.shelfBoardSpanAlongWallIn}" long`);
+  if (d !== null) dims.push(`${d}" deep`);
+  if (w !== null && fc.shelfBoardSpanAlongWallIn === null) dims.push(`${w}" wall width`);
+  if (dims.length) parts.push(`each ${dims.join(", ")}`);
+
+  if (fc.shelfVerticalSpacingIn !== null) {
+    parts.push(`${fc.shelfVerticalSpacingIn}" vertical spacing between tiers`);
+  }
+
+  const scopeBlob = `${harvest.spec.scopeNotes ?? ""} ${harvest.phase4ScopeSummary ?? ""}`;
+  const clockBelow = /(\d+)\s*(?:'|′|ft|feet|in(?:ch(?:es)?)?)?\s*(?:under|below)\s+(?:the\s+)?clock/i.exec(
+    scopeBlob,
+  );
+  if (clockBelow?.[1]) {
+    parts.push(`top shelf ${clockBelow[1]}" below the clock`);
+  }
+
+  return parts.join("; ");
+}
+
+/** Delta instruction from the latest homeowner message (refinement). */
+export function formatRefinementChangeRequest(lastUserFeedback: string): string {
+  const t = lastUserFeedback.trim();
+  if (!t) return "Apply the latest homeowner feedback to the baseline concept image only.";
+
+  const removeMatch =
+    /remov(?:e|ing|al)?\s+(?:the\s+)?(.+?)(?:\.|$)/i.exec(t) ||
+    /take\s+out\s+(?:the\s+)?(.+?)(?:\.|$)/i.exec(t);
+  if (removeMatch?.[1]) {
+    const subject = removeMatch[1].trim().slice(0, 200);
+    return `CHANGE ONLY: Remove ${subject} from the scene. Keep all shelves, counts, spacing, and styling identical to the baseline concept image.`;
+  }
+
+  if (/float/i.test(t) && /shelf|shelves/i.test(t)) {
+    return "CHANGE ONLY: Ensure shelves read as floating shelves (no visible side panels or bracket clutter) — keep count, spacing, and dimensions identical to the baseline unless stated otherwise.";
+  }
+
+  if (/add\s+(?:an?\s+)?extra|another|\d+\s*shelf/i.test(t) && /not|only|just/i.test(t)) {
+    return "CHANGE ONLY: Do not add shelves — preserve the exact shelf count from the baseline concept image.";
+  }
+
+  return `CHANGE ONLY (homeowner request): ${t.slice(0, 800)}. Preserve everything else from the baseline concept image.`;
+}
+
 function carpentryEnvelopeFallbackByCategory(
   workCategory: string | null,
 ): { width: number; height: number; depth: number } | null {
@@ -376,91 +442,80 @@ export function buildHarvestConceptPromptBundle(params: {
     harvest.phase4ScopeSummary?.trim() ||
     "honor final scope only as stated in the conversation";
 
-  const northStarBlock =
-    northStarGoalSummary.trim().length > 0
-      ? `Project North Star / homeowner goals (full thread; preserve intent):\n${northStarGoalSummary.slice(0, 2200)}`
-      : "";
+  const layoutLine = formatCompactLayoutSpec(harvest);
+  const isCloset =
+    transcriptSuggestsCloset(
+      `${harvest.spec.designCategory ?? ""} ${harvest.phase4ScopeSummary ?? ""}`,
+    );
 
   let userGoal: string;
 
   if (visualMode === "refinement-delta") {
-    const baseline = hasRefinementBaselineImage
+    const baselineNote = hasRefinementBaselineImage
       ? refinementBaselineAttachmentPosition === "last"
-        ? "REFINEMENT — DELTA UPDATE: The **last** attached reference image is the previous planner concept rendering — treat it as the baseline. Apply ONLY the changes implied by the homeowner's latest feedback and the assistant reply. Keep room architecture, wall color, materials, trim character, and overall layout identical to that baseline unless the user explicitly asked to change them. Treat the built-in / closet / TV / mirror / moulding as a **rigid assembly** for moves: translate vertically or horizontally as a whole — do not stretch, squash, or re-center the composition for aesthetics."
-        : "REFINEMENT — DELTA UPDATE: The FIRST attached image is the previous planner concept rendering — treat it as the baseline. Apply ONLY the changes implied by the homeowner's latest feedback and the assistant reply. Keep room architecture, wall color, materials, trim character, and overall layout identical to that baseline unless the user explicitly asked to change them. Treat the built-in / closet / TV / mirror / moulding as a **rigid assembly** for moves: translate vertically or horizontally as a whole — do not stretch, squash, or re-center the composition for aesthetics."
-      : "REFINEMENT — No baseline concept image was attached; infer carefully from space references and transcript.";
+        ? "The LAST attached image is the prior concept render — edit that image only."
+        : "The FIRST attached image is the prior concept render — edit that image only."
+      : "No prior concept image attached — match room photos and locked layout below.";
 
     const spaceNote = hasUploadedSpacePhoto
-      ? refinementBaselineAttachmentPosition === "last"
-        ? "Room / space photos are attached **before** the baseline; they are **Image A** per the structural blueprint instructions in the main prompt — match that real space. Use the baseline sketch only for what changed since that render."
-        : "Additional reference image(s) after the baseline show the real space — use for proportion and trim alignment when editing."
+      ? "Earlier attached images are the real room (proportion/trim only) — do not redesign shelves from scratch."
       : "";
 
     userGoal = [
-      baseline,
+      baselineNote,
       spaceNote,
-      northStarBlock,
-      `Incorporate the ${style} aesthetic with ${material} finishes (carry North Star forward).`,
-      `Respect envelope ${dimTriple} where applicable; ${obstruction}; scope: ${scope}.`,
-      "Include standard clothing hangers on a rod where closet/storage context applies, and a standard ~6 ft tall interior door frame or doorway in the background where believable to anchor 1:1 human scale.",
-      `Latest homeowner feedback: ${lastUserFeedback.slice(0, 1200)}`,
-      `Assistant reply (what to implement): ${assistantReplySummary.slice(0, 800)}`,
+      `LOCKED LAYOUT: ${layoutLine}`,
+      formatRefinementChangeRequest(lastUserFeedback),
     ]
       .filter(Boolean)
       .join("\n\n");
   } else {
     const photoLead = hasUploadedSpacePhoto
-      ? "Based on the uploaded photo of the user's actual space, match the room's actual walls, ceiling line, and flooring — preserve openings and proportions visible in that photo."
-      : "Limited or no space photo in this request — use realistic residential scale and transcript cues.";
+      ? "Anchor to the attached room photo(s): real walls, ceiling, trim, and proportions."
+      : "Neutral blank studio room if no space photo — illustrative proportions only.";
 
     userGoal = [
-      northStarBlock,
       photoLead,
-      `Incorporate the ${style} aesthetic with ${material} finishes.`,
-      `Strictly adhere to the envelope ${dimTriple} and ensure ${obstruction} where applicable; reflect scope: ${scope}.`,
-      "Include standard clothing hangers on a rod where closet/storage context applies, and a standard ~6 ft tall interior door frame or doorway in the background where believable to anchor 1:1 human scale.",
-      `Design intent from the latest assistant reply: ${assistantReplySummary.slice(0, 800)}`,
+      `Render: ${layoutLine}.`,
+      `Style: ${style}; finishes: ${material}.`,
+      obstruction !== "avoid conflicting with visible outlets, vents, and trim unless the transcript calls out a specific change"
+        ? `Site: ${obstruction.slice(0, 400)}.`
+        : null,
+      scope !== "honor final scope only as stated in the conversation"
+        ? `Scope: ${scope.slice(0, 400)}.`
+        : null,
+      isCloset
+        ? "Include believable closet rod/hanger scale only if this is closet storage."
+        : null,
     ]
       .filter(Boolean)
       .join("\n\n");
   }
 
-  const fc = harvest.spec;
-  const hasFixtureCounts =
-    fc.shelfCount !== null || fc.drawerCount !== null || fc.closetRodCount !== null;
-  const hasSpacing = fc.shelfVerticalSpacingIn !== null;
-  const hasShelfSpan = fc.shelfBoardSpanAlongWallIn !== null;
-  if (hasFixtureCounts || hasSpacing || hasShelfSpan) {
-    const parts: string[] = [];
-    if (fc.shelfCount !== null) parts.push(`${fc.shelfCount} shelf(es)`);
-    if (fc.drawerCount !== null) parts.push(`${fc.drawerCount} drawer(s)`);
-    if (fc.closetRodCount !== null) parts.push(`${fc.closetRodCount} hanging rod(s)`);
-    if (fc.shelfVerticalSpacingIn !== null) {
-      parts.push(`~${fc.shelfVerticalSpacingIn}" vertical spacing between shelf tiers`);
-    }
-    if (fc.shelfBoardSpanAlongWallIn !== null) {
-      parts.push(`each shelf board ≤${fc.shelfBoardSpanAlongWallIn}" along the wall (not full-wall span)`);
-    }
-    userGoal = `${userGoal}\n\nReinforce exact layout numbers in the render: ${parts.join(", ")} — match counts and stated spacing for every countable element (including counts spelled out in scope notes); no extras to fill space.`;
-  }
-
-  const promptContext = [
-    "## Harvested intake (all phases)",
-    `Mode: ${visualMode}`,
-    `Phase 1 — Style: ${harvest.phase1Style ?? "—"}`,
-    `Phase 2 — W×H×D (in): ${w ?? "—"} × ${h ?? "—"} × ${d ?? "—"}; material: ${harvest.phase2Material ?? "—"}`,
-    `Phase 3 — Vision / site: ${harvest.phase3VisionSummary ?? "—"}`,
-    `Phase 4 — Scope adds/removals: ${harvest.phase4ScopeSummary ?? "—"}`,
-    harvest.spec.scopeNotes ? `Scope notes: ${harvest.spec.scopeNotes}` : "",
-    harvest.spec.shelfVerticalSpacingIn !== null
-      ? `Stated shelf tier spacing: ${harvest.spec.shelfVerticalSpacingIn}" (vertical)`
-      : "",
-    harvest.spec.shelfBoardSpanAlongWallIn !== null
-      ? `Stated max shelf board span (along wall): ${harvest.spec.shelfBoardSpanAlongWallIn}"`
-      : "",
-  ]
-    .filter(Boolean)
-    .join("\n");
+  const promptContext =
+    visualMode === "refinement-delta"
+      ? [
+          `Refinement · ${harvest.phase1Style ?? "style as baseline"}`,
+          `Layout lock: ${layoutLine}`,
+          harvest.phase3VisionSummary
+            ? `Room cues: ${harvest.phase3VisionSummary.slice(0, 280)}`
+            : "",
+        ]
+          .filter(Boolean)
+          .join("\n")
+      : [
+          `First concept render`,
+          `Style: ${harvest.phase1Style ?? "—"}`,
+          `Dimensions: ${w ?? "—"} × ${h ?? "—"} × ${d ?? "—"} in (W×H×D)`,
+          harvest.phase3VisionSummary
+            ? `Site: ${harvest.phase3VisionSummary.slice(0, 320)}`
+            : "",
+          harvest.phase4ScopeSummary
+            ? `Scope: ${harvest.phase4ScopeSummary.slice(0, 320)}`
+            : "",
+        ]
+          .filter(Boolean)
+          .join("\n");
 
   return { promptContext, userGoal };
 }

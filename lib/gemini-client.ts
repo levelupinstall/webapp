@@ -1,7 +1,8 @@
 import {
-  LEVEL_UP_IMAGE_GENERATION_SUFFIX,
-  LEVEL_UP_LEAD_COORDINATOR_PROMPT,
+  LEVEL_UP_IMAGE_REFINEMENT_SUFFIX,
+  LEVEL_UP_IMAGE_RENDER_SYSTEM,
 } from "@/lib/level-up-gemini-persona";
+import type { ImageRenderDirectiveMode } from "@/lib/planner-visual-spec";
 import {
   normalizeVisualSpec,
   parseBooleanLoose,
@@ -787,14 +788,16 @@ export function buildGeminiConceptImagePromptText(params: {
   userGoal: string;
   extractedVisualDirective?: string;
   structuralGuideDirective?: string;
+  visualMode?: ImageRenderDirectiveMode;
 }): { imageModel: string; fullPromptText: string } {
   const imageModel = defaultGeminiImageModel();
+  const isRefinement = params.visualMode === "refinement-delta";
 
   const extractionBlock = params.extractedVisualDirective?.trim()
     ? `
 
 ---
-Extracted parameters & mandatory rendering scale (follow strictly; generic finishes only):
+Layout & scale (${isRefinement ? "refinement lock" : "first render"}):
 ${params.extractedVisualDirective.trim()}
 `
     : "";
@@ -803,20 +806,20 @@ ${params.extractedVisualDirective.trim()}
     ? `
 
 ---
-MANDATORY — structural reference (read before drawing; images may follow this text):
+Structural reference:
 ${params.structuralGuideDirective.trim()}
 `
     : "";
 
-  const fullPrompt = `${LEVEL_UP_LEAD_COORDINATOR_PROMPT}
+  const modeSuffix = isRefinement ? `\n\n${LEVEL_UP_IMAGE_REFINEMENT_SUFFIX}` : "";
 
-${LEVEL_UP_IMAGE_GENERATION_SUFFIX}
+  const fullPrompt = `${LEVEL_UP_IMAGE_RENDER_SYSTEM}${modeSuffix}
 
-Project / homeowner context:
-${params.promptContext.slice(0, 12000)}${extractionBlock}
+Context:
+${params.promptContext.slice(0, isRefinement ? 4000 : 8000)}${extractionBlock}
 
-Specific visualization request:
-${params.userGoal.slice(0, 4000)}${structuralBlock}`;
+Visualization request:
+${params.userGoal.slice(0, isRefinement ? 2500 : 5000)}${structuralBlock}`;
 
   return {
     imageModel,
@@ -837,6 +840,7 @@ export async function geminiGenerateConceptImage(params: {
    * Optional structural reference block (legacy; planner no longer attaches blueprint images).
    */
   structuralGuideDirective?: string;
+  visualMode?: ImageRenderDirectiveMode;
 }): Promise<GeminiGenerateResult | { error: string }> {
   const model = defaultGeminiImageModel();
   const { fullPromptText: fullPrompt } = buildGeminiConceptImagePromptText({
@@ -844,6 +848,7 @@ export async function geminiGenerateConceptImage(params: {
     userGoal: params.userGoal,
     extractedVisualDirective: params.extractedVisualDirective,
     structuralGuideDirective: params.structuralGuideDirective,
+    visualMode: params.visualMode,
   });
 
   const parts: ContentPart[] = [
