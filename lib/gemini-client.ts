@@ -781,21 +781,14 @@ ${hints ? `\n${hints}` : ""}`;
   return extractParts(result.json);
 }
 
-/** Image-capable model: TEXT + IMAGE modalities. */
-export async function geminiGenerateConceptImage(params: {
+/** Builds the exact text block sent to the image model (for admin CRM audit). */
+export function buildGeminiConceptImagePromptText(params: {
   promptContext: string;
-  /** Short user-facing goal line */
   userGoal: string;
-  /** Space photos from the homeowner — improves sketch grounding when present. */
-  referenceImageParts?: ContentPart[];
-  /** Post-extraction directive: dimensions, materials, scale injection (image model only). */
   extractedVisualDirective?: string;
-  /**
-   * Structural blueprint block: images are attached **after** this text in the order described in the directive.
-   */
   structuralGuideDirective?: string;
-}): Promise<GeminiGenerateResult | { error: string }> {
-  const model = defaultGeminiImageModel();
+}): { imageModel: string; fullPromptText: string } {
+  const imageModel = defaultGeminiImageModel();
 
   const extractionBlock = params.extractedVisualDirective?.trim()
     ? `
@@ -810,10 +803,8 @@ ${params.extractedVisualDirective.trim()}
     ? `
 
 ---
-MANDATORY — structural blueprint (read **last** before drawing; images are attached **immediately after** this entire text, in the order described below):
+MANDATORY — structural reference (read before drawing; images may follow this text):
 ${params.structuralGuideDirective.trim()}
-
-**Precedence:** Image B (black field, white linework) is the **authority** for **what** appears on the install wall (shelf tiers, divisions, closet rods/drawers blocks, trim bands, openings) and **where** each element sits on that **elevation**. Image A is the **authority** for **perspective**, architecture, and finishes of the real room. Project the geometry from B onto the wall plane visible in A. If conversation text, harvest notes, or extracted counts **conflict** with Image B about **placement or element count on the wall**, **Image B wins**. Do not substitute a “prettier” or more symmetric layout than B.
 `
     : "";
 
@@ -826,6 +817,34 @@ ${params.promptContext.slice(0, 12000)}${extractionBlock}
 
 Specific visualization request:
 ${params.userGoal.slice(0, 4000)}${structuralBlock}`;
+
+  return {
+    imageModel,
+    fullPromptText: fullPrompt.slice(0, 24_000),
+  };
+}
+
+/** Image-capable model: TEXT + IMAGE modalities. */
+export async function geminiGenerateConceptImage(params: {
+  promptContext: string;
+  /** Short user-facing goal line */
+  userGoal: string;
+  /** Space photos from the homeowner — improves sketch grounding when present. */
+  referenceImageParts?: ContentPart[];
+  /** Post-extraction directive: dimensions, materials, scale injection (image model only). */
+  extractedVisualDirective?: string;
+  /**
+   * Optional structural reference block (legacy; planner no longer attaches blueprint images).
+   */
+  structuralGuideDirective?: string;
+}): Promise<GeminiGenerateResult | { error: string }> {
+  const model = defaultGeminiImageModel();
+  const { fullPromptText: fullPrompt } = buildGeminiConceptImagePromptText({
+    promptContext: params.promptContext,
+    userGoal: params.userGoal,
+    extractedVisualDirective: params.extractedVisualDirective,
+    structuralGuideDirective: params.structuralGuideDirective,
+  });
 
   const parts: ContentPart[] = [
     { text: fullPrompt },

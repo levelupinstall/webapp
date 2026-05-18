@@ -386,6 +386,90 @@ function SignupLocationReadout(props: { log: unknown }): ReactNode {
   );
 }
 
+function PlannerLatestRenderPanel({
+  activity,
+  onPreviewImage,
+}: {
+  activity: AiPlannerActivity[];
+  onPreviewImage: (url: string, caption: string) => void;
+}) {
+  const latestRender = activity.find(
+    (a) => a.conceptRenderAudit || (a.conceptImages && a.conceptImages.length > 0),
+  );
+  const audit = latestRender?.conceptRenderAudit;
+  const imgs = latestRender?.conceptImages ?? [];
+
+  return (
+    <>
+      <h5 className="text-[11px] font-semibold uppercase tracking-wide text-violet-400">
+        Latest Gemini concept render
+      </h5>
+      <p className="mt-1 text-xs text-zinc-500">
+        Homeowner message and exact prompt text sent to the image model on the most recent render
+        attempt.
+      </p>
+      {!latestRender ? (
+        <p className="mt-3 text-sm text-zinc-600">No concept render logged yet.</p>
+      ) : (
+        <div className="mt-3 space-y-3">
+          <p className="text-[10px] text-zinc-500">
+            {new Date(latestRender.createdAt).toLocaleString()}
+            {audit?.imageModel ? ` · ${audit.imageModel}` : ""}
+            {audit?.renderError ? (
+              <span className="text-amber-400"> · render failed</span>
+            ) : null}
+          </p>
+          {imgs.length > 0 ? (
+            <div className="flex flex-wrap gap-2">
+              {imgs.map((img, idx) => (
+                <button
+                  key={`latest-viz-${idx}`}
+                  type="button"
+                  onClick={() =>
+                    onPreviewImage(
+                      img.dataUrl,
+                      `Concept · ${new Date(latestRender.createdAt).toLocaleString()}`,
+                    )
+                  }
+                  className="rounded-lg border border-zinc-700 hover:border-violet-500/60"
+                >
+                  {/* eslint-disable-next-line @next/next/no-img-element -- admin CRM data URLs */}
+                  <img
+                    src={img.dataUrl}
+                    alt={`Concept ${idx + 1}`}
+                    className="h-28 max-w-[14rem] rounded-lg object-contain bg-black/40"
+                  />
+                </button>
+              ))}
+            </div>
+          ) : null}
+          <div>
+            <p className="text-[10px] font-semibold uppercase text-zinc-500">Homeowner prompt</p>
+            <pre className="mt-1 max-h-24 overflow-y-auto whitespace-pre-wrap rounded-md bg-black/30 p-2 text-xs text-zinc-200">
+              {audit?.homeownerPrompt ??
+                latestRender.promptFull ??
+                latestRender.promptPreview}
+            </pre>
+          </div>
+          {audit?.renderPromptText ? (
+            <details className="rounded-md border border-zinc-800 bg-black/20">
+              <summary className="cursor-pointer px-2 py-1.5 text-[10px] font-semibold uppercase text-violet-300">
+                Gemini render prompt (full text)
+              </summary>
+              <pre className="max-h-64 overflow-y-auto whitespace-pre-wrap border-t border-zinc-800 p-2 text-[11px] leading-relaxed text-zinc-300">
+                {audit.renderPromptText}
+              </pre>
+            </details>
+          ) : null}
+          {audit?.renderError ? (
+            <p className="text-xs text-amber-300/90">{audit.renderError}</p>
+          ) : null}
+        </div>
+      )}
+    </>
+  );
+}
+
 export default function AdminDashboard() {
   const router = useRouter();
   const [checkingAuth, setCheckingAuth] = useState(true);
@@ -2257,11 +2341,11 @@ export default function AdminDashboard() {
                   <div className="border-t border-zinc-800 px-4 py-4 space-y-4">
                     <div className="rounded-lg border border-violet-900/40 bg-zinc-950/60 p-4">
                       <h4 className="text-xs font-semibold uppercase text-violet-300">
-                        AI planner, blueprints &amp; customer uploads
+                        AI planner &amp; customer uploads
                       </h4>
                       <p className="mt-1 text-xs text-zinc-500">
-                        Goals digest, structural drawings used for renders, and photos or videos the
-                        customer uploaded from the planner or portal.
+                        Goals digest, latest Gemini concept render (with prompt audit), and space
+                        photos or videos from the planner or portal.
                       </p>
 
                       {c.aiPlannerActivity.length === 0 ? (
@@ -2280,7 +2364,7 @@ export default function AdminDashboard() {
                                 Summarized from planner chat for quick rep review. Open the full log
                                 for every prompt and reply verbatim.
                               </p>
-                              <div className="mt-2 max-h-72 overflow-y-auto rounded-lg border border-zinc-800 bg-black/25 p-3 text-sm leading-relaxed text-zinc-200">
+                              <div className="mt-2 max-h-96 overflow-y-auto rounded-lg border border-zinc-800 bg-black/25 p-3 text-sm leading-relaxed text-zinc-200">
                                 {(c.aiPlannerCrmSummary ?? "").trim() ? (
                                   <div className="whitespace-pre-wrap">{c.aiPlannerCrmSummary}</div>
                                 ) : (
@@ -2299,67 +2383,48 @@ export default function AdminDashboard() {
                               </button>
                             </div>
                             <div>
-                              <h5 className="text-[11px] font-semibold uppercase tracking-wide text-violet-400">
-                                Structural blueprints (render inputs)
-                              </h5>
-                              <p className="mt-1 text-xs text-zinc-500">
-                                Line-drawing PNGs fed to the image pipeline (ControlNet) when a
-                                render runs.
-                              </p>
-                              {(c.aiPlannerBlueprintLog ?? []).length === 0 ? (
-                                <p className="mt-3 text-sm text-zinc-600">None captured yet.</p>
-                              ) : (
-                                <ul className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-3">
-                                  {(c.aiPlannerBlueprintLog ?? []).map((bp) => (
-                                    <li
-                                      key={bp.id}
-                                      className="overflow-hidden rounded-lg border border-zinc-800 bg-black/40"
-                                    >
-                                      <button
-                                        type="button"
-                                        onClick={() =>
-                                          setClientMediaPreview({
-                                            type: "image",
-                                            url: bp.dataUrl,
-                                            caption: `Blueprint · ${new Date(bp.createdAt).toLocaleString()}`,
-                                          })
-                                        }
-                                        className="block w-full text-left"
-                                      >
-                                        {/* eslint-disable-next-line @next/next/no-img-element -- admin CRM data URLs */}
-                                        <img
-                                          src={bp.dataUrl}
-                                          alt="Blueprint"
-                                          className="h-28 w-full bg-black/50 object-contain"
-                                        />
-                                        <span className="block border-t border-zinc-800 px-2 py-1 text-[10px] text-zinc-500">
-                                          {new Date(bp.createdAt).toLocaleString()}
-                                        </span>
-                                      </button>
-                                    </li>
-                                  ))}
-                                </ul>
-                              )}
+                              <PlannerLatestRenderPanel
+                                activity={c.aiPlannerActivity}
+                                onPreviewImage={(url, caption) =>
+                                  setClientMediaPreview({
+                                    type: "image",
+                                    url,
+                                    caption,
+                                  })
+                                }
+                              />
                             </div>
                           </div>
-                          {c.aiPlannerActivity[0]?.conceptImages &&
-                          c.aiPlannerActivity[0]!.conceptImages!.length > 0 ? (
-                            <div>
-                              <p className="text-[11px] font-semibold uppercase tracking-wide text-zinc-500">
-                                Latest AI concept (most recent turn)
-                              </p>
-                              <div className="mt-2 flex flex-wrap gap-2">
-                                {c.aiPlannerActivity[0]!.conceptImages!.map((img, idx) => (
-                                  // eslint-disable-next-line @next/next/no-img-element -- admin CRM data URLs
-                                  <img
-                                    key={`latest-viz-${idx}`}
-                                    src={img.dataUrl}
-                                    alt={`Concept ${idx + 1}`}
-                                    className="h-24 max-w-[12rem] rounded-lg border border-zinc-700 object-contain"
-                                  />
+                          {(c.aiPlannerBlueprintLog ?? []).length > 0 ? (
+                            <details className="rounded-lg border border-zinc-800/80 bg-black/20 px-3 py-2">
+                              <summary className="cursor-pointer text-[11px] font-semibold uppercase tracking-wide text-zinc-500">
+                                Legacy blueprint archive ({(c.aiPlannerBlueprintLog ?? []).length})
+                              </summary>
+                              <ul className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
+                                {(c.aiPlannerBlueprintLog ?? []).map((bp) => (
+                                  <li key={bp.id}>
+                                    <button
+                                      type="button"
+                                      onClick={() =>
+                                        setClientMediaPreview({
+                                          type: "image",
+                                          url: bp.dataUrl,
+                                          caption: `Legacy blueprint · ${new Date(bp.createdAt).toLocaleString()}`,
+                                        })
+                                      }
+                                      className="block w-full overflow-hidden rounded-lg border border-zinc-800 bg-black/40"
+                                    >
+                                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                                      <img
+                                        src={bp.dataUrl}
+                                        alt=""
+                                        className="h-20 w-full object-contain bg-black/50"
+                                      />
+                                    </button>
+                                  </li>
                                 ))}
-                              </div>
-                            </div>
+                              </ul>
+                            </details>
                           ) : null}
                           <p className="text-xs text-zinc-600">
                             {c.aiPlannerActivity.length} logged planner turn
@@ -2926,6 +2991,21 @@ export default function AdminDashboard() {
                   <pre className="mt-1 max-h-56 overflow-y-auto whitespace-pre-wrap rounded-md bg-black/30 p-2 text-zinc-300">
                     {row.replyFull ?? row.replyPreview}
                   </pre>
+                  {row.conceptRenderAudit?.renderPromptText ? (
+                    <div className="mt-3">
+                      <p className="text-[11px] font-semibold uppercase text-violet-400">
+                        Gemini render prompt
+                      </p>
+                      <p className="mt-1 text-[10px] text-zinc-500">
+                        {row.conceptRenderAudit.imageModel} ·{" "}
+                        {new Date(row.conceptRenderAudit.renderedAt).toLocaleString()}
+                        {row.conceptRenderAudit.renderError ? " · failed" : ""}
+                      </p>
+                      <pre className="mt-2 max-h-48 overflow-y-auto whitespace-pre-wrap rounded-md bg-black/30 p-2 text-[11px] text-zinc-300">
+                        {row.conceptRenderAudit.renderPromptText}
+                      </pre>
+                    </div>
+                  ) : null}
                   {row.conceptImages && row.conceptImages.length > 0 ? (
                     <div className="mt-3">
                       <p className="text-[11px] font-semibold uppercase text-zinc-500">

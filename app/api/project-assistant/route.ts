@@ -1,7 +1,7 @@
-import sharp from "sharp";
 import { NextResponse } from "next/server";
 import { getSessionFromCookie } from "@/lib/client-portal-auth";
 import {
+  buildGeminiConceptImagePromptText,
   geminiExtractPlannerVisualSpec,
   geminiGenerateConceptImage,
   geminiPlannerMultiTurn,
@@ -16,12 +16,10 @@ import {
   type PlannerPhaseTag,
 } from "@/lib/planner-phase-utils";
 import {
-  assistantAskedFirstDesignGate,
-  assistantAskedLayoutGoAheadPrompt,
   deriveNorthStarLabelsFromUserText,
+  hasBudgetContextInText,
   hasEarlyPhotoInviteContext,
-  hasNorthStarContext,
-  hasRoughDimensions,
+  hasSimplifiedIntakeReady,
 } from "@/lib/planner-intake-detect";
 import {
   applyHarvestSafetyCategoryFallbacks,
@@ -52,22 +50,9 @@ import {
 } from "@/lib/planner-photo-hints";
 import { PLANNER_ASSISTANT_NAME } from "@/lib/planner-brand";
 import { addClientSpacePhoto, appendAiPlannerActivity } from "@/lib/client-portal-store";
-import {
-  blueprintPlanToSvgString,
-  generateUniversalBlueprint,
-  mapDesignBucketToUniversalCategory,
-} from "@/lib/blueprint-engine";
-import {
-  buildControlNetPromptParts,
-  replicateConceptConfigured,
-  replicateConceptProviderEnabled,
-  runReplicateSdxlControlNetConcept,
-} from "@/lib/replicate-sdxl-controlnet-concept";
-import { detectBlueprintLayoutConflicts } from "@/lib/planner-render-guard";
-import {
-  appendLayoutConflictNotice,
-  appendVisualizationUnavailableNotice,
-} from "@/lib/planner-render-outcome-messages";
+import { replicateConceptProviderEnabled } from "@/lib/replicate-sdxl-controlnet-concept";
+import { appendVisualizationUnavailableNotice } from "@/lib/planner-render-outcome-messages";
+import type { ConceptRenderAudit } from "@/lib/client-portal-store";
 
 /** After this many assistant turns that included a concept sketch, steer toward in-person consult. */
 const SKETCH_ROUNDS_BEFORE_IN_PERSON_NUDGE = 5;
@@ -134,58 +119,10 @@ function shouldShowSubmitDesignCta(params: {
   return false;
 }
 
-function userApprovedFirstRender(text: string): boolean {
-  const raw = text.trim();
-  const t = raw.toLowerCase();
-  if (!t) return false;
-  if (
-    /\b(go ahead|proceed|please do|please create|you can create|you can go ahead)\b/.test(t)
-  ) {
-    return true;
-  }
-  if (
-    /\b(nothing else|that'?s all|that'?s everything|no,? that'?s it|all set|no more to add)\b/.test(
-      t,
-    )
-  ) {
-    return true;
-  }
-  if (/^(yes|yep|yeah|sure)[\s!.]*$/i.test(raw)) return true;
-  if (/^(no|nope)[\s!.]*$/i.test(raw)) return true;
-  return false;
-}
-
-/** Max length for treating latest message as a "contact completion" reply after Phase 4 gate. */
-const MAX_CONTACT_ONLY_PHASE4_REPLY_CHARS = 520;
-
-/**
- * Phase 4 gate cleared for first sketch: after the design gate was asked, the homeowner answered
- * in the affirmative / “nothing else” sense, **or** they gave **go ahead** / **proceed** once Alex
- * asked for layout lock. Phone and callback are **not** prerequisites for the first AI render.
- */
-function firstRenderPhaseFourCleared(
-  lastUserText: string,
-  _allUserText: string,
-  messages: PlannerClientMessage[],
-): boolean {
-  const layoutGoAheadAsked = assistantAskedLayoutGoAheadPrompt(messages);
-  const designGateAsked = assistantAskedFirstDesignGate(messages);
-
-  if (userApprovedFirstRender(lastUserText) && layoutGoAheadAsked) {
-    return true;
-  }
-  if (!designGateAsked) return false;
-
-  const raw = lastUserText.trim();
-  if (!raw || raw.length > MAX_CONTACT_ONLY_PHASE4_REPLY_CHARS) return false;
-
-  return userApprovedFirstRender(lastUserText);
-}
-
 function buildPlannerSystemInstruction(params: {
   priorTurnHadConceptImage: boolean;
   sketchLikelyAfterReply: boolean;
-  /** True when the first concept image is blocked (intake / Phase 4 gate). */
+  /** True when the first concept image is blocked (simplified intake incomplete). */
   blockFirstRenderImage: boolean;
   userAttachedPhotosThisTurn: boolean;
   hasPhotoContextInSession: boolean;
@@ -195,9 +132,10 @@ function buildPlannerSystemInstruction(params: {
   hasBudgetContext: boolean;
   hasPhone: boolean;
   hasCallWindow: boolean;
-  firstRenderCheckMode: "none" | "ask_now" | "awaiting_user_confirmation";
-  /** Category + style signals present — invite photos early; does not unlock first render. */
+  /** Category + style signals present — invite photos early. */
   northStarReadyForPhotoPrompt: boolean;
+  /** Photos + type + budget + style + rough dimensions present in chat. */
+  simplifiedIntakeReady: boolean;
   /** Optional multimodal vision hints for this turn’s uploads — not measurements. */
   roomPhotoHintsBlock?: string;
 }): string {
@@ -213,7 +151,7 @@ Your immediately previous assistant turn included a **concept visualization** th
     if (params.blockFirstRenderImage) {
       chunks.push(`
 ## Session hint (platform — no visualization this turn)
-The **first** concept image is **not** being attached on this reply because intake or the Phase 4 confirmation is **not** complete yet. Do **not** say you created, generated, produced, attached, or showed a sketch or picture, and do **not** say they should see an image **below** this message — **there will not be one**. Continue with **short questions and prose guidance only** until the platform can attach a visualization.`);
+The **first** concept image is **not** being attached on this reply because simplified intake is **not** complete yet (need space photos plus project type, budget, style, and rough dimensions in chat). Do **not** say you created, generated, produced, attached, or showed a sketch or picture, and do **not** say they should see an image **below** this message — **there will not be one**. Use the **3-question intake** script (type+budget → style → dimensions in one ask each) — do not drill many small questions.`);
     } else {
       chunks.push(`
 ## Session hint (platform)
@@ -223,18 +161,13 @@ The platform **may** attach a concept sketch after this reply—either tied to t
 
   if (params.userAttachedPhotosThisTurn) {
     chunks.push(`
-## Phase 3 — Smart vision survey (photo just uploaded)
-They attached **space / material photos**. Thank them briefly, then perform a **category-aware site survey** aligned with **Phase 1** (North Star):
-- **Obstructions:** outlets, vents, switches that conflict with the install type you discussed.
-- **Architecture:** trim, baseboards, ceiling character — tie observations to their **style** direction.
-- **Removals:** ONLY ask about removing something **visible** in the image (e.g. wire rack); never invent off-photo clutter.
-- **Measurements:** If you still need rough **envelope** numbers for shelving or built-ins, ask in **one** question for **span along the wall (width/length)**, **height**, and **depth** (shelf projection) together with **units** — do **not** ask for shelf depth alone.
-Stay concise; end with **one** sharp **question**. Use \`[PHASE:recommend]\` until a concept sketch has been shown in this thread; after the first sketch exists, use \`[PHASE:refine]\` when iterating on visuals.`);
+## Session hint (photo just uploaded)
+They attached **space photos**. Thank them briefly. Note visible obstructions only if relevant. Continue **simplified intake** (type+budget → style → all dimensions in one question) for anything still missing — do **not** run a long survey. Use \`[PHASE:recommend]\` until a concept sketch exists; then \`[PHASE:refine]\` when iterating.`);
   }
   if (!params.hasPhotoContextInSession && params.northStarReadyForPhotoPrompt) {
     chunks.push(`
-## Session hint (photo invite — early Phase 1)
-The homeowner has signaled enough **work category** + **style direction** to invite pictures. Ask for clear photos of the space **on this turn or soon** when helpful — include \`[PHOTO_PROMPT]\` when you invite uploads. This **does not** mean a first concept sketch is coming yet; the platform only attaches the **first** rendering after photos, measurements, budget, **Phase 4** layout confirmation (Layout Type + recap + gate question + homeowner **go ahead**). Phone and callback are collected **later** for handoff — **not** for unlocking that first attachment.`);
+## Session hint (photo invite)
+Invite clear photos of the space — include \`[PHOTO_PROMPT]\` when asking for uploads. Photos are welcome before all intake answers are complete.`);
   }
 
   if (params.suggestInPersonAfterManySketches) {
@@ -250,10 +183,10 @@ The homeowner has already received **${n} rounds** with AI concept sketches in t
 The homeowner sounds **happy with the design direction** or **ready to move forward having the work done**. Continue **entirely in chat**: warmly explain that **Level Up will review what you've explored together here** (including the visuals) and **will reach out with a more detailed proposal for your approval** before work is scheduled — **no shopping lists, prices, or store names** in this planner. Do **not** mention checkout, deposits, or Terms of Service here. Optional **one light planning question** (e.g. rough timing or area of town) if helpful—still end with a **question** when natural.`);
   }
 
-  if (!params.hasBudgetContext) {
+  if (!params.hasBudgetContext && !params.simplifiedIntakeReady) {
     chunks.push(`
-## Session hint (required intake)
-Budget context is missing or unclear. Ask for a realistic budget target before deeper recommendations and tailor the direction to that budget.`);
+## Session hint (intake)
+Budget is still missing — combine **project type + budget** in your next single intake question (do not ask budget alone after a separate type question if you can merge them).`);
   }
   const deferContactNudgeUntilAfterConcept = params.priorTurnHadConceptImage;
   if (deferContactNudgeUntilAfterConcept && !params.hasPhone) {
@@ -267,29 +200,15 @@ Phone number is still missing for **Level Up’s follow-up after they’re happy
 Callback timing is still missing for **scheduling / follow-up**. Ask for ideal days or times when natural — **do not** say any AI sketch is withheld until they provide it.`);
   }
 
-  if (params.firstRenderCheckMode === "ask_now") {
+  if (
+    params.simplifiedIntakeReady &&
+    !params.priorTurnHadConceptImage &&
+    params.hasPhotoContextInSession &&
+    !params.blockFirstRenderImage
+  ) {
     chunks.push(`
-## Phase 4 — Layout confirmation & rendering gate (required)
-Do **NOT** generate or imply that a first image or structural line drawing is ready or attached.
-The platform has detected **space photos**, **rough dimensions**, **budget context**, and **Phase 1** signals — so you are cleared to move into **layout lock** *when* your recap is truly complete. If you still need one more measurement, obstruction check, or scope detail, **gather that first** this turn with a normal question — **do not** use the verbatim gate question until the **same** turn where you deliver the full recap below.
-Ask **3–5 short follow-ups** mixing **Category A** (remaining survey: obstructions, architecture, adjacency) with **Category B** (final scope adds/removals) **before** that recap turn when anything material is still open.
-Apply **spatial logic**: tallest vertical = Height; shorter horizontal = Depth; remaining horizontal = Width. Closets often ~24 inches deep — if numbers look swapped, clarify **before** the recap.
-**Shelving / built-ins:** If you still need **shelf depth** (projection), ask in the **same** question for **width or length along the wall**, **height**, and **depth** together (rough + **units** each) — do **not** ask for shelf depth alone.
-**Units:** Recap dimensions in the **homeowner’s preferred units** (what they used in chat). If they ever gave a **bare number without a unit**, you must have asked whether they meant inches, centimeters, etc. — do **not** guess.
-**Layout Type (required):** In your recap, you **must** explicitly name the **Layout Type** (short carpenter label, e.g. *Double-hang closet*, *Board-and-batten trim*, *Media wall with shelving*).
-**Recap:** Include **primary Width × Height × Depth** and **key obstructions** (or state none noted).
-Include **one recap sentence** in this template (fill brackets):  
-"We're confirming a [Layout Type] — [Style] [Category] at roughly [Width × Height × Depth **in their units**], with obstructions noted as [obstructions or none]."
-**THE GATE:** Your **final** question this turn **must be verbatim** **only** when you are delivering that complete recap in the same message:  
-"Is there anything else to consider before I create the first design idea for you?"
-After they later confirm nothing else is missing, you **must** ask for an explicit **go ahead** / **proceed** before the platform may run the structural blueprint and first sketch — explain that this locks the layout type for the correct structural guide.`);
-  } else if (params.firstRenderCheckMode === "awaiting_user_confirmation") {
-    chunks.push(`
-## Phase 4 — Layout confirmation & rendering gate (required)
-You already asked the gate question about considering anything else before the first design idea.
-Do **NOT** repeat that exact question verbatim unless they asked you to restate it.
-If they confirmed nothing else matters and you have **not** yet asked for a **go ahead** / **proceed** to lock layout for the structural line drawing + first concept, ask now — they must reply with **go ahead** or **proceed** when the **Layout Type**, dimensions, and obstruction recap all look right.
-If they correct dimensions or layout type, restate **Layout Type** and **Width × Height × Depth** using spatial logic **in their units** before asking for go ahead again.`);
+## Session hint (optional — light draft confirm)
+Simplified intake looks complete (photos, type, budget, style, dimensions). You **may** ask once in natural language if they want to see a **first draft visual** — e.g. “Want me to show how this could look?” This is **optional** and **not** required for the platform to attach a sketch. Do **not** use the old verbatim gate question or require “go ahead” / “proceed”.`);
   }
 
   const hints = params.roomPhotoHintsBlock?.trim();
@@ -531,10 +450,11 @@ export async function POST(request: Request) {
       .filter((m) => m.role === "user")
       .map((m) => m.content)
       .join("\n");
-    const intakeHasBudget = hasBudgetContext(allUserText);
+    const intakeHasBudget = hasBudgetContextInText(allUserText);
     const intakeHasPhone = hasPhoneNumber(allUserText);
     const intakeHasCallWindow = hasCallWindow(allUserText);
     const northStarReadyForPhotoPrompt = hasEarlyPhotoInviteContext(allUserText);
+    const simplifiedIntakeReady = hasSimplifiedIntakeReady(allUserText);
 
     if (!lastUserText && imageFiles.length === 0) {
       return NextResponse.json(
@@ -548,41 +468,9 @@ export async function POST(request: Request) {
       userAttachedPhotosThisTurn || sketchReferenceFiles.length > 0;
     const hasAnyPriorRender =
       sketchRoundsDelivered > 0 || priorTurnHadConceptImage;
-    const allUserTextLower = allUserText.toLowerCase();
-    const eligibleForFirstRenderGate =
-      hasNorthStarContext(allUserTextLower) &&
-      hasRoughDimensions(allUserTextLower) &&
-      intakeHasBudget &&
-      hasPhotoContextInSession;
-    const askedFirstRenderCheck = assistantAskedFirstDesignGate(messages);
-    const firstRenderUserConfirmed = firstRenderPhaseFourCleared(
-      lastUserText,
-      allUserText,
-      messages,
-    );
-    const firstRenderCheckMode: "none" | "ask_now" | "awaiting_user_confirmation" =
-      hasAnyPriorRender
-        ? "none"
-        : !eligibleForFirstRenderGate
-          ? "none"
-          : askedFirstRenderCheck
-            ? firstRenderUserConfirmed
-              ? "none"
-              : "awaiting_user_confirmation"
-            : "ask_now";
-    /**
-     * First concept image: strict intake path OR Phase 4 asked + homeowner cleared the gate
-     * (approval, design-complete wording, or contact completion) even when other heuristics lag —
-     * but only when there are uploaded or re-sent space photos on this request.
-     */
-    const phase4PathUnblocksFirstSketch =
-      askedFirstRenderCheck &&
-      firstRenderPhaseFourCleared(lastUserText, allUserText, messages) &&
-      hasPhotoContextInSession;
     const blockFirstRenderImage =
       !hasAnyPriorRender &&
-      !phase4PathUnblocksFirstSketch &&
-      (!eligibleForFirstRenderGate || firstRenderCheckMode !== "none");
+      (!simplifiedIntakeReady || !hasPhotoContextInSession);
 
     const pureEnthusiasmAfterSketch =
       priorTurnHadConceptImage &&
@@ -704,7 +592,7 @@ export async function POST(request: Request) {
             hasBudgetContext: intakeHasBudget,
             hasPhone: intakeHasPhone,
             hasCallWindow: intakeHasCallWindow,
-            firstRenderCheckMode,
+            simplifiedIntakeReady,
             northStarReadyForPhotoPrompt,
             ...(roomPhotoHintsSystemBlock.trim()
               ? { roomPhotoHintsBlock: roomPhotoHintsSystemBlock }
@@ -801,7 +689,7 @@ export async function POST(request: Request) {
     ];
 
     let cleanReply = cleanReplyRaw;
-    let blueprintPngForAdminLog: Buffer | null = null;
+    let conceptRenderAuditForActivity: ConceptRenderAudit | undefined;
 
     if (allowConceptImage && responseImages.length === 0) {
       if (hasAnyPriorRender && refinementBaseParts.length === 0) {
@@ -966,16 +854,6 @@ export async function POST(request: Request) {
           extractionTranscript: specTranscript,
         });
 
-        const specForBlueprintPreview =
-          harvest.spec.width != null && harvest.spec.height != null
-            ? harvest.spec
-            : correctedSpec.width != null && correctedSpec.height != null
-              ? correctedSpec
-              : null;
-        const useStructuralBlueprintImageOrder =
-          (latestImageParts.length > 0 || sketchReferenceFiles.length > 0) &&
-          specForBlueprintPreview != null;
-
         if (useHarvestPipeline) {
           const bundle = buildHarvestConceptPromptBundle({
             harvest,
@@ -985,10 +863,7 @@ export async function POST(request: Request) {
             northStarGoalSummary,
             lastUserFeedback: lastUserText,
             visualMode,
-            refinementBaselineAttachmentPosition:
-              hasRefinementBaseline && useStructuralBlueprintImageOrder
-                ? "last"
-                : "first",
+            refinementBaselineAttachmentPosition: hasRefinementBaseline ? "last" : "first",
           });
           basePrompt = `${bundle.promptContext}\n\n--- Conversation excerpt ---\n\n${transcriptRecent}\n\n${PLANNER_ASSISTANT_NAME} reply:\n${cleanReply.slice(0, 6000)}${exploratoryNote}`;
           baseGoal = bundle.userGoal;
@@ -1006,17 +881,6 @@ export async function POST(request: Request) {
               conceptRenderSpec.shelfVerticalSpacingIn ?? null,
           }
         : null;
-      const mergedForBlueprint = mergePlannerFixtureCounts(
-        rawSpec ? applyFullCarpenterPipeline(rawSpec, specTranscript) : emptyPlannerVisualSpec(),
-        specTranscript,
-      );
-      const specForBlueprint =
-        conceptRenderSpec?.width != null && conceptRenderSpec?.height != null
-          ? conceptRenderSpec
-          : mergedForBlueprint.width != null && mergedForBlueprint.height != null
-            ? mergedForBlueprint
-            : null;
-
       const categoryAnchors = {
         categoryBucket: categoryBucketForScale,
         hasUserProvidedPhoto,
@@ -1024,213 +888,109 @@ export async function POST(request: Request) {
         ceilingHeightFeet: ceilingFromTranscript,
       };
 
-      let blueprintReferenceParts: ContentPart[] = [];
-      let blueprintPngBuffer: Buffer | null = null;
-      let layoutConflicts: ReturnType<typeof detectBlueprintLayoutConflicts> = [];
-      const hasRoomPhotoForBlueprint =
-        latestImageParts.length > 0 || sketchReferenceFiles.length > 0;
-      if (
-        hasRoomPhotoForBlueprint &&
-        specForBlueprint != null &&
-        specForBlueprint.width != null &&
-        specForBlueprint.height != null
-      ) {
-        try {
-          const blueprintCategory = mapDesignBucketToUniversalCategory(
-            categoryBucketForScale,
-          );
-          const plan = generateUniversalBlueprint(blueprintCategory, {
-            widthIn: specForBlueprint.width,
-            heightIn: specForBlueprint.height,
-            depthIn: specForBlueprint.depth,
-            shelfCount: specForBlueprint.shelfCount,
-            closetRodCount: specForBlueprint.closetRodCount,
-            drawerCount: specForBlueprint.drawerCount,
-            transcriptHint: specTranscript.slice(-12_000),
-          });
-          layoutConflicts = detectBlueprintLayoutConflicts(plan, specForBlueprint);
-          if (layoutConflicts.length > 0) {
-            console.warn(
-              "[project-assistant] Blueprint vs. spec conflict — skipping visualization:",
-              layoutConflicts.map((c) => c.code),
-            );
-          } else {
-            console.log(
-              "[project-assistant] Universal blueprint plan (normalized coordinates):",
-              JSON.stringify({
-                category: plan.category,
-                lines: plan.lines,
-                rects: plan.rects,
-                noBuildZones: plan.noBuildZones,
-                meta: plan.meta,
-              }),
-            );
-            const png = await sharp(Buffer.from(blueprintPlanToSvgString(plan), "utf8"))
-              .png()
-              .toBuffer();
-            blueprintPngBuffer = png;
-            blueprintPngForAdminLog = png;
-            blueprintReferenceParts = [
-              {
-                inline_data: {
-                  mime_type: "image/png",
-                  data: png.toString("base64"),
-                },
-              },
-            ];
-          }
-        } catch (err) {
-          console.warn(
-            "[project-assistant] universal blueprint PNG failed:",
-            err instanceof Error ? err.message : err,
-          );
-        }
+      if (replicateConceptProviderEnabled()) {
+        console.info(
+          "[project-assistant] CONCEPT_IMAGE_PROVIDER=replicate is set but planner concept renders use Gemini only (blueprint path removed).",
+        );
       }
 
-      const hasRefinementBaselineImage = refinementBaseParts.length > 0;
-      const conceptReferenceWithBlueprint =
-        blueprintReferenceParts.length > 0
-          ? [...conceptReferenceParts, ...blueprintReferenceParts, ...refinementBaseParts]
-          : combinedConceptReferenceParts;
+      const conceptReferenceForRender =
+        combinedConceptReferenceParts.length > 0 ? combinedConceptReferenceParts : undefined;
 
-      const structuralAbCore =
-        "Image A is the room. Image B is the structural blueprint. Render the design from Image B into the room in Image A. DO NOT ADD EXTRA ELEMENTS.";
-      const structuralGuideDirective =
-        blueprintReferenceParts.length > 0
-          ? hasRefinementBaselineImage
-            ? `Reference attachment order (after the main text):
-1) **Image A** — room / space photos (homeowner real space).
-2) **Image B** — structural blueprint: black field with **pure white** lines and rectangles only.
-3) **Prior concept baseline** — **last** reference image only; use for delta edits vs. the previous sketch (not as the room).
-
-${structuralAbCore}`
-            : `Reference attachment order (after the main text):
-1) **Image A** — room / space photos from the homeowner.
-2) **Image B** — structural blueprint: black field with **pure white** lines and rectangles only.
-
-${structuralAbCore}`
-          : undefined;
-
-      const primaryRoomFile = sketchReferenceFiles[0] ?? imageFiles[0] ?? null;
-      let primaryRoomBuffer: Buffer | null = null;
-      let primaryRoomMime = "image/jpeg";
-      if (primaryRoomFile && primaryRoomFile.size > 0) {
-        primaryRoomBuffer = Buffer.from(await primaryRoomFile.arrayBuffer());
-        primaryRoomMime = primaryRoomFile.type || "image/jpeg";
-      }
-
-      const tryReplicateControlNetFirst =
-        replicateConceptProviderEnabled() &&
-        replicateConceptConfigured() &&
-        blueprintPngBuffer != null &&
-        primaryRoomBuffer != null;
-
-      const skipGeminiConceptImageAccuracy = tryReplicateControlNetFirst;
-
-      console.log("--- RENDERING START ---");
+      console.log("--- RENDERING START (Gemini) ---");
       console.log("Target Dimensions:", harvestedDimensions);
       console.log("Scale Anchors Used:", categoryAnchors);
-      console.log(
-        "[project-assistant] Layout conflicts:",
-        layoutConflicts.length ? layoutConflicts.map((c) => c.code) : "(none)",
-      );
 
-      let renderOutcomeNoticeAppended = false;
       let imageGenerationFailureDetail: string | null = null;
+      let conceptRenderAudit: ConceptRenderAudit | undefined;
 
-      if (layoutConflicts.length > 0) {
-        cleanReply = stripMisleadingImageDeliveryClaims(cleanReply);
-        cleanReply = appendLayoutConflictNotice(cleanReply, layoutConflicts);
-        renderOutcomeNoticeAppended = true;
-      } else if (skipGeminiConceptImageAccuracy) {
-        const { positive, negative } = buildControlNetPromptParts({
+      let prevOkNoImages = false;
+      for (let attempt = 0; attempt < 4; attempt++) {
+        if (attempt >= 1 && prevOkNoImages) {
+          await new Promise((r) => setTimeout(r, attempt === 1 ? 800 : attempt === 2 ? 1400 : 2000));
+        }
+        prevOkNoImages = false;
+
+        const userGoalAug =
+          attempt === 0
+            ? baseGoal
+            : attempt === 1
+              ? `${baseGoal}\n\n(Second attempt: output must include one clear IMAGE part showing the finish-carpentry concept.)`
+              : attempt === 2
+                ? `${baseGoal}\n\n(Third attempt: mandatory — emit at least one IMAGE part; no text-only replies; prioritize a single clear finish-carpentry concept render.)`
+                : `${baseGoal}\n\n(Fourth attempt: you MUST return one IMAGE inlineData part — no text-only response; single clearest concept render.)`;
+
+        const renderPrep = buildGeminiConceptImagePromptText({
+          promptContext: basePrompt,
+          userGoal: userGoalAug,
           extractedVisualDirective,
-          userGoal: baseGoal,
         });
-        const rep = await runReplicateSdxlControlNetConcept({
-          roomImage: { mimeType: primaryRoomMime, buffer: primaryRoomBuffer! },
-          blueprintPng: blueprintPngBuffer!,
-          positivePrompt: positive,
-          negativePrompt: negative,
+
+        const visual = await geminiGenerateConceptImage({
+          promptContext: basePrompt,
+          userGoal: userGoalAug,
+          referenceImageParts: conceptReferenceForRender,
+          extractedVisualDirective,
         });
-        if (rep.ok && rep.images.length > 0) {
-          console.info("[project-assistant] Replicate SDXL ControlNet concept render succeeded");
-          for (const img of rep.images) {
+
+        conceptRenderAudit = {
+          provider: "gemini",
+          imageModel: renderPrep.imageModel,
+          homeownerPrompt: lastUserText.slice(0, 16_000) || "(photo)",
+          renderPromptText: renderPrep.fullPromptText,
+          ...(extractedVisualDirective?.trim()
+            ? { extractedVisualDirective: extractedVisualDirective.trim().slice(0, 12_000) }
+            : {}),
+          referenceImageCount: conceptReferenceForRender?.length ?? 0,
+          renderedAt: new Date().toISOString(),
+        };
+
+        if (!("error" in visual) && visual.images.length > 0) {
+          for (const img of visual.images) {
             responseImages.push({ mimeType: img.mimeType, data: img.dataBase64 });
           }
-        } else {
-          imageGenerationFailureDetail = !rep.ok ? rep.error : "no output image";
-          console.warn(
-            "[project-assistant] Replicate SDXL ControlNet failed (no Gemini image fallback in this accuracy path):",
-            imageGenerationFailureDetail,
-          );
+          break;
         }
-      } else {
-        let prevOkNoImages = false;
-        for (let attempt = 0; attempt < 4; attempt++) {
-          if (attempt >= 1 && prevOkNoImages) {
-            await new Promise((r) => setTimeout(r, attempt === 1 ? 800 : attempt === 2 ? 1400 : 2000));
+        if (!("error" in visual) && visual.images.length === 0) {
+          prevOkNoImages = true;
+          if (attempt === 3) {
+            imageGenerationFailureDetail = "Gemini returned no image parts";
           }
-          prevOkNoImages = false;
-
-          const userGoalAug =
-            attempt === 0
-              ? baseGoal
-              : attempt === 1
-                ? `${baseGoal}\n\n(Second attempt: output must include one clear IMAGE part showing the finish-carpentry concept.)`
-                : attempt === 2
-                  ? `${baseGoal}\n\n(Third attempt: mandatory — emit at least one IMAGE part; no text-only replies; prioritize a single clear finish-carpentry concept render.)`
-                  : `${baseGoal}\n\n(Fourth attempt: you MUST return one IMAGE inlineData part — no text-only response; single clearest concept render.)`;
-
-          const visual = await geminiGenerateConceptImage({
-            promptContext: basePrompt,
-            userGoal: userGoalAug,
-            referenceImageParts:
-              conceptReferenceWithBlueprint.length > 0
-                ? conceptReferenceWithBlueprint
-                : undefined,
-            extractedVisualDirective,
-            structuralGuideDirective,
-          });
-
-          if (!("error" in visual) && visual.images.length > 0) {
-            for (const img of visual.images) {
-              responseImages.push({ mimeType: img.mimeType, data: img.dataBase64 });
-            }
-            break;
-          }
-          if (!("error" in visual) && visual.images.length === 0) {
-            prevOkNoImages = true;
-            if (attempt === 3) {
-              imageGenerationFailureDetail = "Gemini returned no image parts";
-            }
-          }
-          if ("error" in visual) {
-            console.warn(
-              "[project-assistant] geminiGenerateConceptImage error:",
-              visual.error,
-            );
-            imageGenerationFailureDetail = visual.error;
-          } else if (visual.images.length === 0) {
-            const fr = visual.candidateFinishReason;
-            console.warn(
-              "[project-assistant] geminiGenerateConceptImage returned no image parts",
-              fr ? { candidateFinishReason: fr } : {},
-            );
-          }
+        }
+        if ("error" in visual) {
+          console.warn(
+            "[project-assistant] geminiGenerateConceptImage error:",
+            visual.error,
+          );
+          imageGenerationFailureDetail = visual.error;
+          conceptRenderAudit = {
+            ...conceptRenderAudit,
+            renderError: visual.error.slice(0, 2000),
+          };
+        } else if (visual.images.length === 0) {
+          const fr = visual.candidateFinishReason;
+          console.warn(
+            "[project-assistant] geminiGenerateConceptImage returned no image parts",
+            fr ? { candidateFinishReason: fr } : {},
+          );
         }
       }
 
       if (responseImages.length === 0) {
-        if (!renderOutcomeNoticeAppended) {
-          cleanReply = stripMisleadingImageDeliveryClaims(cleanReply);
-          cleanReply = appendVisualizationUnavailableNotice(cleanReply, {
-            technicalDetail: imageGenerationFailureDetail,
-            skipIfConflictBlockPresent: false,
-          });
-          renderOutcomeNoticeAppended = true;
+        cleanReply = stripMisleadingImageDeliveryClaims(cleanReply);
+        cleanReply = appendVisualizationUnavailableNotice(cleanReply, {
+          technicalDetail: imageGenerationFailureDetail,
+          skipIfConflictBlockPresent: false,
+        });
+        if (conceptRenderAudit && imageGenerationFailureDetail) {
+          conceptRenderAudit = {
+            ...conceptRenderAudit,
+            renderError: imageGenerationFailureDetail.slice(0, 2000),
+          };
         }
       }
+
+      conceptRenderAuditForActivity = conceptRenderAudit;
     }
 
     if (responseImages.length === 0) {
@@ -1279,8 +1039,10 @@ ${structuralAbCore}`
             ...(roomPhotoHintsSummaryForActivity?.trim()
               ? { photoHintsSummary: roomPhotoHintsSummaryForActivity.trim() }
               : {}),
+            ...(conceptRenderAuditForActivity
+              ? { conceptRenderAudit: conceptRenderAuditForActivity }
+              : {}),
           },
-          { blueprintPng: blueprintPngForAdminLog },
         );
       } catch {
         /* Activity logging must not break planner responses */
@@ -1313,8 +1075,7 @@ ${structuralAbCore}`
           "PLANNER_HARVEST_FULL_TRANSCRIPT",
         ),
         blockFirstRenderImage,
-        eligibleForFirstRenderGate,
-        firstRenderCheckMode,
+        simplifiedIntakeReady,
         refinementBaselineImages: refinementBaseParts.length,
       });
     }

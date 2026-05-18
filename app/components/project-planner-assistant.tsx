@@ -52,7 +52,7 @@ const MAX_SKETCH_ROUNDS_TRACKED = 99;
 function initialPlannerAssistantMessage(): ChatMessage {
   return {
     role: "assistant",
-    content: `Hi — I'm ${PLANNER_ASSISTANT_NAME}, Level Up's planning consultant. Could you upload a few photos of the space you'd like help with (wide shots of the room help most)? Once I can see it, I'll ask about what you're building and the style direction — nothing overwhelming. Prefer to describe things first? Tell me which room or wall you're focused on and add pictures whenever you're ready.`,
+    content: `Hi — I'm ${PLANNER_ASSISTANT_NAME}, Level Up's planning consultant. Upload a few photos of the space when you can (wide shots help most). Then I'll ask just three quick things: what you're building and your budget, your style vibe, and your rough dimensions — all in plain language. Prefer to describe the room first? Tell me which wall you're focused on and add pictures whenever you're ready.`,
   };
 }
 

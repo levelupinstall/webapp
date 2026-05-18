@@ -104,6 +104,37 @@ export function hasEarlyPhotoInviteContext(allUserText: string): boolean {
   );
 }
 
+/** Budget signal for simplified first-render gate. */
+export function hasBudgetContextInText(text: string): boolean {
+  const t = text.toLowerCase();
+  return (
+    /\$+\s*\d/.test(text) ||
+    /\b\d+\s*k\b/i.test(text) ||
+    t.includes("budget") ||
+    t.includes("spend") ||
+    t.includes("investment")
+  );
+}
+
+/**
+ * Simplified intake for first concept render: category + style + budget + rough dimensions.
+ * No separate use-case length requirement.
+ */
+export function hasSimplifiedIntakeReady(allUserText: string): boolean {
+  const t = allUserText.toLowerCase();
+  const { workCategory, stylePreference } = deriveNorthStarLabelsFromUserText(allUserText);
+  const hasCategory =
+    Boolean(workCategory) || NORTH_STAR_CATEGORY_PATTERN.test(allUserText);
+  const hasStyle =
+    Boolean(stylePreference) || NORTH_STAR_STYLE_PATTERN.test(allUserText);
+  return (
+    hasCategory &&
+    hasStyle &&
+    hasBudgetContextInText(allUserText) &&
+    hasRoughDimensions(t)
+  );
+}
+
 /** Phase 1 — category + style + use case signals before relying on dimensions. */
 export function hasNorthStarContext(allUserTextLower: string): boolean {
   const t = allUserTextLower;

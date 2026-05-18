@@ -56,6 +56,17 @@ export type CarpenterUpload = {
   uploadedAt: string;
 };
 
+export type ConceptRenderAudit = {
+  provider: "gemini";
+  imageModel: string;
+  homeownerPrompt: string;
+  renderPromptText: string;
+  extractedVisualDirective?: string;
+  referenceImageCount: number;
+  renderedAt: string;
+  renderError?: string;
+};
+
 export type AiPlannerActivity = {
   id: string;
   createdAt: string;
@@ -71,6 +82,8 @@ export type AiPlannerActivity = {
   conceptImages?: Array<{ mimeType: string; dataUrl: string }>;
   /** Soft vision cues from this turn’s space photo(s) — not tape-measured. */
   photoHintsSummary?: string;
+  /** Exact Gemini image prompt + homeowner message when a concept render was attempted. */
+  conceptRenderAudit?: ConceptRenderAudit;
 };
 
 /** Structural blueprint PNG captured when used for ControlNet (admin CRM). */
@@ -272,6 +285,36 @@ function parseAiActivity(value: Prisma.JsonValue): AiPlannerActivity[] {
         ? photoHintsRaw.trim().slice(0, 6000)
         : undefined;
 
+    let conceptRenderAudit: ConceptRenderAudit | undefined;
+    const auditRaw = row.conceptRenderAudit;
+    if (auditRaw && typeof auditRaw === "object") {
+      const a = auditRaw as Record<string, unknown>;
+      const renderPromptText = String(a.renderPromptText ?? "").trim();
+      const homeownerPrompt = String(a.homeownerPrompt ?? "").trim();
+      if (renderPromptText.length > 0) {
+        conceptRenderAudit = {
+          provider: "gemini",
+          imageModel: String(a.imageModel ?? "").trim().slice(0, 120) || "unknown",
+          homeownerPrompt: homeownerPrompt.slice(0, 16_000),
+          renderPromptText: renderPromptText.slice(0, 24_000),
+          referenceImageCount: Math.max(
+            0,
+            Math.floor(Number(a.referenceImageCount ?? 0)) || 0,
+          ),
+          renderedAt: String(a.renderedAt ?? row.createdAt ?? new Date().toISOString()),
+          ...(typeof a.extractedVisualDirective === "string" &&
+          a.extractedVisualDirective.trim()
+            ? {
+                extractedVisualDirective: a.extractedVisualDirective.trim().slice(0, 12_000),
+              }
+            : {}),
+          ...(typeof a.renderError === "string" && a.renderError.trim()
+            ? { renderError: a.renderError.trim().slice(0, 2000) }
+            : {}),
+        };
+      }
+    }
+
     out.push({
       id,
       createdAt: String(row.createdAt ?? new Date().toISOString()),
@@ -283,6 +326,7 @@ function parseAiActivity(value: Prisma.JsonValue): AiPlannerActivity[] {
       ...(promptFull ? { promptFull } : {}),
       ...(replyFull ? { replyFull } : {}),
       ...(photoHintsSummary ? { photoHintsSummary } : {}),
+      ...(conceptRenderAudit ? { conceptRenderAudit } : {}),
     });
   }
   return out;
@@ -1131,6 +1175,13 @@ async function refreshPlannerCrmSummaryBackground(userId: string): Promise<void>
       createdAt: t.createdAt,
       prompt: (t.promptFull ?? t.promptPreview).trim(),
       reply: (t.replyFull ?? t.replyPreview).trim(),
+      hint: {
+        createdAt: t.createdAt,
+        intakeSummary: t.intakeSummary,
+        photoHintsSummary: t.photoHintsSummary,
+        hadConceptImage: Boolean(t.conceptImages?.length),
+        renderError: t.conceptRenderAudit?.renderError,
+      },
     }));
 
     let next: string | null = null;
