@@ -18,9 +18,10 @@ import {
 } from "@/lib/planner-phase-utils";
 import {
   deriveNorthStarLabelsFromUserText,
+  evaluateSimplifiedIntakeReadiness,
+  formatIntakeBlockedRenderReason,
   hasBudgetContextInText,
   hasEarlyPhotoInviteContext,
-  hasSimplifiedIntakeReady,
 } from "@/lib/planner-intake-detect";
 import {
   applyHarvestSafetyCategoryFallbacks,
@@ -419,6 +420,7 @@ function explainConceptRenderSkip(params: {
   allowConceptImage: boolean;
   blockFirstRenderImage: boolean;
   simplifiedIntakeReady: boolean;
+  intakeBlockedReason?: string;
   hasPhotoContextInSession: boolean;
   pureEnthusiasmAfterSketch: boolean;
   hasUserMessage: boolean;
@@ -438,7 +440,16 @@ function explainConceptRenderSkip(params: {
   }
   if (params.blockFirstRenderImage) {
     if (!params.simplifiedIntakeReady) {
-      return "First render blocked: need project type, style, budget signal, and rough dimensions in the chat.";
+      return params.intakeBlockedReason ?? formatIntakeBlockedRenderReason({
+        ready: false,
+        category: false,
+        style: false,
+        budget: false,
+        dimensions: false,
+        augmentedFromAssistant: [],
+        missing: ["category", "style", "budget", "dimensions"],
+        summary: "intake incomplete",
+      });
     }
     if (!params.hasPhotoContextInSession) {
       return "First render blocked: no space photos on this request. Re-attach room photos or sign in so saved CRM photos can be used.";
@@ -523,7 +534,8 @@ export async function POST(request: Request) {
     const intakeHasPhone = hasPhoneNumber(allUserText);
     const intakeHasCallWindow = hasCallWindow(allUserText);
     const northStarReadyForPhotoPrompt = hasEarlyPhotoInviteContext(allUserText);
-    const simplifiedIntakeReady = hasSimplifiedIntakeReady(allUserText);
+    const intakeDiagnostics = evaluateSimplifiedIntakeReadiness(messages);
+    const simplifiedIntakeReady = intakeDiagnostics.ready;
 
     if (!lastUserText && imageFiles.length === 0) {
       return NextResponse.json(
@@ -1099,6 +1111,9 @@ export async function POST(request: Request) {
           allowConceptImage,
           blockFirstRenderImage,
           simplifiedIntakeReady,
+          intakeBlockedReason: !simplifiedIntakeReady
+            ? formatIntakeBlockedRenderReason(intakeDiagnostics)
+            : undefined,
           hasPhotoContextInSession,
           pureEnthusiasmAfterSketch,
           hasUserMessage,
@@ -1153,9 +1168,20 @@ export async function POST(request: Request) {
               `allowRender:${allowConceptImage}`,
               `blockFirst:${blockFirstRenderImage}`,
               `intakeReady:${simplifiedIntakeReady}`,
+              `category:${intakeDiagnostics.category}`,
+              `style:${intakeDiagnostics.style}`,
+              `budget:${intakeDiagnostics.budget}`,
+              `dimensions:${intakeDiagnostics.dimensions}`,
+              intakeDiagnostics.augmentedFromAssistant.length
+                ? `augmented:${intakeDiagnostics.augmentedFromAssistant.join("+")}`
+                : null,
               `photos:${hasPhotoContextInSession}`,
               `portalPhotos:${portalSpacePhotoParts.length}`,
-            ].join(";"),
+              `sketchRefs:${sketchReferenceFiles.length}`,
+              `uploadThisTurn:${userAttachedPhotosThisTurn}`,
+            ]
+              .filter(Boolean)
+              .join(";"),
             imageCount:
               imageFiles.length +
               sketchReferenceFiles.length +
@@ -1206,6 +1232,8 @@ export async function POST(request: Request) {
         ),
         blockFirstRenderImage,
         simplifiedIntakeReady,
+        intakeDiagnostics,
+        hasPhotoContextInSession,
         refinementBaselineImages: refinementBaseParts.length,
       });
     }

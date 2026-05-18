@@ -387,6 +387,39 @@ function SignupLocationReadout(props: { log: unknown }): ReactNode {
   );
 }
 
+function PlannerIntakeGateLine({ intakeSummary }: { intakeSummary: string }) {
+  const parts = intakeSummary.split(";").map((s) => s.trim()).filter(Boolean);
+  return (
+    <div className="mt-2 flex flex-wrap gap-1.5">
+      {parts.map((part) => {
+        const ok =
+          part.includes(":true") ||
+          part.startsWith("intakeReady:true") ||
+          part.startsWith("allowRender:true");
+        const warn =
+          part.includes(":false") ||
+          part.startsWith("intakeReady:false") ||
+          part.startsWith("blockFirst:true");
+        const label = part.replace(/:(true|false)$/i, "");
+        return (
+          <span
+            key={part}
+            className={`rounded-md px-1.5 py-0.5 text-[10px] font-medium ${
+              ok
+                ? "bg-emerald-950/80 text-emerald-300"
+                : warn
+                  ? "bg-amber-950/60 text-amber-200"
+                  : "bg-zinc-800 text-zinc-400"
+            }`}
+          >
+            {label}
+          </span>
+        );
+      })}
+    </div>
+  );
+}
+
 function PlannerLatestRenderPanel({
   activity,
   onPreviewImage,
@@ -465,7 +498,13 @@ function PlannerLatestRenderPanel({
           {audit?.renderError ? (
             <p className="text-xs text-amber-300/90">{audit.renderError}</p>
           ) : null}
-        </div>
+          {latestRender.intakeSummary ? (
+            <div>
+              <p className="text-[10px] font-semibold uppercase text-zinc-500">Render gate</p>
+              <PlannerIntakeGateLine intakeSummary={latestRender.intakeSummary} />
+            </div>
+          ) : null}
+        </motion.div>
       )}
     </>
   );
@@ -2979,8 +3018,11 @@ export default function AdminDashboard() {
                 >
                   <p className="text-xs text-zinc-500">
                     {new Date(row.createdAt).toLocaleString()} · {row.imageCount} image
-                    {row.imageCount === 1 ? "" : "s"} sent · {row.intakeSummary}
+                    {row.imageCount === 1 ? "" : "s"} sent
                   </p>
+                  {row.intakeSummary ? (
+                    <PlannerIntakeGateLine intakeSummary={row.intakeSummary} />
+                  ) : null}
                   <h3 className="mt-3 text-[11px] font-semibold uppercase tracking-wide text-zinc-400">
                     Homeowner
                   </h3>
