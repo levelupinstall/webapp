@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getSessionFromCookie } from "@/lib/client-portal-auth";
 import {
   buildGeminiConceptImagePromptText,
+  defaultGeminiImageModel,
   geminiExtractPlannerVisualSpec,
   geminiGenerateConceptImage,
   geminiPlannerMultiTurn,
@@ -49,7 +50,11 @@ import {
   formatPlannerPhotoHintsForTranscriptAppendix,
 } from "@/lib/planner-photo-hints";
 import { PLANNER_ASSISTANT_NAME } from "@/lib/planner-brand";
-import { addClientSpacePhoto, appendAiPlannerActivity } from "@/lib/client-portal-store";
+import {
+  addClientSpacePhoto,
+  appendAiPlannerActivity,
+  getPortalSpacePhotoInlineParts,
+} from "@/lib/client-portal-store";
 import { replicateConceptProviderEnabled } from "@/lib/replicate-sdxl-controlnet-concept";
 import { appendVisualizationUnavailableNotice } from "@/lib/planner-render-outcome-messages";
 import type { ConceptRenderAudit } from "@/lib/client-portal-store";
@@ -391,6 +396,69 @@ async function fileToDataUrl(file: File): Promise<string> {
   return `data:${mime};base64,${bytes.toString("base64")}`;
 }
 
+function buildSkippedConceptRenderAudit(params: {
+  reason: string;
+  lastUserText: string;
+  referenceImageCount: number;
+}): ConceptRenderAudit {
+  const reason = params.reason.trim().slice(0, 2000);
+  return {
+    provider: "gemini",
+    imageModel: defaultGeminiImageModel(),
+    homeownerPrompt: params.lastUserText.slice(0, 16_000) || "(photo)",
+    renderPromptText: `(Render not attempted)\n\n${reason}`,
+    referenceImageCount: params.referenceImageCount,
+    renderedAt: new Date().toISOString(),
+    renderError: reason,
+  };
+}
+
+function explainConceptRenderSkip(params: {
+  isGeminiConfigured: boolean;
+  allowConceptImage: boolean;
+  blockFirstRenderImage: boolean;
+  simplifiedIntakeReady: boolean;
+  hasPhotoContextInSession: boolean;
+  pureEnthusiasmAfterSketch: boolean;
+  hasUserMessage: boolean;
+  plannerInlineImagesCount: number;
+  userAttachedPhotosThisTurn: boolean;
+  conceptReferenceCount: number;
+  priorTurnHadConceptImage: boolean;
+}): string {
+  if (params.allowConceptImage) {
+    return "Concept render was allowed but did not run (unexpected — check server logs).";
+  }
+  if (!params.isGeminiConfigured) {
+    return "GEMINI_API_KEY is not configured on the server.";
+  }
+  if (params.plannerInlineImagesCount > 0) {
+    return "Planner chat returned inline images; separate concept render was skipped.";
+  }
+  if (params.blockFirstRenderImage) {
+    if (!params.simplifiedIntakeReady) {
+      return "First render blocked: need project type, style, budget signal, and rough dimensions in the chat.";
+    }
+    if (!params.hasPhotoContextInSession) {
+      return "First render blocked: no space photos on this request. Re-attach room photos or sign in so saved CRM photos can be used.";
+    }
+  }
+  if (params.pureEnthusiasmAfterSketch) {
+    return "Render skipped: short positive reply after a prior sketch (no change requested).";
+  }
+  if (!params.hasUserMessage) {
+    return "Render skipped: empty user message.";
+  }
+  if (
+    !params.userAttachedPhotosThisTurn &&
+    !params.priorTurnHadConceptImage &&
+    params.conceptReferenceCount === 0
+  ) {
+    return "Render skipped: no room photos or prior concept reference on this turn.";
+  }
+  return "Render skipped: gate conditions not met for this turn.";
+}
+
 export async function POST(request: Request) {
   try {
     const formData = await request.formData();
@@ -463,9 +531,17 @@ export async function POST(request: Request) {
       );
     }
 
+    const portalSession = await getSessionFromCookie();
+    const portalSpacePhotoParts =
+      portalSession?.userId
+        ? await getPortalSpacePhotoInlineParts(portalSession.userId, 4)
+        : [];
+
     const userAttachedPhotosThisTurn = imageFiles.length > 0;
     const hasPhotoContextInSession =
-      userAttachedPhotosThisTurn || sketchReferenceFiles.length > 0;
+      userAttachedPhotosThisTurn ||
+      sketchReferenceFiles.length > 0 ||
+      portalSpacePhotoParts.length > 0;
     const hasAnyPriorRender =
       sketchRoundsDelivered > 0 || priorTurnHadConceptImage;
     const blockFirstRenderImage =
@@ -516,7 +592,10 @@ export async function POST(request: Request) {
       ? await loadLatestImageParts([refinementBaseFile])
       : [];
 
-    const conceptReferenceParts = [...sketchReferenceParts, ...latestImageParts];
+    let conceptReferenceParts = [...sketchReferenceParts, ...latestImageParts];
+    if (conceptReferenceParts.length === 0 && portalSpacePhotoParts.length > 0) {
+      conceptReferenceParts = [...portalSpacePhotoParts];
+    }
     /**
      * Default image order when no structural blueprint: refinement baseline first, then space photos.
      * When a blueprint PNG is attached, order becomes room → blueprint → baseline (see `structuralGuideDirective`).
@@ -822,7 +901,7 @@ export async function POST(request: Request) {
           designCategory: correctedSpec.designCategory ?? null,
         });
 
-        const hasSpaceReference = conceptReferenceParts.length > 0;
+        const hasSpaceReference = combinedConceptReferenceParts.length > 0;
         const hasRefinementBaseline = refinementBaseParts.length > 0;
 
         const harvestFirstRender =
@@ -991,6 +1070,24 @@ export async function POST(request: Request) {
       }
 
       conceptRenderAuditForActivity = conceptRenderAudit;
+    } else if (portalSession?.userId) {
+      conceptRenderAuditForActivity = buildSkippedConceptRenderAudit({
+        reason: explainConceptRenderSkip({
+          isGeminiConfigured: isGeminiConfigured(),
+          allowConceptImage,
+          blockFirstRenderImage,
+          simplifiedIntakeReady,
+          hasPhotoContextInSession,
+          pureEnthusiasmAfterSketch,
+          hasUserMessage,
+          plannerInlineImagesCount: plannerInlineImages.length,
+          userAttachedPhotosThisTurn,
+          conceptReferenceCount: combinedConceptReferenceParts.length,
+          priorTurnHadConceptImage,
+        }),
+        lastUserText,
+        referenceImageCount: combinedConceptReferenceParts.length,
+      });
     }
 
     if (responseImages.length === 0) {
@@ -1008,7 +1105,6 @@ export async function POST(request: Request) {
       );
     }
 
-    const portalSession = await getSessionFromCookie();
     if (portalSession?.userId) {
       try {
         if (imageFiles.length > 0) {
@@ -1029,23 +1125,35 @@ export async function POST(request: Request) {
             replyPreview: cleanReply.slice(0, 480),
             promptFull: lastUserText.slice(0, 16_000),
             replyFull: cleanReply.slice(0, 24_000),
-            intakeSummary: `phase:${phase};turns:${messages.length}`,
+            intakeSummary: [
+              `phase:${phase}`,
+              `turns:${messages.length}`,
+              `allowRender:${allowConceptImage}`,
+              `blockFirst:${blockFirstRenderImage}`,
+              `intakeReady:${simplifiedIntakeReady}`,
+              `photos:${hasPhotoContextInSession}`,
+              `portalPhotos:${portalSpacePhotoParts.length}`,
+            ].join(";"),
             imageCount:
               imageFiles.length +
               sketchReferenceFiles.length +
+              portalSpacePhotoParts.length +
               (refinementBaseFile ? 1 : 0) +
               responseImages.length,
             ...(conceptImages.length ? { conceptImages } : {}),
             ...(roomPhotoHintsSummaryForActivity?.trim()
-              ? { photoHintsSummary: roomPhotoHintsSummaryForActivity.trim() }
+              ? { photoHintsSummary: roomPhotoHintsSummaryForActivity }
               : {}),
             ...(conceptRenderAuditForActivity
               ? { conceptRenderAudit: conceptRenderAuditForActivity }
               : {}),
           },
         );
-      } catch {
-        /* Activity logging must not break planner responses */
+      } catch (activityErr) {
+        console.warn(
+          "[project-assistant] appendAiPlannerActivity failed:",
+          activityErr instanceof Error ? activityErr.message : activityErr,
+        );
       }
     }
 

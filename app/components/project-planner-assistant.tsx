@@ -2,7 +2,14 @@
 
 import Image from "next/image";
 import { useRouter, useSearchParams } from "next/navigation";
-import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
+import {
+  FormEvent,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type MutableRefObject,
+} from "react";
 import {
   type PlannerPhaseTag,
   stripPlannerPhaseMarkers,
@@ -47,6 +54,66 @@ const PLANNER_COMPRESSED_TARGET_BYTES = 1_350_000;
 
 /** Assistant turns that included a concept image; sent to API for long-loop guidance. */
 const MAX_SKETCH_ROUNDS_TRACKED = 99;
+
+const SKETCH_PHOTOS_SESSION_KEY = "levelup-planner-sketch-space-photos-v1";
+
+type StoredSketchPhoto = {
+  name: string;
+  type: string;
+  base64: string;
+};
+
+async function persistSketchSpacePhotos(files: File[]) {
+  if (typeof sessionStorage === "undefined" || files.length === 0) return;
+  try {
+    const items: StoredSketchPhoto[] = await Promise.all(
+      files.slice(-MAX_IMAGES).map(async (file) => {
+        const bytes = new Uint8Array(await file.arrayBuffer());
+        let binary = "";
+        for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]!);
+        return {
+          name: file.name,
+          type: file.type || "image/jpeg",
+          base64: btoa(binary),
+        };
+      }),
+    );
+    sessionStorage.setItem(SKETCH_PHOTOS_SESSION_KEY, JSON.stringify(items));
+  } catch {
+    /* quota / private mode */
+  }
+}
+
+function base64ToUint8Array(base64: string): Uint8Array<ArrayBuffer> {
+  const binary = atob(base64);
+  const bytes = new Uint8Array(binary.length) as Uint8Array<ArrayBuffer>;
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+  return bytes;
+}
+
+async function restoreSketchSpacePhotosFromSession(
+  target: MutableRefObject<File[]>,
+): Promise<void> {
+  if (typeof sessionStorage === "undefined") return;
+  try {
+    const raw = sessionStorage.getItem(SKETCH_PHOTOS_SESSION_KEY);
+    if (!raw) return;
+    const parsed = JSON.parse(raw) as StoredSketchPhoto[];
+    if (!Array.isArray(parsed) || parsed.length === 0) return;
+    const files = parsed
+      .filter((p) => p?.base64 && typeof p.base64 === "string")
+      .map((p) => {
+        const bytes = base64ToUint8Array(p.base64);
+        const blob = new Blob([bytes], { type: p.type || "image/jpeg" });
+        return new File([blob], p.name || "space-photo.jpg", {
+          type: p.type || "image/jpeg",
+        });
+      });
+    if (files.length) target.current = files.slice(-MAX_IMAGES);
+  } catch {
+    sessionStorage.removeItem(SKETCH_PHOTOS_SESSION_KEY);
+  }
+}
 
 /** Opening turn — upload-first; server-side first-render rules unchanged. */
 function initialPlannerAssistantMessage(): ChatMessage {
@@ -173,6 +240,10 @@ export default function ProjectPlannerAssistant({
     () => images.map((file) => ({ file, url: URL.createObjectURL(file) })),
     [images],
   );
+
+  useEffect(() => {
+    void restoreSketchSpacePhotosFromSession(sketchSpacePhotosRef);
+  }, []);
 
   useEffect(() => {
     return () => {
@@ -384,6 +455,7 @@ export default function ProjectPlannerAssistant({
           ...sketchSpacePhotosRef.current,
           ...compressedImages,
         ].slice(-MAX_IMAGES);
+        void persistSketchSpacePhotos(sketchSpacePhotosRef.current);
       }
     } catch (submitError) {
       setMessages((prev) =>

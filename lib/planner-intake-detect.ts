@@ -110,9 +110,14 @@ export function hasBudgetContextInText(text: string): boolean {
   return (
     /\$+\s*\d/.test(text) ||
     /\b\d+\s*k\b/i.test(text) ||
+    /\b\d[\d,]*\s*(?:k|grand)\b/i.test(text) ||
+    /\b(under|around|about|approximately|roughly|up to|max)\s+\$?\s*\d/i.test(text) ||
+    /\b(mid[\s-]?range|low[\s-]?end|high[\s-]?end|economy|premium)\b/i.test(t) ||
+    /\b(thousand|hundred)\s+(?:dollar|buck)/i.test(t) ||
     t.includes("budget") ||
     t.includes("spend") ||
-    t.includes("investment")
+    t.includes("investment") ||
+    t.includes("afford")
   );
 }
 

@@ -1621,3 +1621,30 @@ export async function getPortalUserById(userId: string) {
     avatarDataUrl: user.avatarDataUrl,
   };
 }
+
+/** Inline Gemini parts from CRM space photos (re-anchor renders when the client omits sketchReferenceImages). */
+export async function getPortalSpacePhotoInlineParts(
+  userId: string,
+  max = 4,
+): Promise<Array<{ inline_data: { mime_type: string; data: string } }>> {
+  const row = await prisma.portalUser.findUnique({ where: { id: userId } });
+  if (!row) return [];
+  const photos = rowToUserRecord(row).spacePhotos ?? [];
+  const out: Array<{ inline_data: { mime_type: string; data: string } }> = [];
+  for (const photo of photos) {
+    if (out.length >= max) break;
+    if (photo.type !== "image") continue;
+    const url = photo.url?.trim() ?? "";
+    const match = /^data:([^;]+);base64,([A-Za-z0-9+/=]+)$/i.exec(url);
+    if (!match) continue;
+    const data = match[2];
+    if (data.length < 64 || data.length > 1_200_000) continue;
+    out.push({
+      inline_data: {
+        mime_type: match[1].trim() || "image/jpeg",
+        data,
+      },
+    });
+  }
+  return out;
+}
