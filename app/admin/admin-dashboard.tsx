@@ -504,7 +504,7 @@ function PlannerLatestRenderPanel({
               <PlannerIntakeGateLine intakeSummary={latestRender.intakeSummary} />
             </div>
           ) : null}
-        </motion.div>
+        </div>
       )}
     </>
   );
