@@ -1076,6 +1076,24 @@ export async function addClientSpacePhoto(
   return upload;
 }
 
+export async function removePortalUserSpacePhoto(
+  userId: string,
+  photoId: string,
+): Promise<boolean> {
+  const row = await prisma.portalUser.findUnique({ where: { id: userId } });
+  if (!row) return false;
+
+  const user = rowToUserRecord(row);
+  const before = user.spacePhotos ?? [];
+  const next = before.filter((p) => p.id !== photoId);
+  if (next.length === before.length) return false;
+
+  await persistJsonSnapshots(row.id, {
+    spacePhotos: next as unknown as Prisma.InputJsonValue,
+  });
+  return true;
+}
+
 export async function recordPortalLogin(userId: string) {
   await prisma.portalUser.updateMany({
     where: { id: userId },

@@ -558,8 +558,14 @@ export default function AdminDashboard() {
   const [feedClientFilter, setFeedClientFilter] = useState("all");
   const [feedCarpenterFilter, setFeedCarpenterFilter] = useState("all");
   const [feedSearch, setFeedSearch] = useState("");
-  const [expandedClientId, setExpandedClientId] = useState<string | null>(null);
+  const [selectedClientId, setSelectedClientId] = useState<string | null>(null);
   const [deleteClientBusyId, setDeleteClientBusyId] = useState<string | null>(null);
+  const [spacePhotoDeleteConfirm, setSpacePhotoDeleteConfirm] = useState<{
+    clientId: string;
+    photoId: string;
+    caption: string;
+  } | null>(null);
+  const [deleteSpacePhotoBusyId, setDeleteSpacePhotoBusyId] = useState<string | null>(null);
   const [portalDeleteConfirmClient, setPortalDeleteConfirmClient] =
     useState<PortalClient | null>(null);
   const [plannerActivityLogClient, setPlannerActivityLogClient] = useState<PortalClient | null>(
@@ -672,7 +678,18 @@ export default function AdminDashboard() {
       setCommLogFlash(null);
     }, 0);
     return () => window.clearTimeout(timer);
-  }, [expandedClientId]);
+  }, [selectedClientId]);
+
+  const selectedClient = useMemo(
+    () => clients.find((c) => c.id === selectedClientId) ?? null,
+    [clients, selectedClientId],
+  );
+
+  useEffect(() => {
+    if (tab !== "clients" || clients.length === 0) return;
+    if (selectedClientId && clients.some((c) => c.id === selectedClientId)) return;
+    setSelectedClientId(clients[0].id);
+  }, [tab, clients, selectedClientId]);
 
   async function submitPortalCommunication(clientId: string) {
     const summary = commLogDraft.summary.trim();
@@ -802,10 +819,32 @@ export default function AdminDashboard() {
         return;
       }
       setPortalDeleteConfirmClient(null);
-      setExpandedClientId(null);
+      setSelectedClientId(null);
       await refreshOverview();
     } finally {
       setDeleteClientBusyId(null);
+    }
+  }
+
+  async function executeRemoveSpacePhoto() {
+    const pending = spacePhotoDeleteConfirm;
+    if (!pending) return;
+
+    setDeleteSpacePhotoBusyId(pending.photoId);
+    try {
+      const res = await fetch(
+        `/api/admin/portal-users/${encodeURIComponent(pending.clientId)}/space-photos/${encodeURIComponent(pending.photoId)}`,
+        { method: "DELETE" },
+      );
+      const data = (await res.json().catch(() => ({}))) as { error?: string };
+      if (!res.ok) {
+        globalThis.alert(data.error || "Could not delete photo.");
+        return;
+      }
+      setSpacePhotoDeleteConfirm(null);
+      await refreshOverview();
+    } finally {
+      setDeleteSpacePhotoBusyId(null);
     }
   }
 
@@ -1490,7 +1529,7 @@ export default function AdminDashboard() {
                                   type="button"
                                   onClick={() => {
                                     setTab("clients");
-                                    setExpandedClientId(job.clientPortalUserId ?? null);
+                                    setSelectedClientId(job.clientPortalUserId ?? null);
                                   }}
                                   className="rounded-lg border border-violet-700 bg-violet-950/80 px-3 py-1.5 text-[11px] font-medium text-violet-200 hover:bg-violet-900/80"
                                 >
@@ -1617,7 +1656,7 @@ export default function AdminDashboard() {
                                     type="button"
                                     onClick={() => {
                                       setTab("clients");
-                                      setExpandedClientId(sj.portalUserId);
+                                      setSelectedClientId(sj.portalUserId);
                                     }}
                                     className="rounded border border-teal-700 px-2 py-1 text-[11px] text-teal-200 hover:bg-teal-900/50"
                                   >
@@ -1750,7 +1789,7 @@ export default function AdminDashboard() {
                                   type="button"
                                   onClick={() => {
                                     setTab("clients");
-                                    setExpandedClientId(sj.portalUserId);
+                                    setSelectedClientId(sj.portalUserId);
                                   }}
                                   className="rounded border border-teal-700 px-2 py-1 text-[11px] text-teal-200 hover:bg-teal-900/50"
                                 >
@@ -2352,34 +2391,73 @@ export default function AdminDashboard() {
         ) : null}
 
         {tab === "clients" ? (
-          <section className="space-y-3">
-            {clients.map((c) => (
-              <div
-                key={c.id}
-                className="overflow-hidden rounded-xl border border-zinc-800 bg-zinc-900/40"
-              >
-                <button
-                  type="button"
-                  onClick={() => setExpandedClientId((id) => (id === c.id ? null : c.id))}
-                  className="flex w-full items-start justify-between gap-4 px-4 py-4 text-left hover:bg-zinc-900/60"
-                >
-                  <div>
-                    <p className="font-medium text-white">{c.fullName || c.username}</p>
-                    <p className="text-sm text-zinc-400">{c.email}</p>
-                    <p className="mt-1 text-xs text-zinc-500">{c.serviceAddress || "No address"}</p>
-                  </div>
-                  <div className="text-right text-xs text-zinc-500">
-                    <p>{c.ideas.length} saved projects</p>
-                    <p>{c.invoices.length} invoices</p>
-                    <p>{c.aiPlannerActivity.length} AI planner turns</p>
-                    <p className="mt-1 text-[11px] text-zinc-600">
-                      Last login:{" "}
-                      {c.lastLoginAt ? new Date(c.lastLoginAt).toLocaleString() : "Never recorded"}
+          <section className="flex min-h-[36rem] overflow-hidden rounded-xl border border-zinc-800 bg-zinc-900/30">
+            <aside className="flex w-72 shrink-0 flex-col border-r border-zinc-800 bg-zinc-950/50">
+              <div className="border-b border-zinc-800 px-3 py-3">
+                <h3 className="text-sm font-semibold text-white">Clients &amp; AI planner</h3>
+                <p className="mt-0.5 text-xs text-zinc-500">
+                  {clients.length} portal account{clients.length === 1 ? "" : "s"}
+                </p>
+              </div>
+              <ul className="flex-1 overflow-y-auto p-2">
+                {clients.map((c) => {
+                  const isSelected = selectedClientId === c.id;
+                  return (
+                    <li key={c.id} className="mb-1">
+                      <button
+                        type="button"
+                        onClick={() => setSelectedClientId(c.id)}
+                        className={`w-full rounded-lg px-3 py-3 text-left transition ${
+                          isSelected
+                            ? "border border-violet-500/50 bg-violet-950/40"
+                            : "border border-transparent hover:bg-zinc-900/80"
+                        }`}
+                      >
+                        <p className="font-medium text-white">{c.fullName || c.username}</p>
+                        <p className="truncate text-xs text-zinc-400">{c.email}</p>
+                        <p className="mt-1 text-[11px] text-zinc-500">
+                          {c.aiPlannerActivity.length} planner turn
+                          {c.aiPlannerActivity.length === 1 ? "" : "s"} ·{" "}
+                          {(c.spacePhotos ?? []).length} upload
+                          {(c.spacePhotos ?? []).length === 1 ? "" : "s"}
+                        </p>
+                      </button>
+                    </li>
+                  );
+                })}
+                {clients.length === 0 ? (
+                  <li className="px-2 py-4 text-sm text-zinc-500">No portal accounts yet.</li>
+                ) : null}
+              </ul>
+            </aside>
+            <div className="min-w-0 flex-1 overflow-y-auto">
+              {!selectedClient ? (
+                <p className="p-8 text-sm text-zinc-500">
+                  Select a customer from the list to view their profile, AI planner activity, and
+                  uploads.
+                </p>
+              ) : (
+                <div className="space-y-4 p-4 sm:p-5">
+                  <div className="border-b border-zinc-800 pb-4">
+                    <p className="text-lg font-semibold text-white">
+                      {selectedClient.fullName || selectedClient.username}
                     </p>
+                    <p className="text-sm text-zinc-400">{selectedClient.email}</p>
+                    <p className="mt-1 text-xs text-zinc-500">
+                      {selectedClient.serviceAddress || "No address"}
+                    </p>
+                    <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-zinc-500">
+                      <span>{selectedClient.ideas.length} saved projects</span>
+                      <span>{selectedClient.invoices.length} invoices</span>
+                      <span>{selectedClient.aiPlannerActivity.length} AI planner turns</span>
+                      <span>
+                        Last login:{" "}
+                        {selectedClient.lastLoginAt
+                          ? new Date(selectedClient.lastLoginAt).toLocaleString()
+                          : "Never recorded"}
+                      </span>
+                    </div>
                   </div>
-                </button>
-                {expandedClientId === c.id ? (
-                  <div className="border-t border-zinc-800 px-4 py-4 space-y-4">
                     <div className="rounded-lg border border-violet-900/40 bg-zinc-950/60 p-4">
                       <h4 className="text-xs font-semibold uppercase text-violet-300">
                         AI planner &amp; customer uploads
@@ -2389,7 +2467,7 @@ export default function AdminDashboard() {
                         photos or videos from the planner or portal.
                       </p>
 
-                      {c.aiPlannerActivity.length === 0 ? (
+                      {selectedClient.aiPlannerActivity.length === 0 ? (
                         <p className="mt-4 text-sm text-zinc-600">
                           No logged planner sessions yet (only logged when the client uses the planner
                           while signed in).
@@ -2406,8 +2484,8 @@ export default function AdminDashboard() {
                                 for every prompt and reply verbatim.
                               </p>
                               <div className="mt-2 max-h-96 overflow-y-auto rounded-lg border border-zinc-800 bg-black/25 p-3 text-sm leading-relaxed text-zinc-200">
-                                {(c.aiPlannerCrmSummary ?? "").trim() ? (
-                                  <div className="whitespace-pre-wrap">{c.aiPlannerCrmSummary}</div>
+                                {(selectedClient.aiPlannerCrmSummary ?? "").trim() ? (
+                                  <div className="whitespace-pre-wrap">{selectedClient.aiPlannerCrmSummary}</div>
                                 ) : (
                                   <span className="text-zinc-500">
                                     No digest yet — it refreshes in the background after planner
@@ -2417,7 +2495,7 @@ export default function AdminDashboard() {
                               </div>
                               <button
                                 type="button"
-                                onClick={() => setPlannerActivityLogClient(c)}
+                                onClick={() => setPlannerActivityLogClient(selectedClient)}
                                 className="mt-3 rounded-lg border border-zinc-600 bg-zinc-900 px-3 py-2 text-xs font-medium text-zinc-200 hover:border-violet-500/60 hover:text-white"
                               >
                                 View full prompt &amp; reply log…
@@ -2425,7 +2503,7 @@ export default function AdminDashboard() {
                             </div>
                             <div>
                               <PlannerLatestRenderPanel
-                                activity={c.aiPlannerActivity}
+                                activity={selectedClient.aiPlannerActivity}
                                 onPreviewImage={(url, caption) =>
                                   setClientMediaPreview({
                                     type: "image",
@@ -2436,13 +2514,13 @@ export default function AdminDashboard() {
                               />
                             </div>
                           </div>
-                          {(c.aiPlannerBlueprintLog ?? []).length > 0 ? (
+                          {(selectedClient.aiPlannerBlueprintLog ?? []).length > 0 ? (
                             <details className="rounded-lg border border-zinc-800/80 bg-black/20 px-3 py-2">
                               <summary className="cursor-pointer text-[11px] font-semibold uppercase tracking-wide text-zinc-500">
-                                Legacy blueprint archive ({(c.aiPlannerBlueprintLog ?? []).length})
+                                Legacy blueprint archive ({(selectedClient.aiPlannerBlueprintLog ?? []).length})
                               </summary>
                               <ul className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
-                                {(c.aiPlannerBlueprintLog ?? []).map((bp) => (
+                                {(selectedClient.aiPlannerBlueprintLog ?? []).map((bp) => (
                                   <li key={bp.id}>
                                     <button
                                       type="button"
@@ -2468,8 +2546,8 @@ export default function AdminDashboard() {
                             </details>
                           ) : null}
                           <p className="text-xs text-zinc-600">
-                            {c.aiPlannerActivity.length} logged planner turn
-                            {c.aiPlannerActivity.length === 1 ? "" : "s"} — space uploads use
+                            {selectedClient.aiPlannerActivity.length} logged planner turn
+                            {selectedClient.aiPlannerActivity.length === 1 ? "" : "s"} — space uploads use
                             duplicate detection (perceptual hash + optional AI in borderline cases).
                           </p>
                         </div>
@@ -2479,47 +2557,67 @@ export default function AdminDashboard() {
                         <h5 className="text-[11px] font-semibold uppercase tracking-wide text-zinc-400">
                           Uploaded photos &amp; videos
                         </h5>
-                        {(c.spacePhotos ?? []).length === 0 ? (
+                        {(selectedClient.spacePhotos ?? []).length === 0 ? (
                           <p className="mt-2 text-sm text-zinc-600">No customer media uploads yet.</p>
                         ) : (
                           <div className="mt-2 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-                            {(c.spacePhotos ?? []).map((media) => (
-                              <button
+                            {(selectedClient.spacePhotos ?? []).map((media) => (
+                              <div
                                 key={media.id}
-                                type="button"
-                                onClick={() =>
-                                  setClientMediaPreview({
-                                    type: media.type,
-                                    url: media.url,
-                                    caption: media.caption || "Customer upload",
-                                  })
-                                }
-                                className="overflow-hidden rounded-lg border border-zinc-800 bg-zinc-950/70 text-left hover:border-violet-500/60"
+                                className="overflow-hidden rounded-lg border border-zinc-800 bg-zinc-950/70"
                               >
-                                {media.type === "video" ? (
-                                  <video
-                                    src={media.url}
-                                    className="h-36 w-full bg-black object-cover"
-                                    muted
-                                    playsInline
-                                  />
-                                ) : (
-                                  // eslint-disable-next-line @next/next/no-img-element
-                                  <img
-                                    src={media.url}
-                                    alt={media.caption || "Customer upload"}
-                                    className="h-36 w-full bg-black object-cover"
-                                  />
-                                )}
-                                <div className="border-t border-zinc-800 px-2 py-1.5">
-                                  <p className="truncate text-xs text-zinc-300">
-                                    {media.caption || "Customer upload"}
-                                  </p>
-                                  <p className="text-[11px] text-zinc-500">
-                                    {new Date(media.uploadedAt).toLocaleString()}
-                                  </p>
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    setClientMediaPreview({
+                                      type: media.type,
+                                      url: media.url,
+                                      caption: media.caption || "Customer upload",
+                                    })
+                                  }
+                                  className="block w-full text-left hover:opacity-95"
+                                >
+                                  {media.type === "video" ? (
+                                    <video
+                                      src={media.url}
+                                      className="h-36 w-full bg-black object-cover"
+                                      muted
+                                      playsInline
+                                    />
+                                  ) : (
+                                    // eslint-disable-next-line @next/next/no-img-element
+                                    <img
+                                      src={media.url}
+                                      alt={media.caption || "Customer upload"}
+                                      className="h-36 w-full bg-black object-cover"
+                                    />
+                                  )}
+                                </button>
+                                <div className="flex items-center justify-between gap-2 border-t border-zinc-800 px-2 py-1.5">
+                                  <div className="min-w-0">
+                                    <p className="truncate text-xs text-zinc-300">
+                                      {media.caption || "Customer upload"}
+                                    </p>
+                                    <p className="text-[11px] text-zinc-500">
+                                      {new Date(media.uploadedAt).toLocaleString()}
+                                    </p>
+                                  </div>
+                                  <button
+                                    type="button"
+                                    disabled={deleteSpacePhotoBusyId === media.id}
+                                    onClick={() =>
+                                      setSpacePhotoDeleteConfirm({
+                                        clientId: selectedClient.id,
+                                        photoId: media.id,
+                                        caption: media.caption || "Customer upload",
+                                      })
+                                    }
+                                    className="shrink-0 rounded border border-rose-800/80 px-2 py-1 text-[10px] font-medium text-rose-300 hover:bg-rose-950/50 disabled:opacity-50"
+                                  >
+                                    Delete
+                                  </button>
                                 </div>
-                              </button>
+                              </div>
                             ))}
                           </div>
                         )}
@@ -2534,19 +2632,19 @@ export default function AdminDashboard() {
                         <div>
                           <dt className="text-xs text-zinc-500">Last login</dt>
                           <dd className="font-medium text-white">
-                            {c.lastLoginAt
-                              ? new Date(c.lastLoginAt).toLocaleString()
+                            {selectedClient.lastLoginAt
+                              ? new Date(selectedClient.lastLoginAt).toLocaleString()
                               : "Never (tracked after next successful login)"}
                           </dd>
                         </div>
                         <div>
                           <dt className="text-xs text-zinc-500">Saved projects</dt>
-                          <dd className="font-medium text-white">{c.ideas.length}</dd>
+                          <dd className="font-medium text-white">{selectedClient.ideas.length}</dd>
                         </div>
                         <div>
                           <dt className="text-xs text-zinc-500">Saved-projects tab opens</dt>
                           <dd className="font-medium text-white">
-                            {c.portalAnalytics?.savedProjectsSectionOpens ?? 0}
+                            {selectedClient.portalAnalytics?.savedProjectsSectionOpens ?? 0}
                           </dd>
                           <p className="mt-0.5 text-[11px] text-zinc-500">
                             Counts when they open Saved projects in the client portal.
@@ -2555,14 +2653,14 @@ export default function AdminDashboard() {
                         <div>
                           <dt className="text-xs text-zinc-500">Space photo gallery opens</dt>
                           <dd className="font-medium text-white">
-                            {c.portalAnalytics?.spacePhotosSectionOpens ?? 0}
+                            {selectedClient.portalAnalytics?.spacePhotosSectionOpens ?? 0}
                           </dd>
                           <p className="mt-0.5 text-[11px] text-zinc-500">
                             When they view that tab with space photos uploaded.
                           </p>
                         </div>
                       </dl>
-                      <SignupLocationReadout log={c.signupLocationLog} />
+                      <SignupLocationReadout log={selectedClient.signupLocationLog} />
                     </div>
 
                     <div className="rounded-lg border border-zinc-700 bg-zinc-950/60 p-4">
@@ -2618,7 +2716,7 @@ export default function AdminDashboard() {
                       <button
                         type="button"
                         disabled={commLogBusy}
-                        onClick={() => void submitPortalCommunication(c.id)}
+                        onClick={() => void submitPortalCommunication(selectedClient.id)}
                         className="mt-3 rounded-lg bg-zinc-700 px-4 py-2 text-xs font-medium text-white hover:bg-zinc-600 disabled:opacity-50"
                       >
                         {commLogBusy ? "Saving…" : "Log communication"}
@@ -2632,11 +2730,11 @@ export default function AdminDashboard() {
                           {commLogFlash.message}
                         </p>
                       ) : null}
-                      {(c.communicationLog ?? []).length === 0 ? (
+                      {(selectedClient.communicationLog ?? []).length === 0 ? (
                         <p className="mt-4 text-sm text-zinc-600">No logged communications yet.</p>
                       ) : (
                         <ul className="mt-4 space-y-2 border-t border-zinc-800 pt-4">
-                          {(c.communicationLog ?? []).map((row) => (
+                          {(selectedClient.communicationLog ?? []).map((row) => (
                             <li
                               key={row.id}
                               className="rounded-lg border border-zinc-800 bg-zinc-950/80 px-3 py-2 text-sm"
@@ -2661,19 +2759,19 @@ export default function AdminDashboard() {
                     </div>
 
                     <WorkProposalsCrm
-                      portalUserId={c.id}
-                      proposals={c.workProposals ?? []}
+                      portalUserId={selectedClient.id}
+                      proposals={selectedClient.workProposals ?? []}
                       onRefresh={() => void refreshOverview()}
                     />
 
                     <div>
                       <h4 className="text-xs font-semibold uppercase text-zinc-500">Project status</h4>
                       <p className="mt-1 text-sm text-zinc-300">
-                        <span className="text-violet-400">{c.projectStatus.phase}</span> ·{" "}
-                        {new Date(c.projectStatus.updatedAt).toLocaleString()}
+                        <span className="text-violet-400">{selectedClient.projectStatus.phase}</span> ·{" "}
+                        {new Date(selectedClient.projectStatus.updatedAt).toLocaleString()}
                       </p>
                       <p className="mt-2 whitespace-pre-wrap text-sm text-zinc-400">
-                        {c.projectStatus.details}
+                        {selectedClient.projectStatus.details}
                       </p>
                     </div>
                     <div className="grid gap-4 lg:grid-cols-2">
@@ -2682,10 +2780,10 @@ export default function AdminDashboard() {
                           Saved ideas
                         </h4>
                         <ul className="mt-2 space-y-1 text-sm text-zinc-300">
-                          {c.ideas.length === 0 ? (
+                          {selectedClient.ideas.length === 0 ? (
                             <li className="text-zinc-600">None yet.</li>
                           ) : (
-                            c.ideas.map((idea) => (
+                            selectedClient.ideas.map((idea) => (
                               <li key={idea.id}>• {idea.title}</li>
                             ))
                           )}
@@ -2694,10 +2792,10 @@ export default function AdminDashboard() {
                       <div>
                         <h4 className="text-xs font-semibold uppercase text-zinc-500">Invoices</h4>
                         <ul className="mt-2 space-y-1 text-sm text-zinc-300">
-                          {c.invoices.length === 0 ? (
+                          {selectedClient.invoices.length === 0 ? (
                             <li className="text-zinc-600">None.</li>
                           ) : (
-                            c.invoices.map((inv) => (
+                            selectedClient.invoices.map((inv) => (
                               <li key={inv.id}>
                                 {inv.projectName} · {formatMoney(inv.amountCents)} · {inv.status}
                               </li>
@@ -2719,20 +2817,16 @@ export default function AdminDashboard() {
                       </p>
                       <button
                         type="button"
-                        disabled={deleteClientBusyId === c.id}
-                        onClick={() => setPortalDeleteConfirmClient(c)}
+                        disabled={deleteClientBusyId === selectedClient.id}
+                        onClick={() => setPortalDeleteConfirmClient(selectedClient)}
                         className="mt-3 rounded-lg border border-rose-600 bg-rose-950/90 px-4 py-2 text-xs font-semibold text-rose-100 hover:bg-rose-900 disabled:cursor-not-allowed disabled:opacity-50"
                       >
                         Delete customer from system…
                       </button>
                     </div>
-                  </div>
-                ) : null}
-              </div>
-            ))}
-            {clients.length === 0 ? (
-              <p className="text-sm text-zinc-500">No portal accounts yet.</p>
-            ) : null}
+                </div>
+              )}
+            </div>
           </section>
         ) : null}
 
@@ -3070,6 +3164,49 @@ export default function AdminDashboard() {
                   ) : null}
                 </article>
               ))}
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {spacePhotoDeleteConfirm ? (
+        <div className="fixed inset-0 z-[30] flex items-end justify-center bg-black/70 p-4 sm:items-center">
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="space-photo-delete-title"
+            className="w-full max-w-md rounded-2xl border border-rose-900/60 bg-zinc-900 p-6 shadow-2xl"
+          >
+            <h2
+              id="space-photo-delete-title"
+              className="text-lg font-semibold text-rose-100"
+            >
+              Delete customer upload?
+            </h2>
+            <p className="mt-3 text-sm leading-relaxed text-zinc-300">
+              Remove{" "}
+              <span className="font-medium text-white">{spacePhotoDeleteConfirm.caption}</span> from
+              this customer&apos;s space photos? They can upload again from the portal or planner.
+            </p>
+            <div className="mt-6 flex flex-wrap justify-end gap-2">
+              <button
+                type="button"
+                disabled={deleteSpacePhotoBusyId === spacePhotoDeleteConfirm.photoId}
+                onClick={() => setSpacePhotoDeleteConfirm(null)}
+                className="rounded-lg border border-zinc-600 px-4 py-2 text-sm text-zinc-200 hover:bg-zinc-800 disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={deleteSpacePhotoBusyId === spacePhotoDeleteConfirm.photoId}
+                onClick={() => void executeRemoveSpacePhoto()}
+                className="rounded-lg bg-rose-600 px-4 py-2 text-sm font-semibold text-white hover:bg-rose-500 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {deleteSpacePhotoBusyId === spacePhotoDeleteConfirm.photoId
+                  ? "Deleting…"
+                  : "Delete photo"}
+              </button>
             </div>
           </div>
         </div>
