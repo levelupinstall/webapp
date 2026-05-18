@@ -6,6 +6,12 @@ import { deriveNorthStarLabelsFromUserText } from "@/lib/planner-intake-detect";
 import { stripPlannerPhaseMarkers } from "@/lib/planner-phase-utils";
 import { PLANNER_ASSISTANT_NAME } from "@/lib/planner-brand";
 import {
+  EMPTY_REFINEMENT_GEOMETRY_INTENT,
+  formatRefinementChangeRequest,
+  formatRefinementLayoutLockLine,
+  type RefinementGeometryIntent,
+} from "@/lib/planner-refinement-geometry";
+import {
   inferDesignCategoryBucket,
   illustrativeEnvelopeInchesForBucket,
   mergePlannerFixtureCounts,
@@ -264,30 +270,6 @@ export function formatCompactLayoutSpec(harvest: HarvestedPlannerImageContext): 
   return parts.join("; ");
 }
 
-/** Delta instruction from the latest homeowner message (refinement). */
-export function formatRefinementChangeRequest(lastUserFeedback: string): string {
-  const t = lastUserFeedback.trim();
-  if (!t) return "Apply the latest homeowner feedback to the baseline concept image only.";
-
-  const removeMatch =
-    /remov(?:e|ing|al)?\s+(?:the\s+)?(.+?)(?:\.|$)/i.exec(t) ||
-    /take\s+out\s+(?:the\s+)?(.+?)(?:\.|$)/i.exec(t);
-  if (removeMatch?.[1]) {
-    const subject = removeMatch[1].trim().slice(0, 200);
-    return `CHANGE ONLY: Remove ${subject} from the scene. Keep all shelves, counts, spacing, and styling identical to the baseline concept image.`;
-  }
-
-  if (/float/i.test(t) && /shelf|shelves/i.test(t)) {
-    return "CHANGE ONLY: Ensure shelves read as floating shelves (no visible side panels or bracket clutter) — keep count, spacing, and dimensions identical to the baseline unless stated otherwise.";
-  }
-
-  if (/add\s+(?:an?\s+)?extra|another|\d+\s*shelf/i.test(t) && /not|only|just/i.test(t)) {
-    return "CHANGE ONLY: Do not add shelves — preserve the exact shelf count from the baseline concept image.";
-  }
-
-  return `CHANGE ONLY (homeowner request): ${t.slice(0, 800)}. Preserve everything else from the baseline concept image.`;
-}
-
 function carpentryEnvelopeFallbackByCategory(
   workCategory: string | null,
 ): { width: number; height: number; depth: number } | null {
@@ -408,6 +390,7 @@ export function buildHarvestConceptPromptBundle(params: {
    * sketch must be described as the **last** image; otherwise baseline-first order keeps "first".
    */
   refinementBaselineAttachmentPosition?: "first" | "last";
+  refinementGeometryIntent?: RefinementGeometryIntent;
 }): { promptContext: string; userGoal: string } {
   const {
     harvest,
@@ -418,7 +401,9 @@ export function buildHarvestConceptPromptBundle(params: {
     lastUserFeedback,
     visualMode,
     refinementBaselineAttachmentPosition = "first",
+    refinementGeometryIntent,
   } = params;
+  const geometryIntent = refinementGeometryIntent ?? EMPTY_REFINEMENT_GEOMETRY_INTENT;
   const style = harvest.phase1Style ?? "the homeowner's stated design direction";
   const material =
     harvest.phase2Material ?? "appropriate generic painted or stained wood tones (no brands)";
@@ -464,8 +449,8 @@ export function buildHarvestConceptPromptBundle(params: {
     userGoal = [
       baselineNote,
       spaceNote,
-      `LOCKED LAYOUT: ${layoutLine}`,
-      formatRefinementChangeRequest(lastUserFeedback),
+      formatRefinementLayoutLockLine(layoutLine, geometryIntent),
+      formatRefinementChangeRequest(lastUserFeedback, geometryIntent),
     ]
       .filter(Boolean)
       .join("\n\n");
@@ -496,7 +481,9 @@ export function buildHarvestConceptPromptBundle(params: {
     visualMode === "refinement-delta"
       ? [
           `Refinement · ${harvest.phase1Style ?? "style as baseline"}`,
-          `Layout lock: ${layoutLine}`,
+          geometryIntent.hasGeometryChange
+            ? `Target layout: ${layoutLine}`
+            : `Layout lock: ${layoutLine}`,
           harvest.phase3VisionSummary
             ? `Room cues: ${harvest.phase3VisionSummary.slice(0, 280)}`
             : "",

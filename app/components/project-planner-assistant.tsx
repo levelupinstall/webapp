@@ -26,6 +26,7 @@ type ChatMessage = {
   content: string;
   images?: { mimeType: string; dataUrl: string }[];
   showSubmitDesignCta?: boolean;
+  sketchNotUpdated?: boolean;
 };
 
 type AssistantResponse = {
@@ -34,6 +35,8 @@ type AssistantResponse = {
   showPhotoUploader?: boolean;
   showSubmitDesignCta?: boolean;
   images?: { mimeType: string; data: string }[];
+  /** Server tried to refine a sketch but returned no new image bytes. */
+  sketchNotUpdated?: boolean;
   /** Present when PLANNER_DEBUG_DIAGNOSTICS or NODE_ENV=development on server. */
   debugHint?: string;
 };
@@ -442,6 +445,9 @@ export default function ProjectPlannerAssistant({
           content: safeReply,
           ...(data.showSubmitDesignCta ? { showSubmitDesignCta: true } : {}),
           ...(assistantImages?.length ? { images: assistantImages } : {}),
+          ...(data.sketchNotUpdated && !assistantImages?.length
+            ? { sketchNotUpdated: true }
+            : {}),
         },
       ]);
 
@@ -899,6 +905,13 @@ export default function ProjectPlannerAssistant({
                   />
                 ))}
               </div>
+            ) : null}
+            {message.role === "assistant" &&
+            message.sketchNotUpdated &&
+            !(message.images?.length ?? 0) ? (
+              <p className="mt-3 rounded-lg border border-amber-200/80 bg-amber-50/90 px-3 py-2 text-xs leading-relaxed text-amber-950">
+                No new sketch for this reply — your last concept image is still shown above.
+              </p>
             ) : null}
             {message.role === "assistant" && message.showSubmitDesignCta && welcome ? (
               <div className="mt-3 border-t border-[#eadbff] pt-3">

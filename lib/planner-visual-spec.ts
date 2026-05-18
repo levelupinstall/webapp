@@ -816,6 +816,23 @@ export function mergePlannerStatedDimensionsFromTranscript(
   };
 }
 
+/** Refinement: prefer inch values stated in the latest feedback over earlier spec. */
+export function applyRefinementDimensionOverrides(
+  spec: PlannerVisualSpec,
+  refinementTranscript: string,
+): PlannerVisualSpec {
+  const ex = extractStatedDimensionsFromTranscript(refinementTranscript);
+  return {
+    ...spec,
+    width: ex.width ?? spec.width,
+    height: ex.height ?? spec.height,
+    depth: ex.depth ?? spec.depth,
+    shelfVerticalSpacingIn: ex.shelfVerticalSpacingIn ?? spec.shelfVerticalSpacingIn,
+    shelfBoardSpanAlongWallIn:
+      ex.shelfBoardSpanAlongWallIn ?? spec.shelfBoardSpanAlongWallIn,
+  };
+}
+
 export function mergePlannerFixtureCounts(
   spec: PlannerVisualSpec,
   transcript: string,
@@ -1052,10 +1069,16 @@ export type ImageRenderDirectiveMode = "first-render" | "refinement-delta";
 /**
  * Image-model directive — compact for refinement; focused scale for first render (no chat persona).
  */
+export type BuildImageRenderDirectiveOptions = {
+  /** Size/position refinement — relax "preserve baseline" locks. */
+  geometryRefinement?: boolean;
+};
+
 export function buildImageRenderDirective(
   spec: PlannerVisualSpec,
   ctx: ExtractedDirectiveScaleContext,
   mode: ImageRenderDirectiveMode,
+  options?: BuildImageRenderDirectiveOptions,
 ): string {
   const bucket = inferDesignCategoryBucket(
     `${spec.designCategory ?? ""} ${ctx.extractionTranscript}`,
@@ -1086,6 +1109,17 @@ export function buildImageRenderDirective(
   }
 
   if (mode === "refinement-delta") {
+    if (options?.geometryRefinement) {
+      return [
+        "TARGET (apply to baseline image — shelf position/size must change visibly):",
+        layoutLines.join(" "),
+        "Translate shelf assemblies as rigid groups; do not return a pixel-identical baseline.",
+        "Match reference room photo proportions when space photos are attached.",
+        "Do not add closet rods, hangers, or extra fixtures unless listed above.",
+      ]
+        .filter(Boolean)
+        .join("\n");
+    }
     return [
       "LOCK (preserve from baseline unless homeowner explicitly asked to change):",
       layoutLines.join(" "),

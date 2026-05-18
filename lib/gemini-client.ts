@@ -1,4 +1,5 @@
 import {
+  LEVEL_UP_IMAGE_GEOMETRY_REFINEMENT_SUFFIX,
   LEVEL_UP_IMAGE_REFINEMENT_SUFFIX,
   LEVEL_UP_IMAGE_RENDER_SYSTEM,
 } from "@/lib/level-up-gemini-persona";
@@ -789,9 +790,11 @@ export function buildGeminiConceptImagePromptText(params: {
   extractedVisualDirective?: string;
   structuralGuideDirective?: string;
   visualMode?: ImageRenderDirectiveMode;
+  geometryRefinement?: boolean;
 }): { imageModel: string; fullPromptText: string } {
   const imageModel = defaultGeminiImageModel();
   const isRefinement = params.visualMode === "refinement-delta";
+  const isGeometryRefinement = Boolean(params.geometryRefinement && isRefinement);
 
   const extractionBlock = params.extractedVisualDirective?.trim()
     ? `
@@ -811,7 +814,11 @@ ${params.structuralGuideDirective.trim()}
 `
     : "";
 
-  const modeSuffix = isRefinement ? `\n\n${LEVEL_UP_IMAGE_REFINEMENT_SUFFIX}` : "";
+  const modeSuffix = isRefinement
+    ? `\n\n${LEVEL_UP_IMAGE_REFINEMENT_SUFFIX}${
+        isGeometryRefinement ? `\n${LEVEL_UP_IMAGE_GEOMETRY_REFINEMENT_SUFFIX}` : ""
+      }`
+    : "";
 
   const fullPrompt = `${LEVEL_UP_IMAGE_RENDER_SYSTEM}${modeSuffix}
 
@@ -841,6 +848,7 @@ export async function geminiGenerateConceptImage(params: {
    */
   structuralGuideDirective?: string;
   visualMode?: ImageRenderDirectiveMode;
+  geometryRefinement?: boolean;
 }): Promise<GeminiGenerateResult | { error: string }> {
   const model = defaultGeminiImageModel();
   const { fullPromptText: fullPrompt } = buildGeminiConceptImagePromptText({
@@ -849,6 +857,7 @@ export async function geminiGenerateConceptImage(params: {
     extractedVisualDirective: params.extractedVisualDirective,
     structuralGuideDirective: params.structuralGuideDirective,
     visualMode: params.visualMode,
+    geometryRefinement: params.geometryRefinement,
   });
 
   const parts: ContentPart[] = [

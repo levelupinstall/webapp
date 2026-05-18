@@ -57,3 +57,18 @@ A member of the Level Up team will **review this thread** (including your photos
 
   return trimJoin(cleanReply, block);
 }
+
+/** Prior concept exists but this turn did not return a new image. */
+export function appendSketchNotUpdatedNotice(
+  cleanReply: string,
+  params?: { geometryRefinement?: boolean },
+): string {
+  const geometryTip = params?.geometryRefinement
+    ? " For size or position changes, include approximate inches (e.g. “move shelves down 6 inches” or “each shelf about 30 inches long”)."
+    : "";
+
+  const block = `**Sketch not updated this turn**  
+We captured your feedback in chat, but no new concept image was attached to this message. **Scroll up to your last sketch** to compare — that picture is still the most recent render.${geometryTip}`;
+
+  return trimJoin(cleanReply, block);
+}

@@ -60,3 +60,11 @@ REFINEMENT MODE:
 - Do NOT re-layout the room, change shelf count, shelf length, or style unless the homeowner explicitly asked.
 - Removing furniture or props (e.g. a table) should leave shelves and wall treatment unchanged from the baseline image.
 `;
+
+/** When homeowner asks to resize or reposition shelves — must visibly change the baseline. */
+export const LEVEL_UP_IMAGE_GEOMETRY_REFINEMENT_SUFFIX = `
+GEOMETRY REFINEMENT:
+- The output MUST differ visibly from the baseline in shelf size and/or vertical position when requested.
+- Translate the shelf stack as a rigid assembly; do not return a near-identical copy of the baseline image.
+- Apply TARGET LAYOUT / TARGET dimensions from the prompt; they override the baseline pixels for shelf geometry.
+`;

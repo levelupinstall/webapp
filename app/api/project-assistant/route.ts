@@ -58,7 +58,18 @@ import {
   getPortalSpacePhotoInlineParts,
 } from "@/lib/client-portal-store";
 import { replicateConceptProviderEnabled } from "@/lib/replicate-sdxl-controlnet-concept";
-import { appendVisualizationUnavailableNotice } from "@/lib/planner-render-outcome-messages";
+import {
+  appendSketchNotUpdatedNotice,
+  appendVisualizationUnavailableNotice,
+} from "@/lib/planner-render-outcome-messages";
+import {
+  applyRefinementGeometryToSpec,
+  buildRefinementFeedbackBlob,
+  detectRefinementGeometryIntent,
+  EMPTY_REFINEMENT_GEOMETRY_INTENT,
+  syncHarvestFromSpec,
+  type RefinementGeometryIntent,
+} from "@/lib/planner-refinement-geometry";
 import type { ConceptRenderAudit } from "@/lib/client-portal-store";
 
 /** After this many assistant turns that included a concept sketch, steer toward in-person consult. */
@@ -881,6 +892,9 @@ export async function POST(request: Request) {
           ? "refinement-delta"
           : "first-render";
 
+      let refinementGeometryIntent: RefinementGeometryIntent =
+        EMPTY_REFINEMENT_GEOMETRY_INTENT;
+
       if (!plannerHarvestV1) {
         if (rawSpec) {
           const corrected = mergePlannerFixtureCounts(
@@ -888,14 +902,30 @@ export async function POST(request: Request) {
             specTranscript,
           );
           conceptRenderSpec = corrected;
+          if (conceptImageVisualMode === "refinement-delta") {
+            const refinementBlob = buildRefinementFeedbackBlob(
+              lastUserText,
+              cleanReply,
+            );
+            refinementGeometryIntent =
+              detectRefinementGeometryIntent(refinementBlob);
+            if (refinementGeometryIntent.hasGeometryChange) {
+              conceptRenderSpec = applyRefinementGeometryToSpec(
+                corrected,
+                refinementBlob,
+                refinementGeometryIntent,
+              );
+            }
+          }
           extractedVisualDirective = buildImageRenderDirective(
-            corrected,
+            conceptRenderSpec,
             {
               hasUserProvidedPhoto,
               isCloset: isClosetScope,
               extractionTranscript: specTranscript,
             },
             conceptImageVisualMode,
+            { geometryRefinement: refinementGeometryIntent.hasGeometryChange },
           );
         }
       } else {
@@ -950,6 +980,23 @@ export async function POST(request: Request) {
         });
         logHarvestAssumptions("harvest", harvest.assumptionsLogged);
 
+        if (visualMode === "refinement-delta") {
+          const refinementBlob = buildRefinementFeedbackBlob(
+            lastUserText,
+            cleanReply,
+          );
+          refinementGeometryIntent =
+            detectRefinementGeometryIntent(refinementBlob);
+          if (refinementGeometryIntent.hasGeometryChange) {
+            const adjustedSpec = applyRefinementGeometryToSpec(
+              harvest.spec,
+              refinementBlob,
+              refinementGeometryIntent,
+            );
+            harvest = syncHarvestFromSpec(harvest, adjustedSpec);
+          }
+        }
+
         conceptRenderSpec = harvest.spec;
         extractedVisualDirective = buildImageRenderDirective(
           harvest.spec,
@@ -959,6 +1006,7 @@ export async function POST(request: Request) {
             extractionTranscript: specTranscript,
           },
           visualMode,
+          { geometryRefinement: refinementGeometryIntent.hasGeometryChange },
         );
 
         if (useHarvestPipeline) {
@@ -971,6 +1019,7 @@ export async function POST(request: Request) {
             lastUserFeedback: lastUserText,
             visualMode,
             refinementBaselineAttachmentPosition: hasRefinementBaseline ? "last" : "first",
+            refinementGeometryIntent,
           });
           if (visualMode === "refinement-delta") {
             basePrompt = bundle.promptContext;
@@ -1022,20 +1071,26 @@ export async function POST(request: Request) {
         }
         prevOkNoImages = false;
 
+        const geometryRetryHint =
+          refinementGeometryIntent.hasGeometryChange && attempt >= 1
+            ? "\n\n(The shelf size or position must be visibly different from the baseline image — not a duplicate.)"
+            : "";
+
         const userGoalAug =
           attempt === 0
             ? baseGoal
             : attempt === 1
-              ? `${baseGoal}\n\n(Second attempt: output must include one clear IMAGE part showing the finish-carpentry concept.)`
+              ? `${baseGoal}\n\n(Second attempt: output must include one clear IMAGE part showing the finish-carpentry concept.)${geometryRetryHint}`
               : attempt === 2
-                ? `${baseGoal}\n\n(Third attempt: mandatory — emit at least one IMAGE part; no text-only replies; prioritize a single clear finish-carpentry concept render.)`
-                : `${baseGoal}\n\n(Fourth attempt: you MUST return one IMAGE inlineData part — no text-only response; single clearest concept render.)`;
+                ? `${baseGoal}\n\n(Third attempt: mandatory — emit at least one IMAGE part; no text-only replies; prioritize a single clear finish-carpentry concept render.)${geometryRetryHint}`
+                : `${baseGoal}\n\n(Fourth attempt: you MUST return one IMAGE inlineData part — no text-only response; single clearest concept render.)${geometryRetryHint}`;
 
         const renderPrep = buildGeminiConceptImagePromptText({
           promptContext: basePrompt,
           userGoal: userGoalAug,
           extractedVisualDirective,
           visualMode: conceptImageVisualMode,
+          geometryRefinement: refinementGeometryIntent.hasGeometryChange,
         });
 
         const visual = await geminiGenerateConceptImage({
@@ -1044,6 +1099,7 @@ export async function POST(request: Request) {
           referenceImageParts: conceptReferenceForRender,
           extractedVisualDirective,
           visualMode: conceptImageVisualMode,
+          geometryRefinement: refinementGeometryIntent.hasGeometryChange,
         });
 
         conceptRenderAudit = {
@@ -1091,10 +1147,16 @@ export async function POST(request: Request) {
 
       if (responseImages.length === 0) {
         cleanReply = stripMisleadingImageDeliveryClaims(cleanReply);
-        cleanReply = appendVisualizationUnavailableNotice(cleanReply, {
-          technicalDetail: imageGenerationFailureDetail,
-          skipIfConflictBlockPresent: false,
-        });
+        if (hasAnyPriorRender) {
+          cleanReply = appendSketchNotUpdatedNotice(cleanReply, {
+            geometryRefinement: refinementGeometryIntent.hasGeometryChange,
+          });
+        } else {
+          cleanReply = appendVisualizationUnavailableNotice(cleanReply, {
+            technicalDetail: imageGenerationFailureDetail,
+            skipIfConflictBlockPresent: false,
+          });
+        }
         if (conceptRenderAudit && imageGenerationFailureDetail) {
           conceptRenderAudit = {
             ...conceptRenderAudit,
@@ -1218,6 +1280,11 @@ export async function POST(request: Request) {
         hasCallWindow: intakeHasCallWindow,
       }),
       ...(responseImages.length ? { images: responseImages } : {}),
+      ...(hasAnyPriorRender &&
+      responseImages.length === 0 &&
+      allowConceptImage
+        ? { sketchNotUpdated: true }
+        : {}),
     };
 
     if (plannerDebugDiagnostics) {
