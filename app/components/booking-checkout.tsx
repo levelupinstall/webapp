@@ -1,6 +1,7 @@
 "use client";
 
 import { FormEvent, useEffect, useState } from "react";
+import { lu } from "@/lib/level-up-ui";
 
 type BookingPayload = {
   fullName: string;
@@ -93,13 +94,9 @@ export default function BookingCheckout({
 
   return (
     <div
-      className={
-        embedded
-          ? "rounded-2xl border border-[#dcc6fb] bg-[#fdfbff] p-5 sm:p-6"
-          : "rounded-3xl border border-[#d9c2fa] bg-[#f7f1ff] p-6 sm:p-8"
-      }
+      className={embedded ? `${lu.panelInset} p-5 sm:p-6` : `${lu.panel} bg-[#f7f1ff]`}
     >
-      <h3 className="text-xl font-semibold text-[#2d1546] sm:text-2xl">
+      <h3 className={lu.heading}>
         {embedded ? "Secure your booking" : "Booking checkout"}
       </h3>
       <p className="mt-2 text-sm text-[#55337b] sm:text-[15px]">
@@ -117,7 +114,7 @@ export default function BookingCheckout({
               setForm((prev) => ({ ...prev, fullName: event.target.value }))
             }
             placeholder="Full Name"
-            className="rounded-xl border border-[#dcbef9] bg-white px-3 py-2 text-sm text-[#32174f] outline-none ring-[#c9a0f8] transition focus:ring-2"
+            className={lu.input}
           />
           <input
             required
@@ -127,7 +124,7 @@ export default function BookingCheckout({
               setForm((prev) => ({ ...prev, email: event.target.value }))
             }
             placeholder="Email"
-            className="rounded-xl border border-[#dcbef9] bg-white px-3 py-2 text-sm text-[#32174f] outline-none ring-[#c9a0f8] transition focus:ring-2"
+            className={lu.input}
           />
           <input
             required
@@ -136,7 +133,7 @@ export default function BookingCheckout({
               setForm((prev) => ({ ...prev, phone: event.target.value }))
             }
             placeholder="Phone Number"
-            className="rounded-xl border border-[#dcbef9] bg-white px-3 py-2 text-sm text-[#32174f] outline-none ring-[#c9a0f8] transition focus:ring-2"
+            className={lu.input}
           />
           <input
             required
@@ -148,7 +145,7 @@ export default function BookingCheckout({
               }))
             }
             placeholder="Project Address"
-            className="rounded-xl border border-[#dcbef9] bg-white px-3 py-2 text-sm text-[#32174f] outline-none ring-[#c9a0f8] transition focus:ring-2"
+            className={lu.input}
           />
           <label className="sm:col-span-2">
             <span className="mb-1 block text-sm font-medium text-[#4a2381]">
@@ -164,7 +161,7 @@ export default function BookingCheckout({
                   preferredDate: event.target.value,
                 }))
               }
-              className="w-full rounded-xl border border-[#dcbef9] bg-white px-3 py-2 text-sm text-[#32174f] outline-none ring-[#c9a0f8] transition focus:ring-2"
+              className={lu.textarea}
             />
           </label>
         </div>
@@ -176,7 +173,7 @@ export default function BookingCheckout({
           }
           placeholder="Project details (scope, room, goals — your AI brief is prefilled when you start from the planner)"
           rows={4}
-          className="w-full rounded-xl border border-[#dcbef9] bg-white px-3 py-2 text-sm text-[#32174f] outline-none ring-[#c9a0f8] transition focus:ring-2"
+          className={lu.textarea}
         />
 
         <div className="rounded-2xl border border-[#dcc6fb] bg-white p-4">
@@ -207,7 +204,7 @@ export default function BookingCheckout({
         <button
           type="submit"
           disabled={isSubmitting}
-          className="inline-flex items-center justify-center rounded-full bg-[#6e3eb2] px-6 py-3 text-sm font-semibold text-white transition hover:bg-[#5b3292] disabled:cursor-not-allowed disabled:opacity-60"
+          className={`${lu.btnPrimary} disabled:opacity-60`}
         >
           {isSubmitting
             ? "Redirecting to secure checkout..."

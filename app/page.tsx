@@ -7,6 +7,7 @@ import ClientPortal from "./components/client-portal";
 import ProjectPlannerAssistant from "./components/project-planner-assistant";
 import { PLANNER_ASSISTANT_NAME } from "@/lib/planner-brand";
 import ReviewsGallery from "./components/reviews-gallery";
+import { lu, luSectionTab } from "@/lib/level-up-ui";
 
 type SectionKey = "overview" | "reviews" | "rates" | "planner" | "account";
 type AccountMenuView = "saved-projects" | "proposals" | "invoices" | "profile" | "bookings";
@@ -108,16 +109,12 @@ function HomeContent() {
   }
 
   const sectionButtonClass = (section: SectionKey) =>
-    `inline-flex items-center justify-center rounded-full px-4 py-2 text-xs font-semibold transition sm:text-sm ${
-      currentSection === section
-        ? "bg-[#6e3eb2] text-white"
-        : "border border-[#6e3eb2] text-[#5b3292] hover:bg-[#f3ebff]"
-    }`;
+    luSectionTab(currentSection === section);
 
   return (
-    <main className="min-h-screen bg-gradient-to-b from-[#f8f2ff] via-[#f2e9ff] to-[#ffffff] px-4 pb-10 pt-36 text-[#281437] sm:px-6 sm:pt-40 lg:px-8">
-      <div className="fixed inset-x-0 top-3 z-50 px-4 sm:px-6 lg:px-8">
-        <div className="mx-auto flex w-full max-w-5xl items-center justify-between gap-4 rounded-2xl border border-[#dfccfb] bg-white/90 py-4 pl-3 pr-3 shadow-[0_10px_30px_-20px_rgba(91,33,182,0.75)] backdrop-blur sm:py-5 sm:pl-5 sm:pr-5">
+    <main className={lu.page}>
+      <div className={lu.nav}>
+        <div className={lu.navInner}>
           <a
             href="#"
             className="flex w-[30%] min-w-[104px] max-w-[320px] shrink-0 items-center justify-start py-0.5 sm:py-1"
@@ -139,51 +136,51 @@ function HomeContent() {
               <button
                 type="button"
                 onClick={handleHeaderLogout}
-                className="inline-flex items-center justify-center rounded-full border border-[#6e3eb2] px-3 py-2 text-xs font-semibold text-[#5b3292] transition hover:bg-[#f3ebff] sm:px-4 sm:text-sm"
+                className={lu.btnSecondary}
               >
                 Log Out
               </button>
               <button
                 type="button"
                 onClick={() => setMenuOpen((prev) => !prev)}
-                className="inline-flex items-center justify-center rounded-full bg-[#6e3eb2] px-3 py-2 text-xs font-semibold text-white transition hover:bg-[#5b3292] sm:px-4 sm:text-sm"
+                className={`${lu.btnPrimary} !px-3 !py-2 sm:!px-4`}
               >
                 Menu
               </button>
               {menuOpen ? (
-                <div className="absolute right-0 top-full z-[60] mt-2 w-52 rounded-xl border border-[#dcc6fb] bg-white p-2 shadow-lg">
+                <div className={lu.navMenu}>
                   <button
                     type="button"
                     onClick={() => openAccountView("saved-projects")}
-                    className="w-full rounded-lg px-3 py-2 text-left text-sm text-[#4d2e70] hover:bg-[#f5efff]"
+                    className={lu.navMenuItem}
                   >
                     Saved Designs
                   </button>
                   <button
                     type="button"
                     onClick={() => openAccountView("proposals")}
-                    className="w-full rounded-lg px-3 py-2 text-left text-sm text-[#4d2e70] hover:bg-[#f5efff]"
+                    className={lu.navMenuItem}
                   >
                     Proposals
                   </button>
                   <button
                     type="button"
                     onClick={() => openAccountView("invoices")}
-                    className="w-full rounded-lg px-3 py-2 text-left text-sm text-[#4d2e70] hover:bg-[#f5efff]"
+                    className={lu.navMenuItem}
                   >
                     Invoices
                   </button>
                   <button
                     type="button"
                     onClick={() => openAccountView("profile")}
-                    className="w-full rounded-lg px-3 py-2 text-left text-sm text-[#4d2e70] hover:bg-[#f5efff]"
+                    className={lu.navMenuItem}
                   >
                     Profile
                   </button>
                   <button
                     type="button"
                     onClick={() => openAccountView("bookings")}
-                    className="w-full rounded-lg px-3 py-2 text-left text-sm text-[#4d2e70] hover:bg-[#f5efff]"
+                    className={lu.navMenuItem}
                   >
                     Bookings
                   </button>
@@ -195,14 +192,14 @@ function HomeContent() {
               <button
                 type="button"
                 onClick={() => openAuth("login")}
-                className="inline-flex items-center justify-center rounded-full border border-[#6e3eb2] px-3 py-2 text-xs font-semibold text-[#5b3292] transition hover:bg-[#f3ebff] sm:px-4 sm:text-sm"
+                className={lu.btnSecondary}
               >
                 Login
               </button>
               <button
                 type="button"
                 onClick={() => openAuth("register")}
-                className="inline-flex items-center justify-center rounded-full bg-[#6e3eb2] px-3 py-2 text-xs font-semibold text-white transition hover:bg-[#5b3292] sm:px-4 sm:text-sm"
+                className={`${lu.btnPrimary} !px-3 !py-2 sm:!px-4`}
               >
                 Create Account
               </button>
@@ -210,8 +207,8 @@ function HomeContent() {
           )}
         </div>
       </div>
-      <section className="mx-auto w-full max-w-5xl">
-        <div className="mb-6 rounded-2xl border border-[#dfccfb] bg-white/80 p-2 shadow-[0_10px_24px_-20px_rgba(91,33,182,0.7)]">
+      <section className={lu.container}>
+        <div className={`${lu.tabsBar} mb-6`}>
           <div className="flex flex-wrap gap-2">
             <button
               type="button"
@@ -250,7 +247,7 @@ function HomeContent() {
                   openAuth("login");
                 }
               }}
-              className="inline-flex items-center justify-center rounded-full border border-[#6e3eb2] px-4 py-2 text-xs font-semibold text-[#5b3292] transition hover:bg-[#f3ebff] sm:text-sm"
+              className={lu.btnSecondary}
             >
               Saved Designs
             </button>
@@ -258,7 +255,7 @@ function HomeContent() {
         </div>
 
         {currentSection === "overview" ? (
-          <div className="rounded-3xl border border-white/60 bg-white/70 p-6 shadow-[0_15px_50px_-20px_rgba(91,33,182,0.45)] backdrop-blur-sm sm:p-10">
+          <div className={lu.card}>
             <div className="mb-6 overflow-hidden rounded-2xl border border-[#e6d7ff] bg-white p-2 shadow-[0_8px_24px_-16px_rgba(91,33,182,0.6)]">
               <Image
                 src="/level-up-install-logo.jpg"
@@ -460,7 +457,7 @@ function HomeContent() {
                 <button
                   type="button"
                   onClick={() => navigateToSection("planner")}
-                  className="inline-flex items-center justify-center rounded-full bg-[#6e3eb2] px-6 py-3 text-sm font-semibold text-white shadow-[0_10px_26px_-12px_rgba(110,62,178,0.85)] transition hover:-translate-y-0.5 hover:bg-[#5b3292]"
+                  className={lu.btnPrimary}
                 >
                   Create a plan for my space
                 </button>

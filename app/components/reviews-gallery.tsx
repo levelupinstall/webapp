@@ -1,3 +1,5 @@
+import { lu } from "@/lib/level-up-ui";
+
 function IllustrationBuiltIns() {
   return (
     <svg viewBox="0 0 320 200" className="h-full w-full" fill="none" aria-hidden>
@@ -123,14 +125,14 @@ const GALLERY_ITEMS = [
 
 export default function ReviewsGallery() {
   return (
-    <div className="rounded-3xl border border-[#e9d9ff] bg-white p-6 shadow-[0_10px_30px_-20px_rgba(91,33,182,0.5)] sm:p-8">
-      <p className="text-sm font-semibold uppercase tracking-[0.2em] text-[#7a4bb8]">
+    <div className={lu.panel}>
+      <p className={lu.eyebrow}>
         Reviews &amp; gallery
       </p>
-      <h2 className="mt-2 text-2xl font-semibold text-[#2e1842] sm:text-3xl">
+      <h2 className={`mt-2 ${lu.headingLg} text-[#2e1842]`}>
         Real projects. Happy homeowners.
       </h2>
-      <p className="mt-3 max-w-2xl text-[#4d2e70]">
+      <p className={`mt-3 max-w-2xl ${lu.body}`}>
         Read what homeowners say about finish carpentry with Level Up Install, then scroll through
         sample job snapshots for the kinds of built-ins, trim, and feature walls we deliver. Ask us
         anytime for more photos from projects similar to yours.
@@ -140,7 +142,7 @@ export default function ReviewsGallery() {
         {REVIEWS.map((item) => (
           <article
             key={item.author + item.project}
-            className="flex flex-col overflow-hidden rounded-2xl border border-[#dcc6fb] bg-[#faf8ff] shadow-sm"
+            className={`${lu.featureTile} rounded-2xl bg-[#faf8ff]`}
           >
             <div className="relative aspect-[16/10] w-full shrink-0 overflow-hidden border-b border-[#eddfff] bg-[#f5efff]">
               <item.Illustration />

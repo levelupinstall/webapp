@@ -19,6 +19,7 @@ import {
   hasEarlyPhotoInviteContext,
 } from "@/lib/planner-intake-detect";
 import { PLANNER_ASSISTANT_NAME } from "@/lib/planner-brand";
+import { lu } from "@/lib/level-up-ui";
 
 type ChatMessage = {
   role: "user" | "assistant";
@@ -846,12 +847,12 @@ export default function ProjectPlannerAssistant({
 
   return (
     <section
-      className="mt-8 rounded-3xl border border-[#dac6fb] bg-white p-6 shadow-[0_10px_30px_-20px_rgba(91,33,182,0.55)] sm:p-8"
+      className={`mt-8 ${lu.panel}`}
       data-planner-work-category={workCategory ?? ""}
       data-planner-style-preference={stylePreference ?? ""}
     >
       {welcome ? (
-        <div className="mb-6 rounded-2xl border border-[#c9e8d4] bg-gradient-to-br from-[#f4fcf7] to-[#eefaf3] px-5 py-4 sm:px-6">
+        <div className={`mb-6 ${lu.alertSuccess} px-5 py-4 sm:px-6`}>
           <p className="text-lg font-semibold text-[#1a4d2e] sm:text-xl">
             Welcome, {welcome}
           </p>
@@ -862,10 +863,10 @@ export default function ProjectPlannerAssistant({
           </p>
         </div>
       ) : null}
-      <h2 className="text-2xl font-semibold text-[#2d1546] sm:text-3xl">
+      <h2 className={lu.headingLg}>
         Meet {PLANNER_ASSISTANT_NAME}, your planning consultant
       </h2>
-      <p className="mt-3 text-[#55337b]">
+      <p className={`mt-3 ${lu.body}`}>
         Conversational guidance from a finish-carpentry mindset — budget and practical constraints matter early.
         {PLANNER_ASSISTANT_NAME} asks tailored questions (sizes, what you already bought, closet habits, IKEA lines when relevant)
         and invites photos when it helps; if you skip photos, you may still see a neutral blank-room sketch so you can react visually.
@@ -873,15 +874,13 @@ export default function ProjectPlannerAssistant({
         When you&apos;re ready to proceed, Level Up reviews your designs and reaches out with a detailed proposal for approval.
       </p>
 
-      <div className="mt-6 max-h-[min(520px,70vh)] space-y-3 overflow-y-auto rounded-2xl border border-[#ecdefe] bg-[#fcf9ff] p-4">
+      <div className={`mt-6 ${lu.chatScroll}`}>
         {messages.map((message, index) => (
           <div
             key={`${message.role}-${index}`}
-            className={`rounded-2xl px-4 py-3 text-sm leading-relaxed sm:text-base ${
-              message.role === "assistant"
-                ? "bg-white text-[#3e2560]"
-                : "ml-auto max-w-[90%] bg-[#6e3eb2] text-white"
-            }`}
+            className={
+              message.role === "assistant" ? lu.chatAssistant : lu.chatUser
+            }
           >
             <div className="whitespace-pre-wrap">
               {message.role === "assistant"
@@ -907,7 +906,7 @@ export default function ProjectPlannerAssistant({
                   type="button"
                   disabled={submitDesignBusy || saveBusy || isLoading || !canSaveConversation}
                   onClick={() => requestSubmitDesignForReview()}
-                  className="inline-flex items-center justify-center rounded-full border border-[#2f7a32] bg-[#f4fcf7] px-4 py-2 text-xs font-semibold text-[#1a4d2e] transition hover:bg-[#dff5e8] disabled:cursor-not-allowed disabled:opacity-60 sm:text-sm"
+                  className={`${lu.btnSuccess} disabled:cursor-not-allowed disabled:opacity-60`}
                 >
                   {submitDesignBusy ? "Submitting…" : "Submit design for review"}
                 </button>
@@ -916,7 +915,7 @@ export default function ProjectPlannerAssistant({
           </div>
         ))}
         {isLoading ? (
-          <div className="rounded-2xl bg-white px-4 py-3 text-sm text-[#6a4a8f]">
+          <div className={`${lu.chatAssistant} animate-pulse text-[#6a4a8f]`}>
             {PLANNER_ASSISTANT_NAME} is thinking…
           </div>
         ) : null}
@@ -925,7 +924,7 @@ export default function ProjectPlannerAssistant({
 
       <form id="levelup-planner-form" className="mt-5 space-y-4" onSubmit={handleSubmit}>
         {photoInviteActive ? (
-          <div className="space-y-3 rounded-2xl border border-[#e8d9ff] bg-[#faf6ff] p-4">
+          <div className={lu.photoZone}>
             <p className="text-sm text-[#4d2e70]">
               <span className="font-semibold text-[#2f1748]">
                 {PLANNER_ASSISTANT_NAME} asked for photos.
@@ -944,14 +943,14 @@ export default function ProjectPlannerAssistant({
               <button
                 type="button"
                 onClick={() => galleryInputRef.current?.click()}
-                className="rounded-full border border-[#dcc6fb] bg-white px-4 py-2 text-xs font-semibold text-[#4a2381] transition hover:bg-[#f0e6ff] sm:text-sm"
+                className={lu.btnGhost}
               >
                 Upload photo
               </button>
               <button
                 type="button"
                 onClick={() => cameraInputRef.current?.click()}
-                className="rounded-full border border-[#dcc6fb] bg-white px-4 py-2 text-xs font-semibold text-[#4a2381] transition hover:bg-[#f0e6ff] sm:text-sm"
+                className={lu.btnGhost}
               >
                 Take photo
               </button>
@@ -1024,17 +1023,17 @@ export default function ProjectPlannerAssistant({
             onChange={(event) => setDraft(event.target.value)}
             placeholder="Reply here…"
             rows={3}
-            className="mt-2 w-full resize-y rounded-2xl border border-[#dcbef9] bg-white px-4 py-3 text-[#32174f] outline-none ring-[#c9a0f8] transition focus:ring-2"
+            className={`${lu.textarea} mt-2 resize-y`}
           />
         </label>
 
-        {error ? <p className="text-sm text-[#a2175d]">{error}</p> : null}
+        {error ? <p className={lu.alertError}>{error}</p> : null}
 
         <div className="flex flex-wrap items-center gap-3">
           <button
             type="submit"
             disabled={isLoading}
-            className="inline-flex items-center justify-center rounded-full bg-[#6e3eb2] px-6 py-3 text-sm font-semibold text-white transition hover:bg-[#5b3292] disabled:cursor-not-allowed disabled:opacity-65"
+            className={`${lu.btnPrimary} disabled:opacity-65`}
           >
             {isLoading ? "Sending…" : "Send"}
           </button>
@@ -1100,7 +1099,7 @@ export default function ProjectPlannerAssistant({
           aria-modal="true"
           aria-labelledby="idea-name-modal-title"
         >
-          <div className="w-full max-w-md rounded-2xl border border-[#dcc6fb] bg-white p-6 shadow-[0_20px_50px_-20px_rgba(45,21,70,0.45)]">
+          <div className={`w-full max-w-md ${lu.panel} shadow-[0_20px_50px_-20px_rgba(45,21,70,0.45)]`}>
             <h3
               id="idea-name-modal-title"
               className="text-lg font-semibold text-[#2d1546]"

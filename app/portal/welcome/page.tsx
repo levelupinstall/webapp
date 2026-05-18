@@ -4,6 +4,7 @@ import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 
 import { getSessionFromCookie } from "@/lib/client-portal-auth";
+import { lu } from "@/lib/level-up-ui";
 
 export const metadata: Metadata = {
   title: "Your account is active — Level Up Install",
@@ -18,7 +19,7 @@ export default async function PortalWelcomeAfterVerificationPage() {
   }
 
   return (
-    <main className="min-h-screen bg-gradient-to-b from-[#f8f2ff] via-[#f2e9ff] to-[#ffffff] px-4 py-16 text-[#281437] sm:px-6">
+    <main className={`${lu.page} !pt-16`}>
       <div className="mx-auto w-full max-w-lg">
         <div className="mb-8 flex justify-center">
           <Image
@@ -31,7 +32,7 @@ export default async function PortalWelcomeAfterVerificationPage() {
           />
         </div>
 
-        <div className="rounded-3xl border border-[#c9e8c9] bg-[#f8fcf8] p-8 shadow-[0_10px_30px_-20px_rgba(47,122,50,0.2)] sm:p-10">
+        <div className={`${lu.alertSuccess} p-8 sm:p-10 shadow-[0_10px_30px_-20px_rgba(47,122,50,0.2)]`}>
           <p className="text-sm font-semibold uppercase tracking-wide text-[#2f7a32]">
             You are signed in
           </p>
@@ -52,13 +53,13 @@ export default async function PortalWelcomeAfterVerificationPage() {
           <div className="mt-8 flex flex-col gap-3 sm:flex-row sm:flex-wrap">
             <Link
               href="/?section=planner"
-              className="inline-flex items-center justify-center rounded-full bg-[#6e3eb2] px-6 py-3 text-sm font-semibold text-white transition hover:bg-[#5b3292]"
+              className={lu.btnPrimary}
             >
               Open AI planner
             </Link>
             <Link
               href="/?section=account"
-              className="inline-flex items-center justify-center rounded-full border border-[#6e3eb2] px-6 py-3 text-sm font-semibold text-[#5b3292] transition hover:bg-[#f3ebff]"
+              className={lu.btnSecondary}
               >
               Client portal
             </Link>

@@ -2,6 +2,7 @@
 
 import { useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useMemo, useState } from "react";
+import { lu } from "@/lib/level-up-ui";
 
 const LABOR_HOLD_STORAGE_KEY = "plannerSubmitLaborHoldCheckoutUrl";
 
@@ -60,7 +61,7 @@ function Inner() {
           </p>
           <a
             href={storedLaborUrl}
-            className="mt-4 inline-flex rounded-full bg-[#6e3eb2] px-5 py-3 text-sm font-semibold text-white transition hover:bg-[#5b3292]"
+            className={`mt-4 ${lu.btnPrimary}`}
           >
             Authorize labor hold
           </a>

@@ -1,8 +1,46 @@
 @import "tailwindcss";
 
+/* —— Level Up Install design tokens —— */
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --lu-brand-50: #faf7ff;
+  --lu-brand-100: #f3ebff;
+  --lu-brand-200: #e8d9ff;
+  --lu-brand-300: #dcc6fb;
+  --lu-brand-400: #c9a5f1;
+  --lu-brand-500: #a87de8;
+  --lu-brand-600: #6e3eb2;
+  --lu-brand-700: #5b3292;
+  --lu-brand-800: #4a2381;
+  --lu-brand-900: #31184a;
+  --lu-brand-950: #230f35;
+
+  --lu-ink: #281437;
+  --lu-ink-muted: #55337b;
+  --lu-ink-soft: #6a4a8f;
+
+  --lu-success-50: #f4fcf7;
+  --lu-success-100: #dff5e8;
+  --lu-success-700: #1a4d2e;
+  --lu-success-border: #c9e8d4;
+
+  --lu-danger: #a2175d;
+
+  --lu-radius-sm: 0.625rem;
+  --lu-radius-md: 0.875rem;
+  --lu-radius-lg: 1rem;
+  --lu-radius-xl: 1.25rem;
+  --lu-radius-2xl: 1.5rem;
+  --lu-radius-3xl: 1.75rem;
+
+  --lu-shadow-card: 0 12px 40px -24px rgba(91, 33, 182, 0.35);
+  --lu-shadow-float: 0 16px 48px -28px rgba(91, 33, 182, 0.45);
+  --lu-shadow-nav: 0 10px 30px -20px rgba(91, 33, 182, 0.75);
+  --lu-shadow-btn: 0 10px 26px -12px rgba(110, 62, 178, 0.85);
+
+  --background: var(--lu-brand-50);
+  --foreground: var(--lu-ink);
+
+  color-scheme: light;
 }
 
 @theme inline {
@@ -12,17 +50,215 @@
   --font-mono: var(--font-geist-mono);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+/* Admin CRM (dark) */
+.admin-app {
+  --admin-bg: #09090b;
+  --admin-surface: #18181b;
+  --admin-surface-raised: #27272a;
+  --admin-border: #3f3f46;
+  --admin-text: #fafafa;
+  --admin-muted: #a1a1aa;
+  --admin-accent: #8b5cf6;
+  --admin-accent-hover: #a78bfa;
+}
+
+html {
+  scroll-behavior: smooth;
 }
 
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--font-geist-sans), system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
+    sans-serif;
+  font-feature-settings: "kern" 1, "liga" 1;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+::selection {
+  background: color-mix(in srgb, var(--lu-brand-600) 28%, transparent);
+  color: var(--lu-brand-950);
+}
+
+@layer components {
+  /* Page shell */
+  .lu-page {
+    @apply min-h-screen bg-gradient-to-b from-[#f8f2ff] via-[#f2e9ff] to-white px-4 pb-12 pt-36 text-[#281437] sm:px-6 sm:pt-40 lg:px-8;
+  }
+
+  .lu-container {
+    @apply mx-auto w-full max-w-5xl;
+  }
+
+  /* Glass navigation */
+  .lu-nav {
+    @apply fixed inset-x-0 top-3 z-50 px-4 sm:px-6 lg:px-8;
+  }
+
+  .lu-nav-inner {
+    @apply mx-auto flex w-full max-w-5xl items-center justify-between gap-4 rounded-2xl border border-[#dfccfb]/90 bg-white/85 py-4 pl-3 pr-3 shadow-[0_10px_30px_-20px_rgba(91,33,182,0.75)] backdrop-blur-md sm:py-5 sm:pl-5 sm:pr-5;
+  }
+
+  .lu-nav-menu {
+    @apply absolute right-0 top-full z-[60] mt-2 w-52 overflow-hidden rounded-xl border border-[#dcc6fb] bg-white/95 p-1.5 shadow-xl backdrop-blur-md;
+  }
+
+  .lu-nav-menu-item {
+    @apply w-full rounded-lg px-3 py-2.5 text-left text-sm text-[#4d2e70] transition hover:bg-[#f5efff] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#c9a5f8];
+  }
+
+  /* Section tabs */
+  .lu-tabs-bar {
+    @apply mb-6 rounded-2xl border border-[#dfccfb]/80 bg-white/75 p-2 shadow-[0_10px_24px_-20px_rgba(91,33,182,0.7)] backdrop-blur-sm;
+  }
+
+  .lu-tab {
+    @apply inline-flex items-center justify-center rounded-full px-4 py-2 text-xs font-semibold transition duration-200 sm:text-sm;
+  }
+
+  .lu-tab-active {
+    @apply bg-[#6e3eb2] text-white shadow-[0_6px_18px_-8px_rgba(110,62,178,0.65)];
+  }
+
+  .lu-tab-inactive {
+    @apply border border-[#6e3eb2]/80 text-[#5b3292] hover:border-[#6e3eb2] hover:bg-[#f3ebff];
+  }
+
+  /* Cards & panels */
+  .lu-card {
+    @apply rounded-3xl border border-white/70 bg-white/80 p-6 shadow-[0_15px_50px_-20px_rgba(91,33,182,0.45)] backdrop-blur-sm sm:p-10;
+  }
+
+  .lu-panel {
+    @apply rounded-3xl border border-[#dac6fb]/90 bg-white p-6 shadow-[0_10px_30px_-20px_rgba(91,33,182,0.55)] sm:p-8;
+  }
+
+  .lu-panel-inset {
+    @apply rounded-2xl border border-[#e8d9ff] bg-gradient-to-br from-[#faf8ff] to-white p-6 sm:p-8;
+  }
+
+  .lu-eyebrow {
+    @apply text-sm font-semibold uppercase tracking-[0.2em] text-[#7a4bb8];
+  }
+
+  .lu-heading {
+    @apply text-xl font-semibold tracking-tight text-[#230f35] sm:text-2xl;
+  }
+
+  .lu-heading-lg {
+    @apply text-2xl font-semibold tracking-tight text-[#2d1546] sm:text-3xl;
+  }
+
+  .lu-body {
+    @apply text-base leading-relaxed text-[#4d2e70];
+  }
+
+  .lu-muted {
+    @apply text-sm text-[#6a4a8f];
+  }
+
+  /* Buttons */
+  .lu-btn {
+    @apply inline-flex items-center justify-center rounded-full px-4 py-2 text-xs font-semibold transition duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#c9a5f8] focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60 sm:px-5 sm:text-sm;
+  }
+
+  .lu-btn-primary {
+    @apply inline-flex items-center justify-center rounded-full bg-[#6e3eb2] px-5 py-2.5 text-xs font-semibold text-white shadow-[0_10px_26px_-12px_rgba(110,62,178,0.85)] transition duration-200 hover:-translate-y-0.5 hover:bg-[#5b3292] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#c9a5f8] focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:translate-y-0 sm:px-6 sm:py-3 sm:text-sm;
+  }
+
+  .lu-btn-secondary {
+    @apply inline-flex items-center justify-center rounded-full border border-[#6e3eb2] px-4 py-2 text-xs font-semibold text-[#5b3292] transition duration-200 hover:bg-[#f3ebff] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#c9a5f8] focus-visible:ring-offset-2 sm:px-5 sm:text-sm;
+  }
+
+  .lu-btn-ghost {
+    @apply inline-flex items-center justify-center rounded-full border border-[#dcc6fb] bg-white px-4 py-2 text-xs font-semibold text-[#4a2381] transition hover:bg-[#f0e6ff] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#c9a5f8] sm:text-sm;
+  }
+
+  .lu-btn-success {
+    @apply inline-flex items-center justify-center rounded-full border border-[#2f7a32]/60 bg-[#f4fcf7] px-4 py-2 text-xs font-semibold text-[#1a4d2e] transition hover:bg-[#dff5e8] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300/60 sm:text-sm;
+  }
+
+  /* Form controls */
+  .lu-input {
+    @apply w-full rounded-xl border border-[#dcbef9] bg-white px-3.5 py-2.5 text-sm text-[#32174f] shadow-sm transition placeholder:text-[#a08cbd]/80 outline-none focus:border-[#6e3eb2] focus:ring-2 focus:ring-[#c9a5f8]/50;
+  }
+
+  .lu-textarea {
+    @apply w-full rounded-xl border border-[#dcbef9] bg-white px-3.5 py-2.5 text-sm text-[#32174f] shadow-sm transition placeholder:text-[#a08cbd]/80 outline-none focus:border-[#6e3eb2] focus:ring-2 focus:ring-[#c9a5f8]/50;
+  }
+
+  .lu-label {
+    @apply mb-1 block text-sm font-medium text-[#4a2381];
+  }
+
+  /* Alerts */
+  .lu-alert-success {
+    @apply rounded-2xl border border-[#c9e8d4] bg-gradient-to-br from-[#f4fcf7] to-[#eefaf3] px-4 py-3 text-sm text-[#1f4d22];
+  }
+
+  .lu-alert-error {
+    @apply text-sm font-medium text-[#a2175d];
+  }
+
+  /* Planner chat */
+  .lu-chat-scroll {
+    @apply max-h-[min(520px,70vh)] space-y-3 overflow-y-auto rounded-2xl border border-[#ecdefe] bg-gradient-to-b from-[#fcf9ff] to-[#f8f4ff] p-4 shadow-inner;
+  }
+
+  .lu-chat-bubble-assistant {
+    @apply rounded-2xl border border-[#ecdefe]/80 bg-white px-4 py-3 text-sm leading-relaxed text-[#3e2560] shadow-sm sm:text-base;
+  }
+
+  .lu-chat-bubble-user {
+    @apply ml-auto max-w-[90%] rounded-2xl bg-gradient-to-br from-[#6e3eb2] to-[#5b3292] px-4 py-3 text-sm leading-relaxed text-white shadow-[0_8px_20px_-12px_rgba(91,33,182,0.7)] sm:text-base;
+  }
+
+  .lu-photo-zone {
+    @apply space-y-3 rounded-2xl border border-dashed border-[#dcc6fb] bg-gradient-to-br from-[#faf6ff] to-[#f5efff] p-4;
+  }
+
+  /* Feature tiles */
+  .lu-feature-tile {
+    @apply flex flex-col overflow-hidden rounded-xl border border-[#eddfff] bg-white shadow-[0_8px_28px_-18px_rgba(91,33,182,0.35)] transition duration-300 hover:-translate-y-0.5 hover:shadow-[0_14px_36px_-16px_rgba(91,33,182,0.42)];
+  }
+
+  .lu-bullet {
+    @apply mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-[#6e3eb2];
+  }
+
+  /* Admin CRM */
+  .admin-app .admin-login-card {
+    @apply w-full max-w-sm rounded-2xl border border-zinc-800/90 bg-zinc-900/90 p-8 shadow-2xl shadow-black/40 backdrop-blur-md;
+  }
+
+  .admin-app .admin-input {
+    @apply mt-1 w-full rounded-lg border border-zinc-700 bg-zinc-950/80 px-3 py-2.5 text-sm text-white outline-none transition placeholder:text-zinc-600 focus:border-violet-500 focus:ring-2 focus:ring-violet-500/30;
+  }
+
+  .admin-app .admin-btn-primary {
+    @apply rounded-lg bg-violet-600 px-3 py-2 text-sm font-medium text-white shadow-lg shadow-violet-950/40 transition hover:bg-violet-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-400/50 disabled:opacity-50;
+  }
+
+  .admin-app .admin-btn-secondary {
+    @apply rounded-lg border border-zinc-700 px-3 py-2 text-sm text-zinc-300 transition hover:border-zinc-500 hover:bg-zinc-800/80 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-500/40;
+  }
+
+  .admin-app .admin-header {
+    @apply sticky top-0 z-10 border-b border-zinc-800/90 bg-zinc-950/90 shadow-lg shadow-black/20 backdrop-blur-md;
+  }
+
+  .admin-app .admin-card {
+    @apply rounded-xl border border-zinc-800/90 bg-zinc-900/50 shadow-lg shadow-black/15 backdrop-blur-sm;
+  }
+
+  .admin-app .admin-tab-active {
+    @apply rounded-lg bg-violet-600/90 px-3 py-1.5 text-sm font-medium text-white shadow-md shadow-violet-950/30;
+  }
+
+  .admin-app .admin-tab-inactive {
+    @apply rounded-lg border border-zinc-700/80 px-3 py-1.5 text-sm text-zinc-400 transition hover:border-zinc-500 hover:bg-zinc-800/60 hover:text-zinc-200;
+  }
 }
 
 /* Formal proposal: print or Save as PDF from the browser */

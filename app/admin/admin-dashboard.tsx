@@ -15,6 +15,7 @@ import type {
   AiPlannerActivity,
   AiPlannerBlueprintSnapshot,
 } from "@/lib/client-portal-store";
+import { adminTab } from "@/lib/level-up-ui";
 
 type PortalClient = {
   id: string;
@@ -1194,7 +1195,7 @@ export default function AdminDashboard() {
 
   if (checkingAuth) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-zinc-950 text-zinc-200">
+      <div className="admin-app flex min-h-screen items-center justify-center bg-zinc-950 text-zinc-200">
         <p className="text-sm tracking-wide text-zinc-400">Loading CRM…</p>
       </div>
     );
@@ -1202,9 +1203,14 @@ export default function AdminDashboard() {
 
   if (!authenticated) {
     return (
-      <div className="flex min-h-screen flex-col items-center justify-center bg-zinc-950 px-4 text-zinc-100">
-        <div className="w-full max-w-sm rounded-2xl border border-zinc-800 bg-zinc-900/80 p-8 shadow-xl backdrop-blur">
-          <h1 className="text-xl font-semibold tracking-tight text-white">Level Up — Admin CRM</h1>
+      <div className="admin-app flex min-h-screen flex-col items-center justify-center bg-gradient-to-b from-zinc-950 via-zinc-950 to-violet-950/30 px-4 text-zinc-100">
+        <div className="admin-login-card">
+          <p className="text-xs font-semibold uppercase tracking-[0.2em] text-violet-400">
+            Internal
+          </p>
+          <h1 className="mt-2 text-xl font-semibold tracking-tight text-white">
+            Level Up — Admin CRM
+          </h1>
           <p className="mt-2 text-sm text-zinc-400">
             Sign in with the password configured in{" "}
             <code className="rounded bg-zinc-800 px-1 py-0.5 text-xs">ADMIN_PASSWORD</code>.
@@ -1217,14 +1223,14 @@ export default function AdminDashboard() {
                 autoComplete="current-password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                className="mt-1 w-full rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2 text-sm text-white outline-none ring-violet-500/40 focus:border-violet-500 focus:ring-2"
+                className="admin-input"
               />
             </label>
             {loginError ? <p className="text-sm text-rose-400">{loginError}</p> : null}
             <button
               type="submit"
               disabled={loggingIn || !password.trim()}
-              className="w-full rounded-lg bg-violet-600 py-2.5 text-sm font-medium text-white transition hover:bg-violet-500 disabled:opacity-50"
+              className="admin-btn-primary w-full py-2.5"
             >
               {loggingIn ? "Signing in…" : "Sign in"}
             </button>
@@ -1235,8 +1241,8 @@ export default function AdminDashboard() {
   }
 
   return (
-    <div className="min-h-screen bg-zinc-950 text-zinc-100">
-      <header className="sticky top-0 z-10 border-b border-zinc-800 bg-zinc-950/95 backdrop-blur">
+    <div className="admin-app min-h-screen bg-zinc-950 text-zinc-100">
+      <header className="admin-header">
         <div className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-4 px-4 py-4 sm:px-6">
           <div>
             <p className="text-xs font-semibold uppercase tracking-[0.2em] text-violet-400">
@@ -1249,7 +1255,7 @@ export default function AdminDashboard() {
               type="button"
               onClick={() => void refreshOverview()}
               disabled={overviewLoading}
-              className="rounded-lg border border-zinc-700 px-3 py-1.5 text-sm text-zinc-300 hover:bg-zinc-800 disabled:opacity-50"
+              className="admin-btn-secondary disabled:opacity-50"
             >
               {overviewLoading ? "Refreshing…" : "Refresh"}
             </button>
@@ -1260,14 +1266,14 @@ export default function AdminDashboard() {
                 setAssignOpen(true);
                 if (!assignCarpenterId && carpenters[0]) setAssignCarpenterId(carpenters[0].id);
               }}
-              className="rounded-lg bg-violet-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-violet-500"
+              className="admin-btn-primary"
             >
               Assign job
             </button>
             <button
               type="button"
               onClick={() => void handleLogout()}
-              className="rounded-lg border border-zinc-700 px-3 py-1.5 text-sm text-zinc-400 hover:border-zinc-500 hover:text-white"
+              className="admin-btn-secondary"
             >
               Log out
             </button>
@@ -1306,11 +1312,7 @@ export default function AdminDashboard() {
               key={key}
               type="button"
               onClick={() => setTab(key)}
-              className={`rounded-lg px-4 py-2 text-sm font-medium transition ${
-                tab === key
-                  ? "bg-zinc-800 text-white"
-                  : "text-zinc-500 hover:bg-zinc-900 hover:text-zinc-200"
-              }`}
+              className={adminTab(tab === key)}
             >
               {label}
             </button>

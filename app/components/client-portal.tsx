@@ -2,6 +2,7 @@
 
 import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import { lu } from "@/lib/level-up-ui";
 
 type PortalView = "saved-projects" | "proposals" | "invoices" | "profile" | "bookings";
 
@@ -420,7 +421,7 @@ export default function ClientPortal({
 
   if (!user) {
     return (
-      <section className="rounded-3xl border border-[#dac6fb] bg-white p-6 shadow-[0_10px_30px_-20px_rgba(91,33,182,0.55)] sm:p-8">
+      <section className={lu.panel}>
         <h2 className="text-2xl font-semibold text-[#2d1546] sm:text-3xl">
           Client Account Portal
         </h2>
@@ -471,7 +472,7 @@ export default function ClientPortal({
               onChange={(event) => setRegisterFullName(event.target.value)}
               placeholder="Full name"
               autoComplete="name"
-              className="w-full rounded-xl border border-[#dcbef9] bg-white px-3 py-2 text-sm text-[#32174f]"
+              className={lu.input}
             />
           ) : null}
           {(mode === "register" || (mode === "login" && !forgotPasswordOpen)) && (
@@ -482,7 +483,7 @@ export default function ClientPortal({
               onChange={(event) => setEmail(event.target.value)}
               placeholder="Email"
               autoComplete="email"
-              className="w-full rounded-xl border border-[#dcbef9] bg-white px-3 py-2 text-sm text-[#32174f]"
+              className={lu.input}
             />
           )}
           {(mode === "register" || (mode === "login" && !forgotPasswordOpen)) && (
@@ -492,7 +493,7 @@ export default function ClientPortal({
               value={password}
               onChange={(event) => setPassword(event.target.value)}
               placeholder="Password (min 8 characters)"
-              className="w-full rounded-xl border border-[#dcbef9] bg-white px-3 py-2 text-sm text-[#32174f]"
+              className={lu.input}
             />
           )}
           {mode === "login" && !forgotPasswordOpen ? (
@@ -524,7 +525,7 @@ export default function ClientPortal({
                 onChange={(event) => setForgotEmail(event.target.value)}
                 placeholder="Your email"
                 autoComplete="email"
-                className="w-full rounded-xl border border-[#dcbef9] bg-white px-3 py-2 text-sm text-[#32174f]"
+                className={lu.input}
               />
               {forgotError ? <p className="text-sm text-[#a2175d]">{forgotError}</p> : null}
               {forgotMessage ? (
@@ -535,7 +536,7 @@ export default function ClientPortal({
                   type="button"
                   disabled={forgotBusy}
                   onClick={() => void handleForgotPassword()}
-                  className="rounded-full bg-[#6e3eb2] px-5 py-2 text-sm font-semibold text-white disabled:opacity-60"
+                  className={`${lu.btnPrimary} disabled:opacity-60`}
                 >
                   {forgotBusy ? "Sending…" : "Send reset link"}
                 </button>
@@ -548,7 +549,7 @@ export default function ClientPortal({
                     setForgotMessage(null);
                     setForgotError(null);
                   }}
-                  className="rounded-full border border-[#6e3eb2] px-5 py-2 text-sm font-semibold text-[#5b3292]"
+                  className={lu.btnSecondary}
                 >
                   Back to login
                 </button>
@@ -589,7 +590,7 @@ export default function ClientPortal({
             <button
               type="submit"
               disabled={loading}
-              className="rounded-full bg-[#6e3eb2] px-5 py-2 text-sm font-semibold text-white"
+              className={lu.btnPrimary}
             >
               {loading ? "Please wait..." : mode === "login" ? "Login" : "Create Account"}
             </button>
@@ -602,7 +603,7 @@ export default function ClientPortal({
   const displayName = user.fullName?.trim() || user.email || user.username;
 
   return (
-    <section className="rounded-3xl border border-[#dac6fb] bg-white p-6 shadow-[0_10px_30px_-20px_rgba(91,33,182,0.55)] sm:p-8">
+    <section className={lu.panel}>
       {verificationBanner ? (
         <div className="mb-5 rounded-2xl border border-[#c9e8c9] bg-[#f4faf4] px-4 py-3 text-sm text-[#1f4d22]">
           <div className="flex gap-3">
@@ -627,7 +628,7 @@ export default function ClientPortal({
         <button
           type="button"
           onClick={handleLogout}
-          className="rounded-full border border-[#6e3eb2] px-4 py-2 text-sm font-semibold text-[#5b3292]"
+          className={lu.btnSecondary}
         >
           Logout
         </button>
