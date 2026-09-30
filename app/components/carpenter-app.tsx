@@ -166,8 +166,130 @@ function JobChecklistSection(props: { tools: string[]; materials: string[] }) {
   );
 }
 
-type ClientJobContext = {
+type ShopPacketPayload = {
   linked: boolean;
+  message?: string;
+  jobTitle?: string;
+  crewSize?: number;
+  crewReason?: string;
+  estimatedManHours?: number;
+  packet?: {
+    generatedAt: string;
+    wallWidthIn: number;
+    wallHeightIn: number;
+    ceilingHeightIn: number;
+    datumDescription: string;
+    elements: Array<{
+      label: string;
+      widthIn: number;
+      heightIn: number;
+      depthIn: number;
+      bottomAffIn: number;
+      leftFromDatumIn: number;
+      horizontalRef: string;
+      notes?: string;
+    }>;
+    installSteps: string[];
+    warnings: string[];
+  };
+  svg?: string;
+};
+
+function ShopDrawingsSection(props: { jobId: string }) {
+  const [data, setData] = useState<ShopPacketPayload | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      try {
+        const res = await fetch(
+          `/api/carpenter/job-shop-packet?jobId=${encodeURIComponent(props.jobId)}`,
+        );
+        const json = (await res.json()) as ShopPacketPayload;
+        if (!cancelled && res.ok) setData(json);
+      } catch {
+        /* optional section */
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [props.jobId]);
+
+  if (!data || !data.linked || !data.packet) return null;
+  const packet = data.packet;
+  const onSiteHours =
+    data.estimatedManHours && data.crewSize
+      ? data.estimatedManHours / data.crewSize
+      : null;
+
+  return (
+    <div className="rounded-2xl border border-[#c9a5f1]/50 bg-gradient-to-br from-[#faf8ff] to-[#f3ebff] p-4">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <p className="text-sm font-semibold text-[#31184a]">Shop drawings</p>
+        <button
+          type="button"
+          onClick={() => window.print()}
+          className="rounded-full border border-[#7a4bb8] bg-white px-4 py-1.5 text-xs font-semibold text-[#5b3292] hover:bg-[#f5efff]"
+        >
+          Print
+        </button>
+      </div>
+      <p className="mt-1 text-xs text-[#6a4a8f]">
+        {data.crewSize === 2 ? "Two-person crew" : "One-person job"}
+        {onSiteHours ? ` · about ${onSiteHours.toFixed(1)}h on site` : ""}
+        {data.crewReason ? ` · ${data.crewReason}` : ""}
+      </p>
+      {data.svg ? (
+        <div
+          className="mt-3 overflow-hidden rounded-xl border border-[#dcc6fb] bg-white"
+          dangerouslySetInnerHTML={{ __html: data.svg }}
+        />
+      ) : null}
+      <p className="mt-2 text-xs text-[#6a4a8f]">{packet.datumDescription}</p>
+      <div className="mt-3 overflow-x-auto">
+        <table className="w-full text-left text-xs text-[#4d2e70]">
+          <thead>
+            <tr className="text-[11px] uppercase text-[#7a4bb8]">
+              <th className="py-1 pr-2">Element</th>
+              <th className="py-1 pr-2">W × H × D</th>
+              <th className="py-1 pr-2">Bottom AFF</th>
+              <th className="py-1">Reference</th>
+            </tr>
+          </thead>
+          <tbody>
+            {packet.elements.map((el, i) => (
+              <tr key={i} className="border-t border-[#e9d9ff]">
+                <td className="py-1.5 pr-2 font-medium">{el.label}</td>
+                <td className="py-1.5 pr-2">
+                  {el.widthIn}&quot; × {el.heightIn}&quot; × {el.depthIn}&quot;
+                </td>
+                <td className="py-1.5 pr-2">{el.bottomAffIn}&quot;</td>
+                <td className="py-1.5">{el.horizontalRef || `${el.leftFromDatumIn}" from left`}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      {packet.installSteps.length > 0 ? (
+        <ol className="mt-3 list-decimal space-y-1 pl-5 text-sm text-[#4d2e70]">
+          {packet.installSteps.map((s, i) => (
+            <li key={i}>{s}</li>
+          ))}
+        </ol>
+      ) : null}
+      {packet.warnings.length > 0 ? (
+        <ul className="mt-2 space-y-1 text-xs font-medium text-amber-700">
+          {packet.warnings.map((w, i) => (
+            <li key={i}>⚠ {w}</li>
+          ))}
+        </ul>
+      ) : null}
+    </div>
+  );
+}
+
+type ClientJobContext = {  linked: boolean;
   message?: string;
   clientName?: string;
   clientEmail?: string;
@@ -1161,6 +1283,7 @@ export default function CarpenterApp() {
                     tools={activeJob.toolsNeeded ?? []}
                     materials={activeJob.materialsNeeded ?? []}
                   />
+                  <ShopDrawingsSection jobId={activeJob.id} />
                 </div>
 
                 {fieldLog ? (

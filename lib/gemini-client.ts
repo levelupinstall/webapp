@@ -725,6 +725,249 @@ export async function geminiEstimateMaterialsShoppingList(params: {
   };
 }
 
+const CREW_SIZE_SYSTEM = `You are a finish-carpentry estimator for Level Up Install (Toronto).
+
+Given the homeowner's project description, dimensions, dwelling context, material list, and estimated man-hours, decide whether the install is a ONE-person or TWO-person job.
+
+Choose TWO when any of these hold:
+- Pieces are large, heavy, or awkward for one person to hold and fasten (wall units, wardrobes, murphy beds, long runs of shelving, pieces wider than ~8 ft / 96 in, tall units over ~7 ft).
+- The transcript mentions items one person cannot safely lift or position alone.
+- Estimated man-hours exceed ~16 (more than two full solo days — a pair finishes in reasonable calendar time).
+
+Otherwise choose ONE.
+
+Return ONLY valid JSON (no markdown fences):
+{ "crewSize": 1 | 2, "reason": string }
+
+Rules:
+- "reason" is one short sentence naming the deciding factor, e.g. "12-ft wall unit needs two people to lift and level." or "Small scope, easily handled solo."
+- Never return anything besides the JSON object.`;
+
+/** AI crew-size recommendation: 1 = solo, 2 = two-person crew. Falls back to a heuristic. */
+export async function geminiRecommendCrewSize(params: {
+  transcript: string;
+  dimsSummary: string;
+  dwellingLabel: string;
+  materialDescriptions: string[];
+  estimatedManHours: number;
+}): Promise<{ crewSize: 1 | 2; reason: string }> {
+  const fallback = (): { crewSize: 1 | 2; reason: string } => {
+    const hay = `${params.transcript}\n${params.materialDescriptions.join("\n")}`.toLowerCase();
+    const bigPiece =
+      /murphy|wardrobe|wall unit|wall-unit|vanity|12\s*ft|10\s*ft|96\s*in|8\s*ft/.test(hay);
+    const wide = /(\d{2,3})\s*in/.test(params.dimsSummary) &&
+      Math.max(
+        ...Array.from(params.dimsSummary.matchAll(/(\d{2,3})\s*in/g)).map((m) =>
+          parseInt(m[1], 10),
+        ),
+        0,
+      ) > 96;
+    if (bigPiece || wide || params.estimatedManHours >= 16) {
+      return {
+        crewSize: 2,
+        reason: "Large/heavy pieces or long duration — safer and faster with two installers.",
+      };
+    }
+    return { crewSize: 1, reason: "Small scope, easily handled solo." };
+  };
+
+  if (!isGeminiConfigured()) return fallback();
+
+  const prompt = [
+    "Homeowner transcript (trimmed):",
+    params.transcript.trim().slice(-8000),
+    "",
+    `Dwelling / context: ${params.dwellingLabel}`,
+    `Envelope hint: ${params.dimsSummary}`,
+    `Estimated man-hours: ${params.estimatedManHours.toFixed(1)}`,
+    "Materials:",
+    ...params.materialDescriptions.slice(0, 30).map((d) => `- ${d}`),
+    "",
+    "Produce the JSON object now.",
+  ].join("\n");
+
+  try {
+    const res = await geminiGenerateContent({
+      model: defaultGeminiTextModel(),
+      systemInstruction: CREW_SIZE_SYSTEM,
+      contents: [{ role: "user", parts: [{ text: prompt }] }],
+      generationConfig: { maxOutputTokens: 256, temperature: 0.2 },
+    });
+    if (!res.ok) return fallback();
+    const { text } = extractParts(res.json);
+    const stripped = text.trim().replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/i, "").trim();
+    const parsed = JSON.parse(stripped) as { crewSize?: unknown; reason?: unknown };
+    const crewSize = parsed.crewSize === 2 ? 2 : 1;
+    const reason =
+      typeof parsed.reason === "string" && parsed.reason.trim()
+        ? parsed.reason.trim().slice(0, 200)
+        : fallback().reason;
+    return { crewSize, reason };
+  } catch {
+    return fallback();
+  }
+}
+
+const SHOP_PACKET_SYSTEM = `You are a millwork drafter producing a shop drawing packet for a finish-carpentry installer.
+
+You receive:
+- An AI-generated concept rendering of the approved design (design intent only — NOT to scale).
+- REAL site measurements in inches (wall width/height, ceiling height). These are the source of truth for every dimension you emit.
+- The homeowner transcript and material summary for context.
+
+Produce a dimensioned front-elevation plan the installer can build from. Every element needs exact placement:
+- Position each element by its BOTTOM edge height above finished floor (bottomAffIn) and its LEFT edge distance from the LEFT CORNER of the wall as you face it (leftFromDatumIn).
+- All dimensions in whole or half inches.
+
+Return ONLY valid JSON (no markdown fences):
+{
+  "datumDescription": string,
+  "elements": [
+    {
+      "label": string,
+      "widthIn": number, "heightIn": number, "depthIn": number,
+      "bottomAffIn": number,
+      "leftFromDatumIn": number,
+      "horizontalRef": string,
+      "notes": string
+    }
+  ],
+  "installSteps": [ string ],
+  "warnings": [ string ]
+}
+
+Rules:
+- "datumDescription" states the reference system, e.g. "All heights are inches above finished floor (AFF). Horizontal dimensions run from the left corner of the wall, facing it."
+- Elements must fit inside the measured wall (leftFromDatumIn + widthIn <= wallWidthIn; bottomAffIn + heightIn <= wallHeightIn). If the concept doesn't fit, shrink or re-center it and say so in warnings.
+- "horizontalRef" is the human-readable reference, e.g. "centered on wall" or "16 in from left corner".
+- "installSteps" is a numbered install sequence: layout/marking, then mounting order, then trim/finish.
+- "warnings" always includes "Verify all dimensions on site before cutting." plus anything that looked uncertain (e.g. "Out-of-plumb walls assumed — scribe on site.").
+- Keep labels short ("Shelf A", "Left tower", "Mantel"). Max 24 elements.`;
+
+/** Generate a dimensioned shop packet from the approved rendering + real site measurements. */
+export async function geminiGenerateShopPacket(params: {
+  renderingMimeType: string;
+  renderingDataBase64: string;
+  wallWidthIn: number;
+  wallHeightIn: number;
+  ceilingHeightIn: number;
+  measurementNotes: string;
+  transcript: string;
+  materialDescriptions: string[];
+}): Promise<{
+  datumDescription: string;
+  elements: Array<{
+    label: string;
+    widthIn: number;
+    heightIn: number;
+    depthIn: number;
+    bottomAffIn: number;
+    leftFromDatumIn: number;
+    horizontalRef: string;
+    notes: string;
+  }>;
+  installSteps: string[];
+  warnings: string[];
+} | null> {
+  if (!isGeminiConfigured()) return null;
+
+  const prompt = [
+    "REAL SITE MEASUREMENTS (inches — source of truth):",
+    `Wall width: ${params.wallWidthIn} in`,
+    `Wall height: ${params.wallHeightIn} in`,
+    `Ceiling height: ${params.ceilingHeightIn} in`,
+    params.measurementNotes.trim() ? `Measurement notes: ${params.measurementNotes.trim()}` : "",
+    "",
+    "Homeowner transcript (trimmed):",
+    params.transcript.trim().slice(-8000),
+    "",
+    "Materials:",
+    ...params.materialDescriptions.slice(0, 30).map((d) => `- ${d}`),
+    "",
+    "Produce the JSON object now. Base every dimension on the real measurements, using the rendering only for design intent (what goes where).",
+  ].join("\n");
+
+  try {
+    const res = await geminiGenerateContent({
+      model: defaultGeminiTextModel(),
+      systemInstruction: SHOP_PACKET_SYSTEM,
+      contents: [
+        {
+          role: "user",
+          parts: [
+            { text: prompt },
+            {
+              inline_data: {
+                mime_type: params.renderingMimeType,
+                data: params.renderingDataBase64,
+              },
+            },
+          ],
+        },
+      ],
+      generationConfig: { maxOutputTokens: 4096, temperature: 0.2 },
+    });
+    if (!res.ok) return null;
+    const { text } = extractParts(res.json);
+    const stripped = text.trim().replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/i, "").trim();
+    const parsed = JSON.parse(stripped) as {
+      datumDescription?: unknown;
+      elements?: unknown;
+      installSteps?: unknown;
+      warnings?: unknown;
+    };
+    if (!parsed || typeof parsed !== "object" || !Array.isArray(parsed.elements)) return null;
+
+    const num = (v: unknown, fallbackNum = 0) =>
+      typeof v === "number" && Number.isFinite(v) ? Math.round(v * 2) / 2 : fallbackNum;
+    const elements = (parsed.elements as Record<string, unknown>[])
+      .filter((e) => e && typeof e === "object")
+      .slice(0, 24)
+      .map((e) => {
+        const widthIn = Math.max(0.5, num(e.widthIn, 12));
+        const heightIn = Math.max(0.5, num(e.heightIn, 12));
+        return {
+          label: typeof e.label === "string" && e.label.trim() ? e.label.trim().slice(0, 60) : "Element",
+          widthIn,
+          heightIn,
+          depthIn: Math.max(0.5, num(e.depthIn, 12)),
+          bottomAffIn: Math.max(0, num(e.bottomAffIn, 0)),
+          leftFromDatumIn: Math.max(
+            0,
+            Math.min(num(e.leftFromDatumIn, 0), Math.max(0, params.wallWidthIn - widthIn)),
+          ),
+          horizontalRef:
+            typeof e.horizontalRef === "string" && e.horizontalRef.trim()
+              ? e.horizontalRef.trim().slice(0, 120)
+              : "",
+          notes: typeof e.notes === "string" ? e.notes.trim().slice(0, 300) : "",
+        };
+      })
+      .filter((e) => e.label.length > 0);
+
+    const strArr = (v: unknown) =>
+      Array.isArray(v)
+        ? v.filter((s): s is string => typeof s === "string" && s.trim().length > 0).map((s) => s.trim().slice(0, 500)).slice(0, 30)
+        : [];
+    const warnings = strArr(parsed.warnings);
+    if (!warnings.some((w) => /verify/i.test(w))) {
+      warnings.unshift("Verify all dimensions on site before cutting.");
+    }
+
+    return {
+      datumDescription:
+        typeof parsed.datumDescription === "string" && parsed.datumDescription.trim()
+          ? parsed.datumDescription.trim().slice(0, 500)
+          : "All heights are inches above finished floor (AFF). Horizontal dimensions run from the left corner of the wall, facing it.",
+      elements,
+      installSteps: strArr(parsed.installSteps),
+      warnings,
+    };
+  } catch {
+    return null;
+  }
+}
+
 /** Reference mime must be image/* supported by Gemini image stack. */
 export async function geminiGenerateInstallBlueprint(params: {
   referenceMimeType: string;

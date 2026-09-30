@@ -19,6 +19,9 @@ import {
   type Estimate,
   type EstimateLineItem,
   type EstimateStatus,
+  type ShopPacket,
+  type ShopPacketElement,
+  type SiteMeasurements,
 } from "@/lib/planner-estimate";
 
 export type Idea = {
@@ -155,6 +158,8 @@ export type WorkProposal = {
   aiChat?: WorkProposalAiTurn[];
   /** Carpenter account assigned to perform the install; null/undefined = Tom himself. Internal. */
   assignedCarpenterId?: string | null;
+  /** Estimate this proposal was converted from (for shop packet / crew lookup). */
+  sourceEstimateId?: string;
   /** Site-condition / extra-scope change orders issued against the accepted proposal. */
   changeOrders?: ChangeOrder[];
 };
@@ -521,9 +526,75 @@ function parseEstimates(value: Prisma.JsonValue): Estimate[] {
         })),
       sourceSummary:
         typeof r.sourceSummary === "string" ? r.sourceSummary.slice(0, 2000) : "",
+      crewSize: r.crewSize === 2 ? 2 : 1,
+      crewReason:
+        typeof r.crewReason === "string" && r.crewReason.trim()
+          ? r.crewReason.trim().slice(0, 300)
+          : "",
+      ...(r.siteMeasurements && typeof r.siteMeasurements === "object"
+        ? { siteMeasurements: parseSiteMeasurements(r.siteMeasurements) }
+        : {}),
+      ...(r.shopPacket && typeof r.shopPacket === "object"
+        ? { shopPacket: parseShopPacket(r.shopPacket) }
+        : {}),
     });
   }
   return out;
+}
+
+function parseSiteMeasurements(raw: unknown): SiteMeasurements | undefined {
+  if (!raw || typeof raw !== "object") return undefined;
+  const o = raw as Record<string, unknown>;
+  const num = (v: unknown) => (typeof v === "number" && Number.isFinite(v) && v > 0 ? v : 0);
+  const wallWidthIn = num(o.wallWidthIn);
+  const wallHeightIn = num(o.wallHeightIn);
+  const ceilingHeightIn = num(o.ceilingHeightIn);
+  if (!wallWidthIn || !wallHeightIn) return undefined;
+  return {
+    wallWidthIn: Math.round(wallWidthIn * 2) / 2,
+    wallHeightIn: Math.round(wallHeightIn * 2) / 2,
+    ceilingHeightIn: ceilingHeightIn ? Math.round(ceilingHeightIn * 2) / 2 : Math.round(wallHeightIn * 2) / 2,
+    notes: typeof o.notes === "string" ? o.notes.slice(0, 2000) : "",
+    recordedAt: typeof o.recordedAt === "string" ? o.recordedAt : new Date().toISOString(),
+  };
+}
+
+function parseShopPacket(raw: unknown): ShopPacket | undefined {
+  if (!raw || typeof raw !== "object") return undefined;
+  const o = raw as Record<string, unknown>;
+  if (!Array.isArray(o.elements) || o.elements.length === 0) return undefined;
+  const num = (v: unknown, fb = 0) =>
+    typeof v === "number" && Number.isFinite(v) ? Math.round(v * 2) / 2 : fb;
+  const elements: ShopPacketElement[] = (o.elements as Record<string, unknown>[])
+    .filter((e) => e && typeof e === "object")
+    .slice(0, 24)
+    .map((e) => ({
+      label: typeof e.label === "string" && e.label.trim() ? e.label.trim().slice(0, 60) : "Element",
+      widthIn: Math.max(0.5, num(e.widthIn, 12)),
+      heightIn: Math.max(0.5, num(e.heightIn, 12)),
+      depthIn: Math.max(0.5, num(e.depthIn, 12)),
+      bottomAffIn: Math.max(0, num(e.bottomAffIn, 0)),
+      leftFromDatumIn: Math.max(0, num(e.leftFromDatumIn, 0)),
+      horizontalRef: typeof e.horizontalRef === "string" ? e.horizontalRef.slice(0, 120) : "",
+      ...(typeof e.notes === "string" && e.notes.trim() ? { notes: e.notes.trim().slice(0, 300) } : {}),
+    }));
+  const strArr = (v: unknown) =>
+    Array.isArray(v)
+      ? v.filter((s): s is string => typeof s === "string" && s.trim().length > 0).map((s) => s.trim().slice(0, 500)).slice(0, 30)
+      : [];
+  return {
+    generatedAt: typeof o.generatedAt === "string" ? o.generatedAt : new Date().toISOString(),
+    wallWidthIn: num(o.wallWidthIn),
+    wallHeightIn: num(o.wallHeightIn),
+    ceilingHeightIn: num(o.ceilingHeightIn),
+    datumDescription:
+      typeof o.datumDescription === "string" && o.datumDescription.trim()
+        ? o.datumDescription.trim().slice(0, 500)
+        : "All heights are inches above finished floor (AFF). Horizontal dimensions run from the left corner of the wall, facing it.",
+    elements,
+    installSteps: strArr(o.installSteps),
+    warnings: strArr(o.warnings),
+  };
 }
 
 function parseWorkProposals(value: Prisma.JsonValue): WorkProposal[] {
@@ -615,6 +686,9 @@ function parseWorkProposals(value: Prisma.JsonValue): WorkProposal[] {
       aiChat: aiChat.length ? aiChat : undefined,
       ...(typeof raw.assignedCarpenterId === "string" && raw.assignedCarpenterId
         ? { assignedCarpenterId: raw.assignedCarpenterId }
+        : {}),
+      ...(typeof raw.sourceEstimateId === "string" && raw.sourceEstimateId
+        ? { sourceEstimateId: raw.sourceEstimateId }
         : {}),
       ...(Array.isArray(raw.changeOrders) && raw.changeOrders.length
         ? { changeOrders: parseChangeOrders(raw.changeOrders) }
@@ -1487,6 +1561,8 @@ export async function adminPatchEstimate(params: {
   notes?: string;
   title?: string;
   assignedCarpenterId?: string | null;
+  crewSize?: 1 | 2;
+  crewReason?: string;
 }): Promise<Estimate> {
   return writeEstimate(params.portalUserId, params.estimateId, (e) => {
     const lineItems = params.lineItems ?? e.lineItems;
@@ -1498,10 +1574,49 @@ export async function adminPatchEstimate(params: {
       ...(params.assignedCarpenterId !== undefined
         ? { assignedCarpenterId: params.assignedCarpenterId || null }
         : {}),
+      ...(params.crewSize === 1 || params.crewSize === 2 ? { crewSize: params.crewSize } : {}),
+      ...(params.crewReason !== undefined
+        ? { crewReason: params.crewReason.slice(0, 300) }
+        : {}),
       lineItems,
       ...totals,
     };
   });
+}
+
+/** Record real wall measurements from the site visit (inches). */
+export async function setEstimateSiteMeasurements(params: {
+  portalUserId: string;
+  estimateId: string;
+  wallWidthIn: number;
+  wallHeightIn: number;
+  ceilingHeightIn: number;
+  notes: string;
+}): Promise<Estimate> {
+  const m: SiteMeasurements = {
+    wallWidthIn: Math.round(Math.max(0, params.wallWidthIn) * 2) / 2,
+    wallHeightIn: Math.round(Math.max(0, params.wallHeightIn) * 2) / 2,
+    ceilingHeightIn: Math.round(Math.max(0, params.ceilingHeightIn) * 2) / 2,
+    notes: params.notes.slice(0, 2000),
+    recordedAt: new Date().toISOString(),
+  };
+  if (!m.wallWidthIn || !m.wallHeightIn) throw new Error("Wall width and height are required.");
+  return writeEstimate(params.portalUserId, params.estimateId, (e) => ({
+    ...e,
+    siteMeasurements: m,
+  }));
+}
+
+/** Persist an AI-generated shop packet on the estimate. */
+export async function setEstimateShopPacket(params: {
+  portalUserId: string;
+  estimateId: string;
+  packet: ShopPacket;
+}): Promise<Estimate> {
+  return writeEstimate(params.portalUserId, params.estimateId, (e) => ({
+    ...e,
+    shopPacket: params.packet,
+  }));
 }
 
 export async function appendEstimateAiChat(params: {
@@ -1668,6 +1783,7 @@ export async function createWorkProposalDraftForPortalUser(params: {
   spacePhotos?: Array<{ mimeType: string; dataUrl: string; caption?: string }>;
   budgetNotes?: string;
   assignedCarpenterId?: string | null;
+  sourceEstimateId?: string;
 }): Promise<WorkProposal | null> {
   const row = await prisma.portalUser.findUnique({ where: { id: params.portalUserId } });
   if (!row || row.signupVerificationPending) return null;
@@ -1696,6 +1812,7 @@ export async function createWorkProposalDraftForPortalUser(params: {
       ? { budgetNotes: params.budgetNotes.trim().slice(0, 2000) }
       : {}),
     ...(params.assignedCarpenterId ? { assignedCarpenterId: params.assignedCarpenterId } : {}),
+    ...(params.sourceEstimateId ? { sourceEstimateId: params.sourceEstimateId } : {}),
     renderings: params.renderings.map((r) => ({
       id: randomUUID(),
       mimeType: r.mimeType || "image/jpeg",
@@ -2166,6 +2283,24 @@ export async function getPortalUserById(userId: string) {
     scheduledCalls: user.scheduledCalls ?? [],
     estimates: user.estimates ?? [],
   };
+}
+
+/** Latest approved-design rendering from the AI planner blueprint log (for shop packet generation). */
+export async function getLatestBlueprintRendering(
+  userId: string,
+): Promise<{ mimeType: string; dataBase64: string } | null> {
+  const row = await prisma.portalUser.findUnique({ where: { id: userId } });
+  if (!row) return null;
+  const log = rowToUserRecord(row).aiPlannerBlueprintLog ?? [];
+  for (let i = log.length - 1; i >= 0; i--) {
+    const url = log[i]?.dataUrl?.trim() ?? "";
+    const match = /^data:([^;]+);base64,([A-Za-z0-9+/=]+)$/.exec(url);
+    if (!match) continue;
+    const data = match[2];
+    if (data.length < 64) continue;
+    return { mimeType: match[1].trim() || "image/png", dataBase64: data };
+  }
+  return null;
 }
 
 /** Inline Gemini parts from CRM space photos (re-anchor renders when the client omits sketchReferenceImages). */

@@ -46,6 +46,7 @@ export async function POST(request: Request) {
     paymentAmountCents: Math.max(100, Math.round(estimate.totalCad * 100)),
     renderings: [],
     assignedCarpenterId: estimate.assignedCarpenterId ?? null,
+    sourceEstimateId: estimate.id,
   });
   if (!proposal) {
     return NextResponse.json({ error: "Could not create the final quote." }, { status: 500 });

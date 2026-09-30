@@ -14,6 +14,7 @@ import {
 import type { PlannerSubmitDesignExtract } from "@/lib/planner-submit-design-types";
 import {
   geminiEstimateMaterialsShoppingList,
+  geminiRecommendCrewSize,
   geminiTextChat,
   isGeminiConfigured,
   type GeminiShoppingListItem,
@@ -79,6 +80,43 @@ export type EstimateAiChatTurn = {
   at: string;
 };
 
+/** Real wall measurements captured at the site visit. All in inches. */
+export type SiteMeasurements = {
+  wallWidthIn: number;
+  wallHeightIn: number;
+  ceilingHeightIn: number;
+  notes: string;
+  recordedAt: string;
+};
+
+/** One drawn element on the shop elevation: position is from the left wall corner (x) and finished floor (y). */
+export type ShopPacketElement = {
+  label: string;
+  widthIn: number;
+  heightIn: number;
+  depthIn: number;
+  /** Inches above finished floor to the element's bottom edge. */
+  bottomAffIn: number;
+  /** Inches from the left datum (wall left corner) to the element's left edge. */
+  leftFromDatumIn: number;
+  /** Human reference, e.g. "centered on wall", "16in from left corner". */
+  horizontalRef: string;
+  notes?: string;
+};
+
+/** Dimensioned install plan generated from the approved rendering + site measurements. */
+export type ShopPacket = {
+  generatedAt: string;
+  wallWidthIn: number;
+  wallHeightIn: number;
+  ceilingHeightIn: number;
+  /** How reference points are defined, e.g. "All heights are above finished floor (AFF). Horizontal dimensions run from the left corner of the wall facing it." */
+  datumDescription: string;
+  elements: ShopPacketElement[];
+  installSteps: string[];
+  warnings: string[];
+};
+
 export type Estimate = {
   id: string;
   title: string;
@@ -101,6 +139,12 @@ export type Estimate = {
   notes: string;
   aiChat: EstimateAiChatTurn[];
   sourceSummary: string;
+  /** 1 = solo job, 2 = two-person crew. AI-recommended, Tom can override. */
+  crewSize: 1 | 2;
+  /** Why this crew size (AI reason or Tom's override note). */
+  crewReason: string;
+  siteMeasurements?: SiteMeasurements;
+  shopPacket?: ShopPacket;
 };
 
 const SOURCING_SYSTEM = `You classify finish-carpentry material items for a Toronto installer (Level Up Install).
@@ -304,12 +348,21 @@ export async function generatePlannerEstimate(
     materialCostCad: materials.totalMaterialCad,
   });
 
+  const crew = await geminiRecommendCrewSize({
+    transcript,
+    dimsSummary: input.dimsSummary,
+    dwellingLabel: input.dwellingLabel,
+    materialDescriptions: materials.items.map((m) => m.description),
+    estimatedManHours: labor.estimatedTotalHours,
+  });
+  const onSiteHours = labor.estimatedTotalHours / crew.crewSize;
+
   items.push(
     lineItem({
       category: "labor",
       sourcing: "na",
       description: "Finish carpentry installation labour",
-      detail: `Estimated ${labor.estimatedTotalHours.toFixed(1)} hours at $${rates.laborRateCad}/hr (includes 15% complexity margin). Verify on site.`,
+      detail: `Estimated ${labor.estimatedTotalHours.toFixed(1)} man-hours at $${rates.laborRateCad}/hr (includes 15% complexity margin). Crew of ${crew.crewSize} → about ${onSiteHours.toFixed(1)} hours on site. ${crew.reason} Verify on site.`,
       quantity: Math.round(labor.estimatedTotalHours * 10) / 10,
       unit: "hours",
       unitCostCad: rates.laborRateCad,
@@ -341,6 +394,8 @@ export async function generatePlannerEstimate(
     notes: "",
     aiChat: [],
     sourceSummary: `Generated from the AI planning conversation${materials.grounded ? " (search-grounded pricing)" : ""}. Labour estimated at $${rates.laborRateCad}/hr. Review every line before sending — dimensions and site conditions must be verified.`,
+    crewSize: crew.crewSize,
+    crewReason: crew.reason,
   };
 }
 
@@ -482,7 +537,7 @@ export function estimateToMarkdown(estimate: Estimate): string {
   }
   lines.push(
     ``,
-    `**Materials:** $${estimate.materialsTotalCad.toFixed(2)} · **Labour (${estimate.laborHours}h):** $${estimate.laborTotalCad.toFixed(2)} · **Fees:** $${estimate.feesTotalCad.toFixed(2)}`,
+    `**Materials:** $${estimate.materialsTotalCad.toFixed(2)} · **Labour (${estimate.laborHours} man-hours, crew of ${estimate.crewSize}):** $${estimate.laborTotalCad.toFixed(2)} · **Fees:** $${estimate.feesTotalCad.toFixed(2)}`,
     ``,
     `## Investment`,
     ``,

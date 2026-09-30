@@ -33,6 +33,34 @@ export type EstimateRow = {
   notes: string;
   aiChat: Array<{ role: string; content: string; at: string }>;
   sourceSummary: string;
+  crewSize?: 1 | 2;
+  crewReason?: string;
+  siteMeasurements?: {
+    wallWidthIn: number;
+    wallHeightIn: number;
+    ceilingHeightIn: number;
+    notes: string;
+    recordedAt: string;
+  };
+  shopPacket?: {
+    generatedAt: string;
+    wallWidthIn: number;
+    wallHeightIn: number;
+    ceilingHeightIn: number;
+    datumDescription: string;
+    elements: Array<{
+      label: string;
+      widthIn: number;
+      heightIn: number;
+      depthIn: number;
+      bottomAffIn: number;
+      leftFromDatumIn: number;
+      horizontalRef: string;
+      notes?: string;
+    }>;
+    installSteps: string[];
+    warnings: string[];
+  };
 };
 
 function cad(n: number) {
@@ -46,6 +74,325 @@ function typeLabel(it: EstimateRow["lineItems"][number]): string {
   if (it.category === "labor") return "Labour";
   if (it.category === "fee") return "Fee";
   return it.sourcing === "buy" ? "Buy" : "Build";
+}
+
+function CrewAndShopSection(props: {
+  portalUserId: string;
+  estimate: EstimateRow;
+  locked: boolean;
+  onRefresh: () => void | Promise<void>;
+}) {
+  const { portalUserId, estimate, locked, onRefresh } = props;
+  const [busy, setBusy] = useState<"" | "crew" | "measure" | "packet">("");
+  const [flash, setFlash] = useState<{ type: "ok" | "err"; message: string } | null>(null);
+  const [measureOpen, setMeasureOpen] = useState(false);
+  const [wallW, setWallW] = useState(estimate.siteMeasurements?.wallWidthIn?.toString() ?? "");
+  const [wallH, setWallH] = useState(estimate.siteMeasurements?.wallHeightIn?.toString() ?? "");
+  const [ceilH, setCeilH] = useState(estimate.siteMeasurements?.ceilingHeightIn?.toString() ?? "");
+  const [measureNotes, setMeasureNotes] = useState(estimate.siteMeasurements?.notes ?? "");
+
+  const crewSize = estimate.crewSize === 2 ? 2 : 1;
+  const onSiteHours = estimate.laborHours / crewSize;
+
+  const post = useCallback(
+    async (path: string, payload: Record<string, unknown>) => {
+      const res = await fetch(path, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ portalUserId, estimateId: estimate.id, ...payload }),
+      });
+      const json = (await res.json()) as { error?: string };
+      if (!res.ok) throw new Error(json.error || "Request failed.");
+    },
+    [portalUserId, estimate.id],
+  );
+
+  const setCrew = async (size: 1 | 2) => {
+    setBusy("crew");
+    setFlash(null);
+    try {
+      await post("/api/admin/estimates/crew", { crewSize: size });
+      await onRefresh();
+    } catch (err) {
+      setFlash({ type: "err", message: err instanceof Error ? err.message : "Failed." });
+    } finally {
+      setBusy("");
+    }
+  };
+
+  const saveMeasurements = async () => {
+    setBusy("measure");
+    setFlash(null);
+    try {
+      await post("/api/admin/estimates/measurements", {
+        wallWidthIn: parseFloat(wallW) || 0,
+        wallHeightIn: parseFloat(wallH) || 0,
+        ceilingHeightIn: parseFloat(ceilH) || 0,
+        notes: measureNotes,
+      });
+      setMeasureOpen(false);
+      setFlash({ type: "ok", message: "Site measurements saved." });
+      await onRefresh();
+    } catch (err) {
+      setFlash({ type: "err", message: err instanceof Error ? err.message : "Failed." });
+    } finally {
+      setBusy("");
+    }
+  };
+
+  const generatePacket = async () => {
+    setBusy("packet");
+    setFlash(null);
+    try {
+      await post("/api/admin/estimates/shop-packet", {});
+      setFlash({ type: "ok", message: "Shop packet generated from the approved design + your measurements." });
+      await onRefresh();
+    } catch (err) {
+      setFlash({ type: "err", message: err instanceof Error ? err.message : "Failed." });
+    } finally {
+      setBusy("");
+    }
+  };
+
+  const packet = estimate.shopPacket;
+
+  return (
+    <div className="border-t border-zinc-800 pt-4 space-y-3">
+      <h5 className="text-[11px] font-semibold uppercase text-zinc-500">
+        Crew &amp; shop drawings
+      </h5>
+
+      <div className="rounded-lg border border-zinc-800 bg-zinc-950/60 p-3 text-xs text-zinc-300">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <p>
+            <span className="font-medium text-zinc-100">
+              {crewSize === 2 ? "Two-person crew" : "One-person job"}
+            </span>
+            <span className="text-zinc-500">
+              {" "}· {estimate.laborHours.toFixed(1)} man-hours → about {onSiteHours.toFixed(1)}h on site
+            </span>
+          </p>
+          {!locked ? (
+            <div className="flex gap-1">
+              {[1, 2].map((n) => (
+                <button
+                  key={n}
+                  type="button"
+                  disabled={busy !== ""}
+                  onClick={() => void setCrew(n as 1 | 2)}
+                  className={`rounded-md px-2.5 py-1 text-[11px] font-medium ${
+                    crewSize === n
+                      ? "bg-violet-700 text-white"
+                      : "bg-zinc-800 text-zinc-300 hover:bg-zinc-700"
+                  } disabled:opacity-50`}
+                >
+                  {n === 1 ? "Solo" : "2-person"}
+                </button>
+              ))}
+            </div>
+          ) : null}
+        </div>
+        {estimate.crewReason ? (
+          <p className="mt-1 text-[11px] text-zinc-500">{estimate.crewReason}</p>
+        ) : null}
+      </div>
+
+      <div className="rounded-lg border border-zinc-800 bg-zinc-950/60 p-3 text-xs text-zinc-300">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <p className="font-medium text-zinc-100">Site measurements</p>
+          {!locked ? (
+            <button
+              type="button"
+              onClick={() => setMeasureOpen((v) => !v)}
+              className="rounded-md bg-zinc-800 px-2.5 py-1 text-[11px] font-medium text-zinc-300 hover:bg-zinc-700"
+            >
+              {estimate.siteMeasurements ? "Edit" : "Record"}
+            </button>
+          ) : null}
+        </div>
+        {estimate.siteMeasurements && !measureOpen ? (
+          <p className="mt-1 text-zinc-400">
+            Wall {estimate.siteMeasurements.wallWidthIn}&quot; W ×{" "}
+            {estimate.siteMeasurements.wallHeightIn}&quot; H · Ceiling{" "}
+            {estimate.siteMeasurements.ceilingHeightIn}&quot;
+            {estimate.siteMeasurements.notes ? ` · ${estimate.siteMeasurements.notes}` : ""}
+          </p>
+        ) : null}
+        {measureOpen && !locked ? (
+          <div className="mt-2 space-y-2">
+            <div className="grid grid-cols-3 gap-2">
+              <label className="block text-[11px] text-zinc-500">
+                Wall width (in)
+                <input
+                  value={wallW}
+                  onChange={(e) => setWallW(e.target.value)}
+                  inputMode="decimal"
+                  className="mt-1 w-full rounded-lg border border-zinc-700 bg-zinc-950 px-2 py-1.5 text-xs text-white"
+                />
+              </label>
+              <label className="block text-[11px] text-zinc-500">
+                Wall height (in)
+                <input
+                  value={wallH}
+                  onChange={(e) => setWallH(e.target.value)}
+                  inputMode="decimal"
+                  className="mt-1 w-full rounded-lg border border-zinc-700 bg-zinc-950 px-2 py-1.5 text-xs text-white"
+                />
+              </label>
+              <label className="block text-[11px] text-zinc-500">
+                Ceiling (in)
+                <input
+                  value={ceilH}
+                  onChange={(e) => setCeilH(e.target.value)}
+                  inputMode="decimal"
+                  className="mt-1 w-full rounded-lg border border-zinc-700 bg-zinc-950 px-2 py-1.5 text-xs text-white"
+                />
+              </label>
+            </div>
+            <label className="block text-[11px] text-zinc-500">
+              Notes (out-of-plumb, obstructions…)
+              <input
+                value={measureNotes}
+                onChange={(e) => setMeasureNotes(e.target.value)}
+                className="mt-1 w-full rounded-lg border border-zinc-700 bg-zinc-950 px-2 py-1.5 text-xs text-white"
+              />
+            </label>
+            <button
+              type="button"
+              disabled={busy !== ""}
+              onClick={() => void saveMeasurements()}
+              className="rounded-lg bg-sky-700 px-3 py-1.5 text-xs font-medium text-white hover:bg-sky-600 disabled:opacity-50"
+            >
+              {busy === "measure" ? "Saving…" : "Save measurements"}
+            </button>
+          </div>
+        ) : null}
+      </div>
+
+      <div className="rounded-lg border border-zinc-800 bg-zinc-950/60 p-3 text-xs text-zinc-300">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <p className="font-medium text-zinc-100">Shop drawings</p>
+          {!locked ? (
+            <button
+              type="button"
+              disabled={busy !== "" || !estimate.siteMeasurements}
+              title={!estimate.siteMeasurements ? "Record site measurements first" : ""}
+              onClick={() => void generatePacket()}
+              className="rounded-lg bg-amber-700 px-3 py-1.5 text-xs font-medium text-white hover:bg-amber-600 disabled:opacity-50"
+            >
+              {busy === "packet" ? "Drafting…" : packet ? "Regenerate packet" : "Generate shop packet"}
+            </button>
+          ) : null}
+        </div>
+        {!estimate.siteMeasurements ? (
+          <p className="mt-1 text-[11px] text-zinc-500">
+            Record the real site measurements first — the drawings are dimensioned from the tape,
+            not the picture.
+          </p>
+        ) : !packet ? (
+          <p className="mt-1 text-[11px] text-zinc-500">
+            Turns the approved rendering into a dimensioned elevation with heights, reference
+            points, and an install sequence for the sub.
+          </p>
+        ) : (
+          <div className="mt-2 space-y-2">
+            <p className="text-[11px] text-zinc-500">
+              Generated {new Date(packet.generatedAt).toLocaleString()} · {packet.elements.length}{" "}
+              elements · Wall {packet.wallWidthIn}&quot; × {packet.wallHeightIn}&quot;
+            </p>
+            <div className="overflow-hidden rounded-lg border border-zinc-700 bg-white">
+              <ShopPacketPreview packet={packet} />
+            </div>
+            <details className="text-[11px]">
+              <summary className="cursor-pointer text-zinc-400">
+                Element schedule ({packet.elements.length})
+              </summary>
+              <table className="mt-2 w-full text-left text-[11px] text-zinc-300">
+                <thead>
+                  <tr className="text-zinc-500">
+                    <th className="py-1 pr-2">Element</th>
+                    <th className="py-1 pr-2">W × H × D</th>
+                    <th className="py-1 pr-2">Bottom AFF</th>
+                    <th className="py-1">Reference</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {packet.elements.map((el, i) => (
+                    <tr key={i} className="border-t border-zinc-800">
+                      <td className="py-1 pr-2">{el.label}</td>
+                      <td className="py-1 pr-2">
+                        {el.widthIn}&quot; × {el.heightIn}&quot; × {el.depthIn}&quot;
+                      </td>
+                      <td className="py-1 pr-2">{el.bottomAffIn}&quot;</td>
+                      <td className="py-1">{el.horizontalRef || `${el.leftFromDatumIn}" from left`}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </details>
+            {packet.installSteps.length > 0 ? (
+              <details className="text-[11px]">
+                <summary className="cursor-pointer text-zinc-400">
+                  Install sequence ({packet.installSteps.length} steps)
+                </summary>
+                <ol className="mt-2 list-decimal space-y-1 pl-5 text-zinc-300">
+                  {packet.installSteps.map((s, i) => (
+                    <li key={i}>{s}</li>
+                  ))}
+                </ol>
+              </details>
+            ) : null}
+            {packet.warnings.length > 0 ? (
+              <ul className="space-y-1 text-[11px] text-amber-300/90">
+                {packet.warnings.map((w, i) => (
+                  <li key={i}>⚠ {w}</li>
+                ))}
+              </ul>
+            ) : null}
+            <p className="text-[11px] text-zinc-500">{packet.datumDescription}</p>
+            <button
+              type="button"
+              onClick={() => window.print()}
+              className="rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-1.5 text-xs font-medium text-zinc-200 hover:bg-zinc-800"
+            >
+              Print / Save as PDF
+            </button>
+          </div>
+        )}
+      </div>
+
+      {flash ? (
+        <p className={`text-xs ${flash.type === "ok" ? "text-emerald-400" : "text-rose-400"}`}>
+          {flash.message}
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
+function ShopPacketPreview(props: { packet: NonNullable<EstimateRow["shopPacket"]> }) {
+  const [svg, setSvg] = useState<string>("");
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch("/api/admin/estimates/shop-packet-svg", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ packet: props.packet }),
+        });
+        const json = (await res.json()) as { svg?: string };
+        if (!cancelled && json.svg) setSvg(json.svg);
+      } catch {
+        /* preview optional */
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [props.packet]);
+  if (!svg) return <p className="p-4 text-xs text-zinc-500">Loading drawing…</p>;
+  return <div dangerouslySetInnerHTML={{ __html: svg }} />;
 }
 
 export function EstimateCrm(props: {
@@ -399,6 +746,13 @@ export function EstimateCrm(props: {
               <p className="mt-1 whitespace-pre-wrap text-xs text-zinc-300">{selected.notes}</p>
             </div>
           ) : null}
+
+          <CrewAndShopSection
+            portalUserId={props.portalUserId}
+            estimate={selected}
+            locked={!!locked}
+            onRefresh={props.onRefresh}
+          />
 
           {!locked ? (
             <>
