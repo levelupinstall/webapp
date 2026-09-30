@@ -130,12 +130,14 @@ export default function ClientPortal({
   const [expandedIdeaId, setExpandedIdeaId] = useState<string | null>(null);
   const router = useRouter();
   const savedProjectsTrackRef = useRef(false);
+  const onAuthChangeRef = useRef(onAuthChange);
+  onAuthChangeRef.current = onAuthChange;
 
   const loadMe = useCallback(async (): Promise<PortalUser | null> => {
     const response = await fetch("/api/portal/me");
     if (!response.ok) {
       setUser(null);
-      onAuthChange?.(null);
+      onAuthChangeRef.current?.(null);
       return null;
     }
     const data = (await response.json()) as { user: PortalUser };
@@ -144,12 +146,12 @@ export default function ClientPortal({
       workProposals: data.user.workProposals ?? [],
     };
     setUser(normalized);
-    onAuthChange?.(normalized);
+    onAuthChangeRef.current?.(normalized);
     setProfileName(normalized.fullName || "");
     setProfileServiceAddress(normalized.serviceAddress || "");
     setProfileAvatar(normalized.avatarDataUrl || "");
     return normalized;
-  }, [onAuthChange]);
+  }, []);
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
@@ -344,7 +346,7 @@ export default function ClientPortal({
   async function handleLogout() {
     await fetch("/api/portal/logout", { method: "POST" });
     setUser(null);
-    onAuthChange?.(null);
+    onAuthChangeRef.current?.(null);
   }
 
   async function handleAddIdea(event: FormEvent) {

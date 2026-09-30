@@ -2,7 +2,7 @@
 
 import Image from "next/image";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { Suspense, useEffect, useState } from "react";
+import { Suspense, useCallback, useEffect, useState } from "react";
 import ClientPortal from "./components/client-portal";
 import ProjectPlannerAssistant from "./components/project-planner-assistant";
 import { PLANNER_ASSISTANT_NAME } from "@/lib/planner-brand";
@@ -30,6 +30,28 @@ function HomeContent() {
   const [accountView, setAccountView] = useState<AccountMenuView>("saved-projects");
   const [authUser, setAuthUser] = useState<AuthUser | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
+  const handlePortalAuthChange = useCallback(
+    (
+      user: {
+        id: string;
+        username: string;
+        fullName: string;
+        email?: string;
+      } | null,
+    ) => {
+      setAuthUser(
+        user
+          ? {
+              id: user.id,
+              username: user.username,
+              fullName: user.fullName,
+              email: user.email ?? "",
+            }
+          : null,
+      );
+    },
+    [],
+  );
   const searchParams = useSearchParams();
   const querySection = searchParams.get("section");
   const queryPortalView = searchParams.get("portalView");
@@ -802,18 +824,7 @@ function HomeContent() {
             key={`${portalMode}-${accountView}`}
             initialMode={portalMode}
             selectedView={accountView}
-            onAuthChange={(user) => {
-              setAuthUser(
-                user
-                  ? {
-                      id: user.id,
-                      username: user.username,
-                      fullName: user.fullName,
-                      email: user.email ?? "",
-                    }
-                  : null,
-              );
-            }}
+            onAuthChange={handlePortalAuthChange}
             onLoginSuccess={() => {
               navigateToSection("planner");
             }}
