@@ -11,6 +11,7 @@ import {
 import { useRouter } from "next/navigation";
 import { JobCompletionSocialPanel } from "./job-completion-social-panel";
 import { WorkProposalsCrm, type WorkProposalRow } from "./work-proposals-crm";
+import { EstimateCrm, type EstimateRow } from "./estimate-crm";
 import type {
   AiPlannerActivity,
   AiPlannerBlueprintSnapshot,
@@ -73,6 +74,7 @@ type PortalClient = {
     createdAt: string;
     source: string;
   }>;
+  estimates?: EstimateRow[];
 };
 
 type CarpenterRow = {
@@ -2771,6 +2773,13 @@ export default function AdminDashboard() {
                     <WorkProposalsCrm
                       portalUserId={selectedClient.id}
                       proposals={selectedClient.workProposals ?? []}
+                      onRefresh={() => void refreshOverview()}
+                    />
+
+                    <EstimateCrm
+                      portalUserId={selectedClient.id}
+                      estimates={selectedClient.estimates ?? []}
+                      clientPhase={selectedClient.projectStatus.phase}
                       onRefresh={() => void refreshOverview()}
                     />
 

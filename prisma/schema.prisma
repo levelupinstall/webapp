@@ -42,6 +42,8 @@ model PortalUser {
   workProposals     Json @default("[]") @map("work_proposals")
   /// Sales handoff: consultation calls the customer agreed to (JSON array of ScheduledCall records).
   scheduledCalls    Json @default("[]") @map("scheduled_calls")
+  /// AI estimates (draft → sent → final quote → approved/paid); JSON array of Estimate records.
+  estimates         Json @default("[]")
   /// Snapshot from request at registration (IP/geo headers when available).
   signupLocationLog Json? @map("signup_location_log")
 

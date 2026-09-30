@@ -14,6 +14,12 @@ import {
   findClosestImageHammingDistance,
   findDuplicateSpacePhotoIndex,
 } from "@/lib/space-photo-dedupe";
+import {
+  recomputeEstimateTotals,
+  type Estimate,
+  type EstimateLineItem,
+  type EstimateStatus,
+} from "@/lib/planner-estimate";
 
 export type Idea = {
   id: string;
@@ -206,6 +212,7 @@ type UserRecord = {
   communicationLog: ClientCommunicationEntry[];
   workProposals: WorkProposal[];
   scheduledCalls: ScheduledCall[];
+  estimates: Estimate[];
 };
 
 function parseIdeas(value: Prisma.JsonValue): Idea[] {
@@ -392,6 +399,87 @@ function parseScheduledCalls(value: Prisma.JsonValue): ScheduledCall[] {
     .filter((call) => call.scheduledFor.length > 0);
 }
 
+function parseEstimates(value: Prisma.JsonValue): Estimate[] {
+  if (!Array.isArray(value)) return [];
+  const out: Estimate[] = [];
+  for (const row of value) {
+    if (!row || typeof row !== "object") continue;
+    const r = row as Record<string, unknown>;
+    if (typeof r.id !== "string" || !r.id) continue;
+    const rawItems = Array.isArray(r.lineItems) ? r.lineItems : [];
+    const lineItems: EstimateLineItem[] = [];
+    for (const it of rawItems) {
+      if (!it || typeof it !== "object") continue;
+      const o = it as Record<string, unknown>;
+      const quantity =
+        typeof o.quantity === "number" && Number.isFinite(o.quantity) && o.quantity > 0
+          ? o.quantity
+          : 1;
+      const unitCostCad =
+        typeof o.unitCostCad === "number" && Number.isFinite(o.unitCostCad)
+          ? Math.max(0, Math.round(o.unitCostCad * 100) / 100)
+          : 0;
+      lineItems.push({
+        id: typeof o.id === "string" && o.id ? o.id : randomUUID(),
+        category: o.category === "labor" || o.category === "fee" ? o.category : "material",
+        sourcing: o.sourcing === "buy" || o.sourcing === "build" ? o.sourcing : "na",
+        description:
+          typeof o.description === "string" && o.description.trim()
+            ? o.description.trim().slice(0, 220)
+            : "Item",
+        detail:
+          typeof o.detail === "string" && o.detail.trim()
+            ? o.detail.trim().slice(0, 400)
+            : undefined,
+        quantity: Math.round(quantity * 100) / 100,
+        unit:
+          typeof o.unit === "string" && o.unit.trim()
+            ? o.unit.trim().slice(0, 24)
+            : "each",
+        unitCostCad,
+        totalCad: Math.max(0, Math.round(quantity * unitCostCad * 100) / 100),
+      });
+    }
+    const totals = recomputeEstimateTotals(lineItems);
+    const statusRaw = typeof r.status === "string" ? r.status : "draft";
+    const status: EstimateStatus =
+      statusRaw === "sent" ||
+      statusRaw === "site_measure" ||
+      statusRaw === "final_quote" ||
+      statusRaw === "approved" ||
+      statusRaw === "paid"
+        ? statusRaw
+        : "draft";
+    const aiChatRaw = Array.isArray(r.aiChat) ? r.aiChat : [];
+    out.push({
+      id: r.id,
+      title:
+        typeof r.title === "string" && r.title.trim()
+          ? r.title.trim().slice(0, 200)
+          : "AI estimate",
+      status,
+      createdAt: typeof r.createdAt === "string" ? r.createdAt : new Date().toISOString(),
+      updatedAt: typeof r.updatedAt === "string" ? r.updatedAt : new Date().toISOString(),
+      sentAt: typeof r.sentAt === "string" ? r.sentAt : undefined,
+      lineItems,
+      ...totals,
+      notes: typeof r.notes === "string" ? r.notes.slice(0, 4000) : "",
+      aiChat: aiChatRaw
+        .filter(
+          (t): t is Record<string, unknown> => !!t && typeof t === "object",
+        )
+        .map((t) => ({
+          role: t.role === "assistant" ? ("assistant" as const) : ("admin" as const),
+          content: typeof t.content === "string" ? t.content.slice(0, 4000) : "",
+          at: typeof t.at === "string" ? t.at : new Date().toISOString(),
+        })),
+      sourceSummary:
+        typeof r.sourceSummary === "string" ? r.sourceSummary.slice(0, 2000) : "",
+    });
+  }
+  return out;
+}
+
 function parseWorkProposals(value: Prisma.JsonValue): WorkProposal[] {
   if (!Array.isArray(value)) return [];
   const list = value as unknown as Record<string, unknown>[];
@@ -541,6 +629,7 @@ function rowToUserRecord(row: PortalUserRow): UserRecord {
     communicationLog: parseCommunicationLog(row.communicationLog),
     workProposals: parseWorkProposals(row.workProposals),
     scheduledCalls: parseScheduledCalls(row.scheduledCalls),
+    estimates: parseEstimates(row.estimates),
   });
 }
 
@@ -564,6 +653,7 @@ function hydrateUser(user: UserRecord): UserRecord {
     communicationLog: user.communicationLog ?? [],
     workProposals: user.workProposals ?? [],
     scheduledCalls: user.scheduledCalls ?? [],
+    estimates: user.estimates ?? [],
   };
 }
 
@@ -583,6 +673,7 @@ async function persistJsonSnapshots(
     | "communicationLog"
     | "workProposals"
     | "scheduledCalls"
+    | "estimates"
   >,
 ) {
   await prisma.portalUser.update({
@@ -1236,6 +1327,103 @@ export async function recordScheduledCall(params: {
   return entry;
 }
 
+/** All estimates for a portal user, newest first. */
+export async function getEstimatesForPortalUser(
+  portalUserId: string,
+): Promise<Estimate[]> {
+  const row = await prisma.portalUser.findUnique({ where: { id: portalUserId } });
+  if (!row) return [];
+  return rowToUserRecord(row)
+    .estimates.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+}
+
+export async function getEstimateById(
+  portalUserId: string,
+  estimateId: string,
+): Promise<Estimate | null> {
+  const estimates = await getEstimatesForPortalUser(portalUserId);
+  return estimates.find((e) => e.id === estimateId) ?? null;
+}
+
+export async function createEstimateForPortalUser(
+  portalUserId: string,
+  estimate: Estimate,
+): Promise<Estimate> {
+  const row = await prisma.portalUser.findUnique({ where: { id: portalUserId } });
+  if (!row) throw new Error("Portal user not found.");
+  const user = rowToUserRecord(row);
+  const estimates = [estimate, ...(user.estimates ?? [])].slice(0, 25);
+  await persistJsonSnapshots(row.id, {
+    estimates: estimates as unknown as Prisma.InputJsonValue,
+  });
+  return estimate;
+}
+
+async function writeEstimate(
+  portalUserId: string,
+  estimateId: string,
+  mutate: (e: Estimate) => Estimate,
+): Promise<Estimate> {
+  const row = await prisma.portalUser.findUnique({ where: { id: portalUserId } });
+  if (!row) throw new Error("Portal user not found.");
+  const user = rowToUserRecord(row);
+  const idx = user.estimates.findIndex((e) => e.id === estimateId);
+  if (idx < 0) throw new Error("Estimate not found.");
+  const next = mutate({ ...user.estimates[idx], updatedAt: new Date().toISOString() });
+  const estimates = [...user.estimates];
+  estimates[idx] = next;
+  await persistJsonSnapshots(row.id, {
+    estimates: estimates as unknown as Prisma.InputJsonValue,
+  });
+  return next;
+}
+
+/** Admin edit: replace line items / notes / title; totals recomputed in code. */
+export async function adminPatchEstimate(params: {
+  portalUserId: string;
+  estimateId: string;
+  lineItems?: EstimateLineItem[];
+  notes?: string;
+  title?: string;
+}): Promise<Estimate> {
+  return writeEstimate(params.portalUserId, params.estimateId, (e) => {
+    const lineItems = params.lineItems ?? e.lineItems;
+    const totals = recomputeEstimateTotals(lineItems);
+    return {
+      ...e,
+      ...(params.title?.trim() ? { title: params.title.trim().slice(0, 200) } : {}),
+      ...(params.notes !== undefined ? { notes: params.notes.slice(0, 4000) } : {}),
+      lineItems,
+      ...totals,
+    };
+  });
+}
+
+export async function appendEstimateAiChat(params: {
+  portalUserId: string;
+  estimateId: string;
+  turns: Array<{ role: "admin" | "assistant"; content: string; at: string }>;
+}): Promise<Estimate> {
+  return writeEstimate(params.portalUserId, params.estimateId, (e) => ({
+    ...e,
+    aiChat: [...e.aiChat, ...params.turns].slice(-60),
+  }));
+}
+
+export async function setEstimateStatus(params: {
+  portalUserId: string;
+  estimateId: string;
+  status: EstimateStatus;
+}): Promise<Estimate> {
+  return writeEstimate(params.portalUserId, params.estimateId, (e) => ({
+    ...e,
+    status: params.status,
+    ...(params.status === "sent" && !e.sentAt
+      ? { sentAt: new Date().toISOString() }
+      : {}),
+  }));
+}
+
 export async function getUserPortalData(userId: string) {
   const row = await prisma.portalUser.findUnique({ where: { id: userId } });
   if (!row) throw new Error("User not found.");
@@ -1579,6 +1767,11 @@ export async function recordWorkProposalAcceptance(params: {
   user.workProposals[idx] = next;
   await persistJsonSnapshots(row.id, {
     workProposals: user.workProposals as unknown as Prisma.InputJsonValue,
+    projectStatus: {
+      phase: "Approved",
+      updatedAt: now,
+      details: `Customer approved the final quote "${cur.title}". Awaiting payment / scheduling.`,
+    } as unknown as Prisma.InputJsonValue,
   });
   return next;
 }
@@ -1628,6 +1821,11 @@ export async function markWorkProposalPaid(params: {
   await persistJsonSnapshots(row.id, {
     workProposals: user.workProposals as unknown as Prisma.InputJsonValue,
     invoices: user.invoices as unknown as Prisma.InputJsonValue,
+    projectStatus: {
+      phase: "Paid",
+      updatedAt: now,
+      details: `Final quote "${cur.title}" paid via Stripe. Ready to schedule the work.`,
+    } as unknown as Prisma.InputJsonValue,
   });
   return next;
 }
@@ -1671,6 +1869,7 @@ export async function listPortalUsersForAdmin() {
       signupLocationLog: row.signupLocationLog ?? null,
       workProposals: user.workProposals ?? [],
       scheduledCalls: user.scheduledCalls ?? [],
+      estimates: user.estimates ?? [],
     };
   });
 }
@@ -1731,6 +1930,7 @@ export async function getPortalUserById(userId: string) {
     avatarDataUrl: user.avatarDataUrl,
     projectStatus: user.projectStatus,
     scheduledCalls: user.scheduledCalls ?? [],
+    estimates: user.estimates ?? [],
   };
 }
 

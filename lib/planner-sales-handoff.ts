@@ -240,4 +240,10 @@ export const SALES_PIPELINE_PHASES = {
   planning: "Planning",
   designApproved: "Design approved",
   callScheduled: "Call scheduled",
+  estimateDrafted: "Estimate drafted",
+  estimateSent: "Estimate sent",
+  siteMeasure: "Site measure scheduled",
+  finalQuote: "Final quote sent",
+  approved: "Approved",
+  paid: "Paid",
 } as const;
