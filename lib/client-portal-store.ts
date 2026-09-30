@@ -2285,20 +2285,39 @@ export async function getPortalUserById(userId: string) {
   };
 }
 
-/** Latest approved-design rendering from the AI planner blueprint log (for shop packet generation). */
+/** Latest approved-design rendering for shop packet generation.
+ *  Checks the AI planner blueprint log first, then falls back to the latest
+ *  concept image saved on planner activity (the planner chat persists
+ *  concept images there; nothing currently writes to the blueprint log). */
 export async function getLatestBlueprintRendering(
   userId: string,
 ): Promise<{ mimeType: string; dataBase64: string } | null> {
   const row = await prisma.portalUser.findUnique({ where: { id: userId } });
   if (!row) return null;
-  const log = rowToUserRecord(row).aiPlannerBlueprintLog ?? [];
-  for (let i = log.length - 1; i >= 0; i--) {
-    const url = log[i]?.dataUrl?.trim() ?? "";
-    const match = /^data:([^;]+);base64,([A-Za-z0-9+/=]+)$/.exec(url);
-    if (!match) continue;
+  const user = rowToUserRecord(row);
+  const parse = (
+    url: string,
+    mimeFallback?: string,
+  ): { mimeType: string; dataBase64: string } | null => {
+    const match = /^data:([^;]+);base64,([A-Za-z0-9+/=]+)$/.exec(url.trim());
+    if (!match) return null;
     const data = match[2];
-    if (data.length < 64) continue;
-    return { mimeType: match[1].trim() || "image/png", dataBase64: data };
+    if (data.length < 64) return null;
+    return { mimeType: (mimeFallback || match[1]).trim() || "image/png", dataBase64: data };
+  };
+  // Both logs are newest-first (unshift on write).
+  const log = user.aiPlannerBlueprintLog ?? [];
+  for (const entry of log) {
+    const hit = parse(entry?.dataUrl ?? "");
+    if (hit) return hit;
+  }
+  const activity = user.aiPlannerActivity ?? [];
+  for (const turn of activity) {
+    const imgs = turn?.conceptImages ?? [];
+    for (let k = imgs.length - 1; k >= 0; k--) {
+      const hit = parse(imgs[k]?.dataUrl ?? "", imgs[k]?.mimeType);
+      if (hit) return hit;
+    }
   }
   return null;
 }
