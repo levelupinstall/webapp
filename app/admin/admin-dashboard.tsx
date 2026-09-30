@@ -63,6 +63,16 @@ type PortalClient = {
   /** Request/geo snapshot at portal registration (when captured). */
   signupLocationLog?: unknown;
   workProposals?: WorkProposalRow[];
+  scheduledCalls?: Array<{
+    id: string;
+    scheduledFor: string;
+    label: string;
+    phone: string;
+    topic: string;
+    status: "scheduled" | "completed" | "cancelled";
+    createdAt: string;
+    source: string;
+  }>;
 };
 
 type CarpenterRow = {
@@ -2773,6 +2783,36 @@ export default function AdminDashboard() {
                       <p className="mt-2 whitespace-pre-wrap text-sm text-zinc-400">
                         {selectedClient.projectStatus.details}
                       </p>
+                    </div>
+                    <div>
+                      <h4 className="text-xs font-semibold uppercase text-zinc-500">
+                        Scheduled calls
+                      </h4>
+                      {(selectedClient.scheduledCalls ?? []).length === 0 ? (
+                        <p className="mt-2 text-sm text-zinc-600">None yet.</p>
+                      ) : (
+                        <ul className="mt-2 space-y-2">
+                          {(selectedClient.scheduledCalls ?? []).map((call) => (
+                            <li
+                              key={call.id}
+                              className="rounded-lg border border-zinc-800 bg-zinc-950/80 px-3 py-2 text-sm"
+                            >
+                              <p className="font-medium text-zinc-200">
+                                {call.label}
+                                {call.status !== "scheduled" ? (
+                                  <span className="ml-2 rounded-full bg-zinc-800 px-2 py-0.5 text-[11px] text-zinc-400">
+                                    {call.status}
+                                  </span>
+                                ) : null}
+                              </p>
+                              <p className="mt-1 text-xs text-zinc-400">
+                                {call.phone}
+                                {call.topic ? ` · ${call.topic}` : ""}
+                              </p>
+                            </li>
+                          ))}
+                        </ul>
+                      )}
                     </div>
                     <div className="grid gap-4 lg:grid-cols-2">
                       <div>

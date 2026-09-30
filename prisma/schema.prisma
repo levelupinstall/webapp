@@ -40,6 +40,8 @@ model PortalUser {
   communicationLog  Json @default("[]") @map("communication_log")
   /// Formal job proposals (draft → sent → accepted); JSON array of WorkProposal records.
   workProposals     Json @default("[]") @map("work_proposals")
+  /// Sales handoff: consultation calls the customer agreed to (JSON array of ScheduledCall records).
+  scheduledCalls    Json @default("[]") @map("scheduled_calls")
   /// Snapshot from request at registration (IP/geo headers when available).
   signupLocationLog Json? @map("signup_location_log")
 

@@ -163,6 +163,20 @@ export type ClientCommunicationEntry = {
   recordedBy?: string;
 };
 
+/** A consultation call the customer agreed to in the AI planner sales handoff. */
+export type ScheduledCall = {
+  id: string;
+  /** ISO instant when Tom should call. */
+  scheduledFor: string;
+  /** Human label, e.g. "Tuesday, October 6 at 2:00 PM". */
+  label: string;
+  phone: string;
+  topic: string;
+  status: "scheduled" | "completed" | "cancelled";
+  createdAt: string;
+  source: "ai-planner";
+};
+
 type UserRecord = {
   id: string;
   username: string;
@@ -191,6 +205,7 @@ type UserRecord = {
   portalAnalytics: PortalAnalytics;
   communicationLog: ClientCommunicationEntry[];
   workProposals: WorkProposal[];
+  scheduledCalls: ScheduledCall[];
 };
 
 function parseIdeas(value: Prisma.JsonValue): Idea[] {
@@ -357,6 +372,26 @@ function parseCommunicationLog(value: Prisma.JsonValue): ClientCommunicationEntr
   return Array.isArray(value) ? (value as unknown as ClientCommunicationEntry[]) : [];
 }
 
+function parseScheduledCalls(value: Prisma.JsonValue): ScheduledCall[] {
+  if (!Array.isArray(value)) return [];
+  return (value as unknown as Record<string, unknown>[])
+    .filter((row): row is Record<string, unknown> => !!row && typeof row === "object")
+    .map((row) => ({
+      id: String(row.id ?? randomUUID()),
+      scheduledFor: String(row.scheduledFor ?? ""),
+      label: String(row.label ?? ""),
+      phone: String(row.phone ?? ""),
+      topic: String(row.topic ?? ""),
+      status:
+        row.status === "completed" || row.status === "cancelled"
+          ? row.status
+          : ("scheduled" as ScheduledCall["status"]),
+      createdAt: String(row.createdAt ?? new Date().toISOString()),
+      source: "ai-planner" as const,
+    }))
+    .filter((call) => call.scheduledFor.length > 0);
+}
+
 function parseWorkProposals(value: Prisma.JsonValue): WorkProposal[] {
   if (!Array.isArray(value)) return [];
   const list = value as unknown as Record<string, unknown>[];
@@ -505,6 +540,7 @@ function rowToUserRecord(row: PortalUserRow): UserRecord {
     portalAnalytics: parsePortalAnalytics(row.portalAnalytics),
     communicationLog: parseCommunicationLog(row.communicationLog),
     workProposals: parseWorkProposals(row.workProposals),
+    scheduledCalls: parseScheduledCalls(row.scheduledCalls),
   });
 }
 
@@ -527,6 +563,7 @@ function hydrateUser(user: UserRecord): UserRecord {
     },
     communicationLog: user.communicationLog ?? [],
     workProposals: user.workProposals ?? [],
+    scheduledCalls: user.scheduledCalls ?? [],
   };
 }
 
@@ -545,6 +582,7 @@ async function persistJsonSnapshots(
     | "portalAnalytics"
     | "communicationLog"
     | "workProposals"
+    | "scheduledCalls"
   >,
 ) {
   await prisma.portalUser.update({
@@ -1145,6 +1183,59 @@ export async function appendPortalCommunication(params: {
   return entry;
 }
 
+/**
+ * Move a portal profile through the sales pipeline (background CRM write).
+ * Never surfaces to the customer — the admin dashboard shows the new phase.
+ */
+export async function setPortalUserProjectPhase(params: {
+  portalUserId: string;
+  phase: string;
+  details: string;
+}): Promise<void> {
+  const row = await prisma.portalUser.findUnique({ where: { id: params.portalUserId } });
+  if (!row) throw new Error("Portal user not found.");
+  await persistJsonSnapshots(row.id, {
+    projectStatus: {
+      phase: params.phase.trim(),
+      updatedAt: new Date().toISOString(),
+      details: params.details.trim(),
+    } as unknown as Prisma.InputJsonValue,
+  });
+}
+
+/**
+ * Record a consultation call agreed in the AI planner sales handoff.
+ * Returns the stored entry.
+ */
+export async function recordScheduledCall(params: {
+  portalUserId: string;
+  scheduledFor: Date;
+  label: string;
+  phone: string;
+  topic: string;
+}): Promise<ScheduledCall> {
+  const row = await prisma.portalUser.findUnique({ where: { id: params.portalUserId } });
+  if (!row) throw new Error("Portal user not found.");
+  const user = rowToUserRecord(row);
+  const entry: ScheduledCall = {
+    id: randomUUID(),
+    scheduledFor: params.scheduledFor.toISOString(),
+    label: params.label,
+    phone: params.phone.trim(),
+    topic: params.topic.trim().slice(0, 280),
+    status: "scheduled",
+    createdAt: new Date().toISOString(),
+    source: "ai-planner",
+  };
+  const calls = [...(user.scheduledCalls ?? []), entry]
+    .sort((a, b) => a.scheduledFor.localeCompare(b.scheduledFor))
+    .slice(-50);
+  await persistJsonSnapshots(row.id, {
+    scheduledCalls: calls as unknown as Prisma.InputJsonValue,
+  });
+  return entry;
+}
+
 export async function getUserPortalData(userId: string) {
   const row = await prisma.portalUser.findUnique({ where: { id: userId } });
   if (!row) throw new Error("User not found.");
@@ -1579,6 +1670,7 @@ export async function listPortalUsersForAdmin() {
       communicationLog: user.communicationLog ?? [],
       signupLocationLog: row.signupLocationLog ?? null,
       workProposals: user.workProposals ?? [],
+      scheduledCalls: user.scheduledCalls ?? [],
     };
   });
 }
@@ -1637,6 +1729,8 @@ export async function getPortalUserById(userId: string) {
     serviceAddress: user.serviceAddress,
     phone: user.phone ?? "",
     avatarDataUrl: user.avatarDataUrl,
+    projectStatus: user.projectStatus,
+    scheduledCalls: user.scheduledCalls ?? [],
   };
 }
 

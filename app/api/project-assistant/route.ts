@@ -55,8 +55,18 @@ import { PLANNER_ASSISTANT_NAME } from "@/lib/planner-brand";
 import {
   addClientSpacePhoto,
   appendAiPlannerActivity,
+  appendPortalCommunication,
   getPortalSpacePhotoInlineParts,
+  getPortalUserById,
+  recordScheduledCall,
+  setPortalUserProjectPhase,
 } from "@/lib/client-portal-store";
+import {
+  extractPhoneNumber,
+  mentionsVagueTiming,
+  parseCallWindow,
+  SALES_PIPELINE_PHASES,
+} from "@/lib/planner-sales-handoff";
 import { replicateConceptProviderEnabled } from "@/lib/replicate-sdxl-controlnet-concept";
 import {
   appendSketchNotUpdatedNotice,
@@ -198,6 +208,8 @@ function buildPlannerSystemInstruction(params: {
   sketchRoundsDelivered: number;
   suggestInPersonAfterManySketches: boolean;
   advanceTowardSiteVisit: boolean;
+  /** Sales-handoff directive for Alex (book the callback); null when inactive. */
+  salesHandoffHint: string | null;
   hasBudgetContext: boolean;
   hasPhone: boolean;
   hasCallWindow: boolean;
@@ -244,6 +256,10 @@ Invite clear photos of the space — include \`[PHOTO_PROMPT]\` when asking for 
     chunks.push(`
 ## Session hint (platform)
 The homeowner has already received **${n} rounds** with AI concept sketches in this chat. If they still sound unhappy or keep asking for big visual swings, **set expectations kindly**: this planner is for **exploring how things could look**—not a substitute for walking the space. Say **Level Up can review everything here** and follow up with **next steps in writing** when they're ready. Stay brief; it's okay to offer smaller visual tweaks.`);
+  }
+
+  if (params.salesHandoffHint) {
+    chunks.push(params.salesHandoffHint);
   }
 
   if (params.advanceTowardSiteVisit) {
@@ -638,6 +654,81 @@ export async function POST(request: Request) {
         clientPhase === "refine" ||
         priorTurnHadConceptImage);
 
+    // --- Sales handoff: liked design -> book a consultation call, move the
+    // profile through the CRM pipeline in the background.
+    const handoffPortalUserId = portalSession?.userId ?? null;
+    const callTimeCandidate = parseCallWindow(lastUserText);
+    const callTimingVague = !callTimeCandidate && mentionsVagueTiming(lastUserText);
+    let handoffCurrentPhase: string | null = null;
+    let handoffPortalPhone = "";
+    let handoffExistingCalls: Array<{ scheduledFor: string; status: string }> = [];
+    if (
+      handoffPortalUserId &&
+      (advanceTowardSiteVisit || callTimeCandidate || callTimingVague)
+    ) {
+      try {
+        const handoffUser = await getPortalUserById(handoffPortalUserId);
+        handoffCurrentPhase = handoffUser?.projectStatus?.phase ?? null;
+        handoffPortalPhone = handoffUser?.phone ?? "";
+        handoffExistingCalls = (handoffUser?.scheduledCalls ?? []).map((c) => ({
+          scheduledFor: c.scheduledFor,
+          status: c.status,
+        }));
+      } catch (phaseErr) {
+        console.warn(
+          "[project-assistant] sales handoff profile lookup failed:",
+          phaseErr instanceof Error ? phaseErr.message : phaseErr,
+        );
+      }
+    }
+    const handoffInPipeline =
+      handoffCurrentPhase === SALES_PIPELINE_PHASES.designApproved ||
+      handoffCurrentPhase === SALES_PIPELINE_PHASES.callScheduled;
+    const salesHandoffActive = advanceTowardSiteVisit || handoffInPipeline;
+
+    let salesHandoffHint: string | null = null;
+    let pendingScheduledCall: {
+      scheduledFor: Date;
+      label: string;
+      phone: string;
+    } | null = null;
+    if (salesHandoffActive) {
+      if (!handoffPortalUserId) {
+        salesHandoffHint = `## Session hint (sales handoff — guest)
+The homeowner likes the design direction and is ready to move forward, but they are not signed in. Warmly explain that a free Level Up account saves their project and lets Tom schedule a callback to discuss it — ask if they'd like to create one, in a single short question. Do not mention CRM, pipelines, or internal stages.`;
+      } else if (callTimeCandidate) {
+        const phoneDigits =
+          extractPhoneNumber(lastUserText) ??
+          extractPhoneNumber(allUserText) ??
+          (handoffPortalPhone.trim() ? handoffPortalPhone.trim() : null);
+        if (phoneDigits) {
+          const alreadyBooked = handoffExistingCalls.some(
+            (c) =>
+              c.status === "scheduled" &&
+              c.scheduledFor === callTimeCandidate.scheduledFor.toISOString(),
+          );
+          if (!alreadyBooked) {
+            pendingScheduledCall = {
+              scheduledFor: callTimeCandidate.scheduledFor,
+              label: callTimeCandidate.label,
+              phone: phoneDigits,
+            };
+          }
+          salesHandoffHint = `## Session hint (sales handoff — call confirmed)
+The homeowner agreed to a callback: **${callTimeCandidate.label}** at **${phoneDigits}**. The platform has saved it. Confirm warmly in one or two sentences (e.g. "You're all set — Tom will call you ${callTimeCandidate.label} at ${phoneDigits} to talk through the project."). Do NOT ask for a time or number again. Do not mention CRM, pipelines, or internal stages.`;
+        } else {
+          salesHandoffHint = `## Session hint (sales handoff — time given, need number)
+The homeowner suggested **${callTimeCandidate.label}** for a callback with Tom. Confirm that time works, then ask for the best phone number to reach them at — one short question, nothing else. Do not mention CRM, pipelines, or internal stages.`;
+        }
+      } else if (callTimingVague) {
+        salesHandoffHint = `## Session hint (sales handoff — pin down a time)
+The homeowner is open to a callback but was vague about timing. Ask for one specific day and time that works for a quick call with Tom (e.g. "What day and time works best — say Tuesday afternoon?"). One short question. Do not mention CRM, pipelines, or internal stages.`;
+      } else {
+        salesHandoffHint = `## Session hint (sales handoff — book the call)
+The homeowner likes the design direction — pivot to booking. In one or two warm sentences say Tom would love to talk through the project with them, then ask what day and time works best for a quick call. One question only; do not ask for the phone number yet. Do not mention CRM, pipelines, or internal stages.`;
+      }
+    }
+
     const likelyGenericBlankSketch =
       substantiveForGenericSketch &&
       !userAttachedPhotosThisTurn &&
@@ -755,6 +846,7 @@ export async function POST(request: Request) {
             sketchRoundsDelivered,
             suggestInPersonAfterManySketches,
             advanceTowardSiteVisit,
+            salesHandoffHint,
             hasBudgetContext: intakeHasBudget,
             hasPhone: intakeHasPhone,
             hasCallWindow: intakeHasCallWindow,
@@ -1406,6 +1498,55 @@ export async function POST(request: Request) {
         console.warn(
           "[project-assistant] appendAiPlannerActivity failed:",
           activityErr instanceof Error ? activityErr.message : activityErr,
+        );
+      }
+
+      // Sales handoff (background CRM): move the profile through the pipeline
+      // and persist the agreed callback. Never user-visible.
+      try {
+        const userId = portalSession.userId;
+        if (advanceTowardSiteVisit && handoffCurrentPhase === "Planning") {
+          await setPortalUserProjectPhase({
+            portalUserId: userId,
+            phase: SALES_PIPELINE_PHASES.designApproved,
+            details: `Customer approved a concept direction in the AI planner on ${new Date().toLocaleDateString("en-CA", { timeZone: "America/Toronto" })}. Callback scheduling in progress.`,
+          });
+          await appendPortalCommunication({
+            portalUserId: userId,
+            channel: "app_notice",
+            summary: "AI planner: customer approved a concept design",
+            detail: "Sales handoff started — booking a consultation call with Tom.",
+            recordedBy: "AI planner",
+          });
+        }
+        if (pendingScheduledCall) {
+          const topic = intakeDiagnostics.category
+            ? `${intakeDiagnostics.category} project consultation`
+            : "Project consultation";
+          await recordScheduledCall({
+            portalUserId: userId,
+            scheduledFor: pendingScheduledCall.scheduledFor,
+            label: pendingScheduledCall.label,
+            phone: pendingScheduledCall.phone,
+            topic,
+          });
+          await setPortalUserProjectPhase({
+            portalUserId: userId,
+            phase: SALES_PIPELINE_PHASES.callScheduled,
+            details: `Consultation call scheduled for ${pendingScheduledCall.label} (${pendingScheduledCall.phone}).`,
+          });
+          await appendPortalCommunication({
+            portalUserId: userId,
+            channel: "app_notice",
+            summary: `AI planner: consultation call scheduled — ${pendingScheduledCall.label}`,
+            detail: `Tom to call ${pendingScheduledCall.phone}. Topic: ${topic}.`,
+            recordedBy: "AI planner",
+          });
+        }
+      } catch (handoffErr) {
+        console.warn(
+          "[project-assistant] sales handoff background write failed:",
+          handoffErr instanceof Error ? handoffErr.message : handoffErr,
         );
       }
     }
