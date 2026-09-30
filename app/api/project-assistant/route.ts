@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import sharp from "sharp";
 import { getSessionFromCookie } from "@/lib/client-portal-auth";
 import {
   buildGeminiConceptImagePromptText,
@@ -147,10 +148,12 @@ function messageRequestsVisualChange(
   return false;
 }
 
-/** Persist AI-generated concept images for admin CRM (bounded size). */
-function conceptImagesForAdminCrm(
+/** Persist AI-generated concept images for admin CRM (bounded size).
+ * Downscales to a compact JPEG so the CRM copy always fits the persist caps —
+ * the shop packet uses it as design intent only, never as dimensional truth. */
+async function conceptImagesForAdminCrm(
   responseImages: { mimeType: string; data: string }[],
-): Array<{ mimeType: string; dataUrl: string }> {
+): Promise<Array<{ mimeType: string; dataUrl: string }>> {
   const MAX_IMAGES = 3;
   const MAX_PER_DATA_URL = 480_000;
   const MAX_COMBINED = 1_200_000;
@@ -158,8 +161,19 @@ function conceptImagesForAdminCrm(
   const out: Array<{ mimeType: string; dataUrl: string }> = [];
   let combined = 0;
   for (const img of responseImages.slice(0, MAX_IMAGES)) {
-    const mime = (img.mimeType || "image/png").trim() || "image/png";
-    const dataUrl = `data:${mime};base64,${img.data}`;
+    let data = (img.data || "").trim();
+    let mime = "image/jpeg";
+    try {
+      const buf = await sharp(Buffer.from(data, "base64"))
+        .resize({ width: 768, height: 768, fit: "inside", withoutEnlargement: true })
+        .jpeg({ quality: 70 })
+        .toBuffer();
+      data = buf.toString("base64");
+    } catch {
+      // If the bytes can't be decoded, fall back to the original payload when it fits.
+      mime = (img.mimeType || "image/png").trim() || "image/png";
+    }
+    const dataUrl = `data:${mime};base64,${data}`;
     if (dataUrl.length > MAX_PER_DATA_URL) continue;
     if (combined + dataUrl.length > MAX_COMBINED && out.length > 0) break;
     out.push({ mimeType: mime, dataUrl });
@@ -1451,7 +1465,7 @@ The homeowner likes the design direction — pivot to booking. In one or two war
             });
           }
         }
-        const conceptImages = conceptImagesForAdminCrm(responseImages);
+        const conceptImages = await conceptImagesForAdminCrm(responseImages);
         await appendAiPlannerActivity(
           portalSession.userId,
           {
