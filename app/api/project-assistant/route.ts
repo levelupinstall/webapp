@@ -246,7 +246,7 @@ Your immediately previous assistant turn included a **concept visualization** th
     if (params.blockFirstRenderImage) {
       chunks.push(`
 ## Session hint (platform — no visualization this turn)
-The **first** concept image is **not** being attached on this reply because there still isn't enough to draw from — need a photo of the space **or** a clear description of what they want added (e.g. "floating shelves on the living room wall"). Do **not** say you created, generated, produced, attached, or showed a sketch or picture, and do **not** say they should see an image **below** this message — **there will not be one**. Ask **at most ONE question** to get what's missing (photo or description) — do not run a questionnaire. Budget, style, and dimensions can be collected **after** the first visual, as reactions to it.`);
+The **first** concept image is **not** being attached on this reply because the homeowner hasn't said what they want built yet. Do **not** say you created, generated, produced, attached, or showed a sketch or picture, and do **not** say they should see an image **below** this message — **there will not be one**. Ask **one clear question** about what they want for this space (e.g. "What are you hoping to add or change here — more storage, a new workbench setup, wall organization, or something else?"). Do not run a questionnaire. Budget, style, and dimensions can be collected **after** they tell you the project direction and react to the first visual.`);
     } else {
       chunks.push(`
 ## Session hint (platform)
@@ -643,17 +643,16 @@ export async function POST(request: Request) {
     const hasAnyPriorRender =
       sketchRoundsDelivered > 0 || priorTurnHadConceptImage;
     /**
-     * Fast first render: photo(s) + what they want (a category signal like
-     * "shelves"/"closet", or a substantive description) is enough for a
-     * first draft. Style, budget, and dimensions still get collected — but
-     * as reactions to the visual, not as a questionnaire blocking it.
-     * No-photo users with a substantive description render in a neutral
-     * studio room instead of being blocked forever.
+     * First render gate: photo(s) + the homeowner EXPLICITLY stating what they
+     * want (a category signal like "shelves"/"closet" in their own words) is
+     * enough for a first draft. A photo with only vague text is NOT enough —
+     * the planner must ask what they want first, not guess and render.
+     * Style, budget, and dimensions still get collected — but as reactions to
+     * the visual, not as a questionnaire blocking it.
+     * No-photo users with a substantive description + explicit category render
+     * in a neutral studio room instead of being blocked forever.
      */
-    const firstRenderMinimalReady =
-      (hasPhotoContextInSession &&
-        (substantiveForGenericSketch || intakeDiagnostics.category)) ||
-      (substantiveForGenericSketch && intakeDiagnostics.category);
+    const firstRenderMinimalReady = Boolean(intakeDiagnostics.category);
     const blockFirstRenderImage =
       !hasAnyPriorRender && !firstRenderMinimalReady;
 

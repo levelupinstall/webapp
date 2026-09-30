@@ -35,7 +35,7 @@ Rules:
 - Generic neutral finishes — no retailer logos, price tags, SKUs, or store signage.
 - Obey exact fixture counts and dimensions given in the request — never add extra shelves, drawers, or modules to fill space.
 - When a previous concept image is attached as the last reference, treat it as the baseline: edit ONLY what the homeowner asked to change; keep shelf count, spacing, style, and room identical otherwise.
-- When room photos are attached, match that real space (walls, trim, proportions); do not substitute a generic room.
+- When room photos are attached, you MUST depict THAT SPECIFIC ROOM — same walls, same layout, same existing furniture and objects, same camera perspective. Redesign the carpentry within their actual space. NEVER substitute a generic room, a different room type, or a stock-photo-style interior. If the photo shows a workshop, the concept shows THEIR workshop with new carpentry — not a living room, not a home office.
 - Optional short caption: layout and trim character only — no shopping list or prices.`;
 
 /** Extra instructions when the model must output a concept image (legacy full block; prefer LEVEL_UP_IMAGE_RENDER_SYSTEM). */
