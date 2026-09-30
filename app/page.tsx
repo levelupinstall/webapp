@@ -620,26 +620,25 @@ function HomeContent() {
                 Quoting &amp; billing
               </p>
               <h2 className="mt-2 text-xl font-semibold text-[#230f35] sm:text-2xl">
-                One call-out fee. One hourly rate. Zero mystery.
+                One fixed quote. Zero surprises.
               </h2>
               <p className="mt-3 max-w-2xl text-base leading-relaxed text-[#4d2e70]">
-                Every job starts with our{" "}
-                <span className="font-semibold text-[#31184a]">$150 minimum call-out</span>, then labor at{" "}
-                <span className="font-semibold text-[#31184a]">$75 per hour</span> beyond that window.{" "}
-                <span className="font-semibold text-[#31184a]">Materials</span> are billed separately so
-                you see lumber, hardware, and finishes clearly. Before we swing tools, you&apos;ll get an{" "}
-                <span className="font-semibold text-[#31184a]">estimated duration</span> for planning — and
-                a fixed written quote you approve first.
+                Every job gets a{" "}
+                <span className="font-semibold text-[#31184a]">fixed written quote</span> you approve
+                before we start — no hourly meter, no watching the clock. The{" "}
+                <span className="font-semibold text-[#31184a]">$150 call-out</span> covers the site visit
+                and scope review, credited toward your project when you move ahead.{" "}
+                <span className="font-semibold text-[#31184a]">Materials</span> are itemized in your quote
+                so lumber, hardware, and finishes are all clear upfront.
               </p>
               <p className="mt-4 max-w-2xl text-base leading-relaxed text-[#4d2e70]">
                 On this site today,{" "}
                 <span className="font-semibold text-[#31184a]">Stripe Checkout</span> collects only your{" "}
                 <span className="font-semibold text-[#31184a]">$150 call-out fee</span> when you finish
-                booking—that confirms your appointment. Additional charges for{" "}
-                <span className="font-semibold text-[#31184a]">materials</span> and{" "}
-                <span className="font-semibold text-[#31184a]">labor</span> beyond that are coordinated with
-                you after scope is reviewed on site; we&apos;ll spell out how each balance is paid before it
-                hits your card.
+                booking—that confirms your appointment. The{" "}
+                <span className="font-semibold text-[#31184a]">remaining balance</span> from your approved
+                fixed quote is coordinated with you after the scope is confirmed; we&apos;ll spell out how
+                each balance is paid before it hits your card.
               </p>
               <div className="mt-6 grid gap-3 sm:grid-cols-3">
                 <div className="rounded-xl border border-[#eddfff] bg-white/90 p-4 shadow-sm">
@@ -648,44 +647,43 @@ function HomeContent() {
                   </p>
                   <p className="mt-2 text-2xl font-semibold tabular-nums text-[#230f35]">$150</p>
                   <p className="mt-1 text-sm leading-relaxed text-[#55337b]">
-                    Minimum charge covers getting to your door and getting the scope dialed in.
+                    Site visit and scope review. Credited toward your project when you proceed.
                   </p>
                 </div>
                 <div className="rounded-xl border border-[#eddfff] bg-white/90 p-4 shadow-sm">
                   <p className="text-xs font-semibold uppercase tracking-wider text-[#7a4bb8]">
-                    Labor &amp; materials
+                    Fixed quote
                   </p>
-                  <p className="mt-2 text-2xl font-semibold tabular-nums text-[#230f35]">$75/hr</p>
+                  <p className="mt-2 text-2xl font-semibold tabular-nums text-[#230f35]">Per job</p>
                   <p className="mt-1 text-sm leading-relaxed text-[#55337b]">
-                    Hourly rate plus materials used on your project, tracked for transparency.
+                    One fixed price for the whole job, approved before work begins. The price doesn&apos;t
+                    change unless the scope does.
                   </p>
                 </div>
                 <div className="rounded-xl border border-[#eddfff] bg-white/90 p-4 shadow-sm">
                   <p className="text-xs font-semibold uppercase tracking-wider text-[#7a4bb8]">
-                    Time estimate
+                    Materials
                   </p>
-                  <p className="mt-2 text-lg font-semibold leading-snug text-[#230f35]">Planning window</p>
+                  <p className="mt-2 text-lg font-semibold leading-snug text-[#230f35]">Itemized</p>
                   <p className="mt-1 text-sm leading-relaxed text-[#55337b]">
-                    You&apos;ll receive an estimated duration before work begins—final hours can shift once
-                    we see real site conditions.
+                    Lumber, hardware, and finishes listed clearly in your quote. No hidden fees.
                   </p>
                 </div>
               </div>
               <div className="mt-6 rounded-xl border border-[#f59e0b]/35 bg-[#fffbeb] p-4 sm:p-5">
-                <p className="text-sm font-semibold text-[#92400e]">Estimate disclaimer</p>
+                <p className="text-sm font-semibold text-[#92400e]">Quote disclaimer</p>
                 <p className="mt-2 text-sm leading-relaxed text-[#78350f]">
-                  Durations and scope lines are our best professional judgment ahead of the visit. Hidden
-                  damage, code surprises, extra prep, or changes you request along the way can add—or
-                  occasionally save—time.{" "}
+                  Quotes reflect our best professional judgment ahead of the visit. Hidden
+                  damage, code surprises, extra prep, or changes you request along the way can require an
+                  updated quote.{" "}
                   <span className="font-semibold text-[#92400e]">
                     Material delivery fees or pickup fees
                   </span>{" "}
                   may apply when supplies need to be brought to your site or collected from suppliers.
                   {" "}
                   <span className="font-semibold text-[#92400e]">Time taken to source materials</span>
-                  —for example shopping, coordinating orders, or chasing stock—can also extend the schedule
-                  and billed labor. We communicate adjustments as they come up so billing never feels like a
-                  mystery.
+                  —for example shopping, coordinating orders, or chasing stock—can also extend the schedule.
+                  We communicate adjustments as they come up so pricing never feels like a mystery.
                 </p>
               </div>
             </div>
@@ -715,10 +713,11 @@ function HomeContent() {
                 <li className="flex gap-3">
                   <span className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-[#6e3eb2]" />
                   <span>
-                    <span className="font-semibold text-[#31184a]">Materials &amp; labor balances:</span>{" "}
-                    Additional amounts for materials and hourly labor are{" "}
+                    <span className="font-semibold text-[#31184a]">Remaining balances:</span>{" "}
+                    Amounts beyond the call-out fee come from your{" "}
+                    <span className="font-semibold text-[#31184a]">approved fixed quote</span> and are{" "}
                     <span className="font-semibold text-[#31184a]">not collected through this booking checkout</span>
-                    . After we review scope on site, we&apos;ll confirm what&apos;s owed and how it will be
+                    . After we confirm scope, we&apos;ll confirm what&apos;s owed and how it will be
                     paid (for example invoice, follow-up Stripe payment link, or another method we agree on).
                   </span>
                 </li>
@@ -726,7 +725,7 @@ function HomeContent() {
                   <span className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-[#6e3eb2]" />
                   <span>
                     <span className="font-semibold text-[#31184a]">No authorization holds here:</span>{" "}
-                    This app does not currently place a card hold for estimated labor. Any future flow for
+                    This app does not currently place a card hold for quoted work. Any future flow for
                     deposits or final billing through Stripe will be spelled out before you authorize it.
                   </span>
                 </li>

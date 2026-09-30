@@ -15,9 +15,8 @@ type BookingPayload = {
 
 /** Service policy copy — booking / payment timing lives next to the checkout action, not here */
 const TERMS_OF_SERVICE = [
-  "The standard labour rate is $75 per hour. For projects under 2 hours, the minimum total is $150.",
-  "For projects exceeding 2 hours, the $150 call-out fee is credited toward the first 2 hours, and additional time is billed at $75 per hour.",
-  "Materials, specialty hardware, parking fees, and disposal costs are additional and charged separately.",
+  "Jobs are quoted at a fixed price agreed in writing before work begins. The $150 call-out fee covers the site visit and scope review, and is credited toward your project when you move ahead.",
+  "Materials, specialty hardware, parking fees, and disposal costs are itemized in your fixed quote.",
   "Level Up Install maintains commercial general liability insurance and WSIB (Workplace Safety and Insurance Board) coverage for workers on jobs booked through this service; coverage is subject to current policies and eligibility.",
   "Client must provide safe, reasonable access to the work area and disclose site conditions that may impact scope or timing.",
   "Estimated schedules may shift due to site conditions, material delays, or safety considerations.",
