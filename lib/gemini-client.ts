@@ -907,16 +907,37 @@ export async function geminiGenerateShopPacket(params: {
       ],
       generationConfig: { maxOutputTokens: 4096, temperature: 0.2 },
     });
-    if (!res.ok) return null;
+    if (!res.ok) {
+      console.error("[shop-packet] gemini call failed", res.status, res.body.slice(0, 300));
+      return null;
+    }
     const { text } = extractParts(res.json);
     const stripped = text.trim().replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/i, "").trim();
-    const parsed = JSON.parse(stripped) as {
+    if (!stripped) {
+      console.error("[shop-packet] empty text response");
+      return null;
+    }
+    let parsed: {
       datumDescription?: unknown;
       elements?: unknown;
       installSteps?: unknown;
       warnings?: unknown;
     };
-    if (!parsed || typeof parsed !== "object" || !Array.isArray(parsed.elements)) return null;
+    try {
+      parsed = JSON.parse(stripped) as {
+        datumDescription?: unknown;
+        elements?: unknown;
+        installSteps?: unknown;
+        warnings?: unknown;
+      };
+    } catch (parseErr) {
+      console.error("[shop-packet] JSON parse failed", String(parseErr).slice(0, 120), "text head:", stripped.slice(0, 300));
+      return null;
+    }
+    if (!parsed || typeof parsed !== "object" || !Array.isArray(parsed.elements)) {
+      console.error("[shop-packet] no elements array", "text head:", stripped.slice(0, 300));
+      return null;
+    }
 
     const num = (v: unknown, fallbackNum = 0) =>
       typeof v === "number" && Number.isFinite(v) ? Math.round(v * 2) / 2 : fallbackNum;
