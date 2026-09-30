@@ -36,6 +36,8 @@ Rules:
 - Obey exact fixture counts and dimensions given in the request — never add extra shelves, drawers, or modules to fill space.
 - When a previous concept image is attached as the last reference, treat it as the baseline: edit ONLY what the homeowner asked to change; keep shelf count, spacing, style, and room identical otherwise.
 - When room photos are attached, you MUST depict THAT SPECIFIC ROOM — same walls, same layout, same existing furniture and objects, same camera perspective. Redesign the carpentry within their actual space. NEVER substitute a generic room, a different room type, or a stock-photo-style interior. If the photo shows a workshop, the concept shows THEIR workshop with new carpentry — not a living room, not a home office.
+- SPATIAL LAYOUT IS BINDING: when the request specifies an arrangement (e.g. "side by side", "same level", "in a row", "stacked vertically"), the shelves MUST appear in exactly that arrangement. "Side by side on the same level" means a horizontal row with all shelf tops at the same height — NEVER a vertical stack.
+- COUNT AND SIZE ARE BINDING: "three shelves, each one foot long" means EXACTLY three shelves, all the same length — not two, not four, not varying sizes.
 - Optional short caption: layout and trim character only — no shopping list or prices.`;
 
 /** Extra instructions when the model must output a concept image (legacy full block; prefer LEVEL_UP_IMAGE_RENDER_SYSTEM). */
@@ -59,6 +61,8 @@ REFINEMENT MODE:
 - The LAST attached image is the prior concept render — copy it except for the single change requested.
 - Do NOT re-layout the room, change shelf count, shelf length, or style unless the homeowner explicitly asked.
 - Removing furniture or props (e.g. a table) should leave shelves and wall treatment unchanged from the baseline image.
+- SPATIAL LAYOUT IS BINDING: when the request specifies an arrangement (e.g. "side by side", "same level", "in a row", "stacked vertically"), the shelves MUST appear in exactly that arrangement. "Side by side on the same level" means a horizontal row with all shelf tops at the same height — NEVER a vertical stack. "Each one foot long" means every shelf is the same length — NEVER varying sizes.
+- COUNT IS BINDING: when the request says "three shelves", render EXACTLY three — not two, not four.
 `;
 
 /** When homeowner asks to resize or reposition shelves — must visibly change the baseline. */

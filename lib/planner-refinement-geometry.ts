@@ -32,7 +32,7 @@ const COLOR_FINISH_ONLY =
   /\b(color|colour|paint|painted|stain|stained|finish|white|black|gray|grey|walnut|oak|natural|darker|lighter)\b/i;
 
 const GEOMETRY_SIGNAL =
-  /\b(?:smaller|bigger|larger|longer|shorter|narrower|wider|move\s+down|move\s+up|lower|higher|raise|drop|bring\s+down|shift\s+down|shift\s+up|closer\s+to\s+the\s+floor|closer\s+to\s+the\s+ceiling|not\s+as\s+(?:long|wide|tall|deep)|less\s+(?:wide|deep)|more\s+(?:wide|deep)|resize|reposition|spacing|apart|below\s+the\s+clock|(?:move|shift|slide|push|nudge)(?:\s+\w+){0,4}\s+(?:over\s+)?(?:to\s+the\s+)?(?:left|right))\b/i;
+  /\b(?:smaller|bigger|larger|longer|shorter|narrower|wider|move\s+down|move\s+up|lower|higher|raise|drop|bring\s+down|shift\s+down|shift\s+up|closer\s+to\s+the\s+floor|closer\s+to\s+the\s+ceiling|not\s+as\s+(?:long|wide|tall|deep)|less\s+(?:wide|deep)|more\s+(?:wide|deep)|resize|reposition|spacing|spaced|apart|side\s+by\s+side|same\s+level|in\s+a\s+row|horizontally|vertically|stacked|below\s+the\s+clock|(?:move|shift|slide|push|nudge)(?:\s+\w+){0,4}\s+(?:over\s+)?(?:to\s+the\s+)?(?:left|right))\b/i;
 
 function clampIn(n: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, Math.round(n)));

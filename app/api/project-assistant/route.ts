@@ -145,6 +145,14 @@ function messageRequestsVisualChange(
   ) {
     return true;
   }
+  // Correction phrasing with dimensions ("should be one foot long", "make them 12 inches").
+  // If the user states specific measurements, they're correcting the visual.
+  if (
+    /\b(should\s+be|make\s+(them|it)|each\s+(shelf|one))\b/i.test(t) &&
+    /\b(\d+\s*(?:inch|inches|foot|feet|ft|cm|mm)|one\s+foot|two\s+feet)\b/i.test(t)
+  ) {
+    return true;
+  }
   return false;
 }
 
