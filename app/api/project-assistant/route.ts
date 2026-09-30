@@ -1261,7 +1261,7 @@ export async function POST(request: Request) {
 
       const firstPass = await runOneRender("");
       let renderedImages = firstPass.images;
-      let imageGenerationFailureDetail = firstPass.failureDetail;
+      const imageGenerationFailureDetail = firstPass.failureDetail;
 
       /**
        * Accuracy check: the model hallucinates shelf counts, so verify with
