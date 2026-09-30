@@ -195,6 +195,8 @@ export type ChangeOrder = {
 export type PortalAnalytics = {
   savedProjectsSectionOpens: number;
   spacePhotosSectionOpens: number;
+  /** Admin-assigned default carpenter for this customer (carpenter account id, or null for Tom). */
+  assignedCarpenterId?: string | null;
 };
 
 export type ClientCommunicationEntry = {
@@ -767,12 +769,60 @@ function parseProjectStatus(value: Prisma.JsonValue): ProjectStatus {
 function parsePortalAnalytics(value: Prisma.JsonValue): PortalAnalytics {
   if (value && typeof value === "object" && !Array.isArray(value)) {
     const o = value as Record<string, unknown>;
+    const rawAssigned = o.assignedCarpenterId;
     return {
       savedProjectsSectionOpens: Number(o.savedProjectsSectionOpens ?? 0),
       spacePhotosSectionOpens: Number(o.spacePhotosSectionOpens ?? 0),
+      ...(typeof rawAssigned === "string" && rawAssigned.trim()
+        ? { assignedCarpenterId: rawAssigned.trim() }
+        : rawAssigned === null
+          ? { assignedCarpenterId: null }
+          : {}),
     };
   }
   return { savedProjectsSectionOpens: 0, spacePhotosSectionOpens: 0 };
+}
+
+
+/**
+ * Get the admin-assigned default carpenter for a customer.
+ * Returns the carpenter account id, or null when the customer is assigned to Tom (default).
+ */
+export async function getCustomerAssignedCarpenter(
+  portalUserId: string,
+): Promise<string | null | undefined> {
+  const row = await prisma.portalUser.findUnique({ where: { id: portalUserId } });
+  if (!row) return undefined;
+  return rowToUserRecord(row).portalAnalytics.assignedCarpenterId ?? null;
+}
+
+/**
+ * Set the admin-assigned default carpenter for a customer.
+ * Pass a carpenter account id, or null to assign to Tom.
+ * Also updates the customer's draft/sent estimates to match.
+ */
+export async function setCustomerAssignedCarpenter(
+  portalUserId: string,
+  carpenterId: string | null,
+): Promise<boolean> {
+  const row = await prisma.portalUser.findUnique({ where: { id: portalUserId } });
+  if (!row) return false;
+  const user = rowToUserRecord(row);
+  const analytics: PortalAnalytics = {
+    ...user.portalAnalytics,
+    assignedCarpenterId: carpenterId,
+  };
+  // Update draft/sent estimates to match the new assignment
+  const estimates = (user.estimates ?? []).map((e) =>
+    ["draft", "sent"].includes(e.status)
+      ? { ...e, assignedCarpenterId: carpenterId }
+      : e,
+  );
+  await persistJsonSnapshots(row.id, {
+    portalAnalytics: analytics as unknown as Prisma.InputJsonValue,
+    estimates: estimates as unknown as Prisma.InputJsonValue,
+  });
+  return true;
 }
 
 function rowToUserRecord(row: PortalUserRow): UserRecord {
@@ -849,8 +899,7 @@ async function persistJsonSnapshots(
     | "workProposals"
     | "scheduledCalls"
     | "estimates"
-  >,
-) {
+  >,) {
   await prisma.portalUser.update({
     where: { id: userId },
     data: snapshot,

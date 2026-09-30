@@ -5,6 +5,7 @@ import {
 } from "@/lib/carpenter-store";
 import type { WorkProposalRendering } from "@/lib/client-portal-store";
 import { createStructuredJobRow } from "@/lib/structured-job-db";
+import { getCustomerAssignedCarpenter } from "@/lib/client-portal-store";
 
 function mediaRowsFromProposalAssets(params: {
   spacePhotos: WorkProposalRendering[];
@@ -70,6 +71,11 @@ export async function createFormalProposalIntakeJob(params: {
   carpenterId?: string | null;
 }): Promise<{ carpenterId: string; jobId: string }> {
   let carpenterId = params.carpenterId?.trim() || pickIntakeCarpenterId();
+  if (!carpenterId && params.portalUserId) {
+    // Respect the customer's admin-assigned default carpenter (null = Tom).
+    const assigned = await getCustomerAssignedCarpenter(params.portalUserId);
+    if (assigned) carpenterId = assigned;
+  }
   if (!carpenterId) {
     const row = await prisma.carpenterAccount.findFirst({
       orderBy: { createdAt: "asc" },

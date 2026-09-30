@@ -53,6 +53,7 @@ type PortalClient = {
   portalAnalytics?: {
     savedProjectsSectionOpens: number;
     spacePhotosSectionOpens: number;
+    assignedCarpenterId?: string | null;
   };
   communicationLog?: Array<{
     id: string;
@@ -573,6 +574,8 @@ export default function AdminDashboard() {
   const [feedCarpenterFilter, setFeedCarpenterFilter] = useState("all");
   const [feedSearch, setFeedSearch] = useState("");
   const [selectedClientId, setSelectedClientId] = useState<string | null>(null);
+  const [assigningCarpenter, setAssigningCarpenter] = useState(false);
+  const [assignCarpenterMsg, setAssignCarpenterMsg] = useState("");
   const [deleteClientBusyId, setDeleteClientBusyId] = useState<string | null>(null);
   const [spacePhotoDeleteConfirm, setSpacePhotoDeleteConfirm] = useState<{
     clientId: string;
@@ -666,6 +669,28 @@ export default function AdminDashboard() {
       setOverviewLoading(false);
     }
   }, [router]);
+
+  const handleAssignCarpenter = useCallback(
+    async (portalUserId: string, carpenterId: string | null) => {
+      setAssigningCarpenter(true);
+      setAssignCarpenterMsg("");
+      try {
+        const res = await fetch("/api/admin/portal-users/assign-carpenter", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ portalUserId, carpenterId }),
+        });
+        if (!res.ok) throw new Error("Assignment failed");
+        setAssignCarpenterMsg("Assigned.");
+        await refreshOverview();
+      } catch {
+        setAssignCarpenterMsg("Could not save assignment.");
+      } finally {
+        setAssigningCarpenter(false);
+      }
+    },
+    [refreshOverview],
+  );
 
   useEffect(() => {
     if (!authenticated || tab !== "pending_jobs") return;
@@ -2471,6 +2496,36 @@ export default function AdminDashboard() {
                           ? new Date(selectedClient.lastLoginAt).toLocaleString()
                           : "Never recorded"}
                       </span>
+                    </div>
+                    <div className="mt-3 flex items-center gap-2">
+                      <label
+                        htmlFor="customer-carpenter-assign"
+                        className="text-xs font-medium text-zinc-400"
+                      >
+                        Assigned carpenter
+                      </label>
+                      <select
+                        id="customer-carpenter-assign"
+                        disabled={assigningCarpenter}
+                        value={selectedClient.portalAnalytics?.assignedCarpenterId ?? ""}
+                        onChange={(e) =>
+                          handleAssignCarpenter(
+                            selectedClient.id,
+                            e.target.value ? e.target.value : null,
+                          )
+                        }
+                        className="rounded-lg border border-zinc-700 bg-zinc-900 px-2 py-1.5 text-xs text-zinc-200 disabled:opacity-50"
+                      >
+                        <option value="">Tom (you)</option>
+                        {carpenters.map((c) => (
+                          <option key={c.id} value={c.id}>
+                            {c.fullName || c.username} ({c.email})
+                          </option>
+                        ))}
+                      </select>
+                      {assignCarpenterMsg ? (
+                        <span className="text-xs text-zinc-500">{assignCarpenterMsg}</span>
+                      ) : null}
                     </div>
                   </div>
                     <div className="rounded-lg border border-violet-900/40 bg-zinc-950/60 p-4">
