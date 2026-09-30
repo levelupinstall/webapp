@@ -440,6 +440,7 @@ Output ONLY valid JSON (no markdown fences, no commentary) with exactly these ke
 
 Rules:
 - Numbers only when stated or clearly inferable; otherwise null.
+- When the assistant explicitly confirmed specs with the homeowner (e.g. "So that's 3 shelves, each 12 inches..."), use THOSE confirmed numbers — they are the source of truth.
 - Never put dollar amounts, SKUs, or hourly rates into material/style/designCategory/scopeNotes.
 `;
 

@@ -30,14 +30,14 @@ Grounded, expert, and efficient. No fluff. Speak as a helpful assistant who unde
 /** Compact system block for concept image generation (not Alex chat). */
 export const LEVEL_UP_IMAGE_RENDER_SYSTEM = `You generate ONE photorealistic finish-carpentry concept image for Level Up Install.
 
+IMPORTANT: This image is a LOOSE CONCEPT for look and feel only — NOT a precise blueprint. The exact measurements, counts, and specifications are confirmed separately in writing and are the source of truth. Your job is to capture the general vibe: the right room, roughly the right kind of carpentry, the right style. Do NOT stress about exact counts or millimeter precision.
+
 Rules:
 - Realistic, buildable work only — ordinary tools and joinery; no fantasy architecture.
 - Generic neutral finishes — no retailer logos, price tags, SKUs, or store signage.
-- Obey exact fixture counts and dimensions given in the request — never add extra shelves, drawers, or modules to fill space.
-- When a previous concept image is attached as the last reference, treat it as the baseline: edit ONLY what the homeowner asked to change; keep shelf count, spacing, style, and room identical otherwise.
+- Aim for approximately the requested look (e.g. "floating shelves on a wall") without obsessing over exact numbers — the written specs handle precision.
+- When a previous concept image is attached as the last reference, treat it as the baseline: keep the same general room and style; adjust the carpentry in the direction requested.
 - When room photos are attached, you MUST depict THAT SPECIFIC ROOM — same walls, same layout, same existing furniture and objects, same camera perspective. Redesign the carpentry within their actual space. NEVER substitute a generic room, a different room type, or a stock-photo-style interior. If the photo shows a workshop, the concept shows THEIR workshop with new carpentry — not a living room, not a home office.
-- SPATIAL LAYOUT IS BINDING: when the request specifies an arrangement (e.g. "side by side", "same level", "in a row", "stacked vertically"), the shelves MUST appear in exactly that arrangement. "Side by side on the same level" means a horizontal row with all shelf tops at the same height — NEVER a vertical stack.
-- COUNT AND SIZE ARE BINDING: "three shelves, each one foot long" means EXACTLY three shelves, all the same length — not two, not four, not varying sizes.
 - Optional short caption: layout and trim character only — no shopping list or prices.`;
 
 /** Extra instructions when the model must output a concept image (legacy full block; prefer LEVEL_UP_IMAGE_RENDER_SYSTEM). */
@@ -47,8 +47,8 @@ Produce ONE concept image plus short caption text if helpful. The image must:
 - Use **generic, neutral finishes** (no visible retailer branding, logos, shelf labels with prices/SKUs, or store signage).
 - If they mentioned a **tight budget** in chat, lean toward **simpler** built-ins and trim — **without** citing dollar amounts in the caption.
 - Avoid depicting unsafe structural modifications.
-- **Composition:** Do **not** aim for “centered” or “symmetrical” staging unless the homeowner asked for it. Prefer **explicit directional anchors** (e.g. unit flush to the left wall, aligned to a corner, or aligned to a visible opening edge) so placement is deterministic, not decorative re-centering.
-- **Counts:** Obey every exact count supplied in the extracted parameters / scope notes (shelves, drawers, closet sections, mirrors, moulding runs, fixtures, etc.) — **never** add extra repeated elements to fill empty space unless the transcript explicitly asks for more.
+- **Composition:** Do **not** aim for "centered" or "symmetrical" staging unless the homeowner asked for it. Prefer **explicit directional anchors** (e.g. unit flush to the left wall, aligned to a corner, or aligned to a visible opening edge) so placement is roughly deterministic, not decorative re-centering.
+- **Counts:** Aim for approximately the requested counts (shelves, drawers, closet sections, etc.) — but exact numbers live in the written specs, not this image. Don't stress about pixel-perfect precision.
 - **Rigid geometry:** When adjusting layout, **translate** assemblies as rigid groups; do not arbitrarily stretch or distort shelves, cabinet boxes, moulding, or hardware to fill the frame.
 - When reference photos of the homeowner's actual space are supplied with the request, treat them as the spatial anchor: interpret layout, openings, ceiling height cues, and proportions from those photos; each revised concept should apply the stated feedback while staying consistent with that real room, not a generic stand-in space.
 - When **no** reference photos are supplied, render the concept in a **neutral blank studio room** (simple walls/floor, no identifiable real home): a clear vignette so they can judge proportions and style only—not their literal space.
@@ -58,11 +58,10 @@ Produce ONE concept image plus short caption text if helpful. The image must:
 /** Refinement-only addendum (paired with LEVEL_UP_IMAGE_RENDER_SYSTEM). */
 export const LEVEL_UP_IMAGE_REFINEMENT_SUFFIX = `
 REFINEMENT MODE:
-- The LAST attached image is the prior concept render — copy it except for the single change requested.
-- Do NOT re-layout the room, change shelf count, shelf length, or style unless the homeowner explicitly asked.
-- Removing furniture or props (e.g. a table) should leave shelves and wall treatment unchanged from the baseline image.
-- SPATIAL LAYOUT IS BINDING: when the request specifies an arrangement (e.g. "side by side", "same level", "in a row", "stacked vertically"), the shelves MUST appear in exactly that arrangement. "Side by side on the same level" means a horizontal row with all shelf tops at the same height — NEVER a vertical stack. "Each one foot long" means every shelf is the same length — NEVER varying sizes.
-- COUNT IS BINDING: when the request says "three shelves", render EXACTLY three — not two, not four.
+- The LAST attached image is the prior concept render — keep the same general room and style.
+- Adjust the carpentry in the direction the homeowner requested (e.g. if they want shelves repositioned, move them roughly in that direction).
+- Do NOT stress about exact counts, precise measurements, or pixel-perfect geometry — the written specs confirmed in chat are the source of truth, not this image.
+- Removing furniture or props (e.g. a table) should leave the general carpentry direction unchanged.
 `;
 
 /** When homeowner asks to resize or reposition shelves — must visibly change the baseline. */

@@ -929,16 +929,23 @@ export default function ProjectPlannerAssistant({
                 : message.content}
             </div>
             {message.images?.length ? (
-              <div className="mt-3 grid gap-2 sm:grid-cols-2">
-                {message.images.map((img, i) => (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img
-                    key={`${index}-viz-${i}`}
-                    src={img.dataUrl}
-                    alt="Visualization"
-                    className="max-h-56 w-full rounded-xl border border-[#e8d9ff] object-contain"
-                  />
-                ))}
+              <div className="mt-3">
+                <p className="mb-2 rounded-lg border border-[#d9c2ff] bg-[#f5edff] px-3 py-2 text-xs font-semibold leading-relaxed text-[#5b3292]">
+                  Concept visualization — shows the general look and feel only.
+                  Exact measurements, counts, and details are confirmed in
+                  writing in the chat above.
+                </p>
+                <div className="grid gap-2 sm:grid-cols-2">
+                  {message.images.map((img, i) => (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      key={`${index}-viz-${i}`}
+                      src={img.dataUrl}
+                      alt="Concept visualization — general look and feel only"
+                      className="max-h-56 w-full rounded-xl border border-[#e8d9ff] object-contain"
+                    />
+                  ))}
+                </div>
               </div>
             ) : null}
             {message.role === "assistant" &&
