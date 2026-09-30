@@ -1345,7 +1345,12 @@ The homeowner likes the design direction — pivot to booking. In one or two war
           const renderPrep = buildGeminiConceptImagePromptText({
             promptContext: basePrompt,
             userGoal: userGoalAug,
-            extractedVisualDirective,
+            // Skip the visual-spec directive when the user explicitly described a
+            // horizontal layout — the spec pipeline defaults to vertical tiers and
+            // its "vertical spacing" language overrides the user's request.
+            extractedVisualDirective: wantsHorizontalRowDirect
+              ? undefined
+              : extractedVisualDirective,
             visualMode: conceptImageVisualMode,
             geometryRefinement: refinementGeometryIntent.hasGeometryChange,
           });
@@ -1354,7 +1359,9 @@ The homeowner likes the design direction — pivot to booking. In one or two war
             promptContext: basePrompt,
             userGoal: userGoalAug,
             referenceImageParts: conceptReferenceForRender,
-            extractedVisualDirective,
+            extractedVisualDirective: wantsHorizontalRowDirect
+              ? undefined
+              : extractedVisualDirective,
             visualMode: conceptImageVisualMode,
             geometryRefinement: refinementGeometryIntent.hasGeometryChange,
           });
