@@ -905,7 +905,13 @@ export async function geminiGenerateShopPacket(params: {
           ],
         },
       ],
-      generationConfig: { maxOutputTokens: 4096, temperature: 0.2 },
+      generationConfig: {
+        maxOutputTokens: 8192,
+        temperature: 0.2,
+        // Structured JSON drafting: no chain-of-thought needed. Thinking tokens
+        // count against maxOutputTokens and were truncating the JSON mid-stream.
+        thinkingConfig: { thinkingBudget: 0 },
+      },
     });
     if (!res.ok) {
       (globalThis as Record<string, unknown>).__shopPacketDebug = { stage: "gemini-call-failed", status: res.status, body: res.body.slice(0, 300) };
