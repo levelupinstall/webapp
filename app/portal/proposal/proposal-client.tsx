@@ -5,6 +5,24 @@ import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { simpleMarkdownToSafeHtml } from "@/lib/simple-markdown-to-html";
 
+type ChangeOrderPayload = {
+  id: string;
+  title: string;
+  description: string;
+  lineItems: Array<{
+    description: string;
+    quantity: number;
+    unit: string;
+    unitCostCad: number;
+    totalCad: number;
+  }>;
+  totalCad: number;
+  status: "proposed" | "approved" | "rejected";
+  createdAt: string;
+  decidedAt: string | null;
+  decidedBy: string | null;
+};
+
 type ProposalPayload = {
   title: string;
   markdownBody: string;
@@ -12,6 +30,7 @@ type ProposalPayload = {
   status: string;
   paymentAmountCents: number;
   renderings: Array<{ id: string; dataUrl: string; caption?: string }>;
+  changeOrders: ChangeOrderPayload[];
 };
 
 function cadMoney(cents: number) {
@@ -34,6 +53,8 @@ export default function ProposalClient() {
   const [signerName, setSignerName] = useState("");
   const [agreed, setAgreed] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [coBusyId, setCoBusyId] = useState<string | null>(null);
+  const [coSignerName, setCoSignerName] = useState("");
 
   const load = useCallback(async () => {
     if (!token) {
@@ -132,6 +153,34 @@ export default function ProposalClient() {
     }
   }
 
+  async function decideChangeOrder(changeOrderId: string, decision: "approved" | "rejected") {
+    if (!token || coBusyId) return;
+    setCoBusyId(changeOrderId);
+    setError(null);
+    try {
+      const res = await fetch("/api/public/work-proposal/change-order", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          token,
+          changeOrderId,
+          decision,
+          signerName: coSignerName.trim(),
+        }),
+      });
+      const json = (await res.json()) as { error?: string };
+      if (!res.ok) {
+        setError(json.error || "Could not record your decision.");
+        return;
+      }
+      await load();
+    } catch {
+      setError("Something went wrong.");
+    } finally {
+      setCoBusyId(null);
+    }
+  }
+
   if (!token) {
     return (
       <main className="mx-auto min-h-screen w-full max-w-3xl px-4 py-16">
@@ -203,7 +252,20 @@ export default function ProposalClient() {
         <h1 className="mt-2 text-3xl font-semibold text-[#2d1546]">{data.title}</h1>
         <p className="mt-2 text-sm text-[#55337b]">
           Amount due after acceptance:{" "}
-          <span className="font-semibold text-[#2d1546]">{cadMoney(data.paymentAmountCents)}</span>
+          <span className="font-semibold text-[#2d1546]">
+            {cadMoney(
+              data.paymentAmountCents +
+                data.changeOrders
+                  .filter((c) => c.status === "approved")
+                  .reduce((s, c) => s + c.totalCad, 0) * 100,
+            )}
+          </span>
+          {data.changeOrders.some((c) => c.status === "approved") ? (
+            <span className="text-[#8b7aa8]">
+              {" "}
+              (includes approved change orders)
+            </span>
+          ) : null}
         </p>
 
         {paymentReturnBanner ? (
@@ -247,6 +309,118 @@ export default function ProposalClient() {
             dangerouslySetInnerHTML={{ __html: simpleMarkdownToSafeHtml(data.termsMarkdown) }}
           />
         </section>
+
+        {data.changeOrders.length > 0 ? (
+          <section className="mt-10">
+            <h2 className="text-lg font-semibold text-[#2d1546]">Change orders</h2>
+            <p className="mt-1 text-sm text-[#55337b]">
+              Extra work found on site, outside the approved scope. Nothing below is charged
+              unless you approve it.
+            </p>
+            <div className="mt-4 space-y-4">
+              {data.changeOrders.map((co) => (
+                <div
+                  key={co.id}
+                  className="rounded-2xl border border-[#e9d9ff] bg-[#fcf9ff] p-5"
+                >
+                  <div className="flex flex-wrap items-start justify-between gap-2">
+                    <div>
+                      <h3 className="text-base font-semibold text-[#2d1546]">{co.title}</h3>
+                      {co.description ? (
+                        <p className="mt-1 text-sm text-[#55337b]">{co.description}</p>
+                      ) : null}
+                    </div>
+                    <span
+                      className={
+                        co.status === "approved"
+                          ? "rounded-full bg-emerald-100 px-3 py-1 text-xs font-semibold text-emerald-800"
+                          : co.status === "rejected"
+                            ? "rounded-full bg-zinc-200 px-3 py-1 text-xs font-semibold text-zinc-600"
+                            : "rounded-full bg-amber-100 px-3 py-1 text-xs font-semibold text-amber-800"
+                      }
+                    >
+                      {co.status === "approved"
+                        ? "Approved"
+                        : co.status === "rejected"
+                          ? "Declined"
+                          : "Awaiting your approval"}
+                    </span>
+                  </div>
+                  <ul className="mt-3 space-y-1 text-sm text-[#32174f]">
+                    {co.lineItems.map((li, i) => (
+                      <li key={i} className="flex items-baseline justify-between gap-3">
+                        <span>
+                          {li.description}
+                          <span className="text-[#8b7aa8]">
+                            {" "}
+                            · {li.quantity} {li.unit} @ {cadMoney(li.unitCostCad * 100)}
+                          </span>
+                        </span>
+                        <span className="font-medium">{cadMoney(li.totalCad * 100)}</span>
+                      </li>
+                    ))}
+                  </ul>
+                  <p className="mt-3 border-t border-[#ecdefe] pt-3 text-right text-sm font-semibold text-[#2d1546]">
+                    Change order total: {cadMoney(co.totalCad * 100)}
+                  </p>
+                  {co.status === "approved" && co.decidedBy ? (
+                    <p className="mt-2 text-xs text-emerald-800">
+                      Approved by {co.decidedBy}
+                      {co.decidedAt
+                        ? ` on ${new Date(co.decidedAt).toLocaleDateString("en-CA")}`
+                        : ""}
+                      . This amount is added to your project balance.
+                    </p>
+                  ) : null}
+                  {co.status === "proposed" ? (
+                    <div className="no-print mt-4 space-y-3 rounded-xl border border-amber-200 bg-amber-50 p-4">
+                      <label className="block text-sm font-medium text-[#2d1546]">
+                        Your name (electronic approval)
+                        <input
+                          value={coSignerName}
+                          onChange={(e) => setCoSignerName(e.target.value)}
+                          className="mt-1 w-full rounded-xl border border-[#dcbef9] bg-white px-4 py-2 text-[#32174f]"
+                          placeholder="Your name"
+                        />
+                      </label>
+                      <div className="flex flex-wrap gap-2">
+                        <button
+                          type="button"
+                          disabled={coBusyId === co.id}
+                          onClick={() => void decideChangeOrder(co.id, "approved")}
+                          className="rounded-full bg-[#6e3eb2] px-5 py-2 text-sm font-semibold text-white hover:bg-[#5b3292] disabled:opacity-60"
+                        >
+                          {coBusyId === co.id ? "Saving…" : `Approve ${cadMoney(co.totalCad * 100)}`}
+                        </button>
+                        <button
+                          type="button"
+                          disabled={coBusyId === co.id}
+                          onClick={() => void decideChangeOrder(co.id, "rejected")}
+                          className="rounded-full border border-zinc-300 bg-white px-5 py-2 text-sm font-semibold text-zinc-600 hover:bg-zinc-50 disabled:opacity-60"
+                        >
+                          Decline
+                        </button>
+                      </div>
+                    </div>
+                  ) : null}
+                </div>
+              ))}
+            </div>
+            {data.changeOrders.some((c) => c.status === "approved") ? (
+              <p className="mt-4 rounded-xl border border-[#cbb6ee] bg-[#f7f1ff] px-4 py-3 text-sm text-[#442866]">
+                Approved change orders add{" "}
+                <span className="font-semibold">
+                  {cadMoney(
+                    data.changeOrders
+                      .filter((c) => c.status === "approved")
+                      .reduce((s, c) => s + c.totalCad, 0) * 100,
+                  )}
+                </span>{" "}
+                to your project balance, on top of the original proposal amount.
+              </p>
+            ) : null}
+          </section>
+        ) : null}
 
         {error ? (
           <p className="no-print mt-6 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-900">

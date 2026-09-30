@@ -45,5 +45,16 @@ export async function GET(request: Request) {
       dataUrl: r.dataUrl,
       caption: r.caption,
     })),
+    changeOrders: (proposal.changeOrders ?? []).map((c) => ({
+      id: c.id,
+      title: c.title,
+      description: c.description,
+      lineItems: c.lineItems,
+      totalCad: c.totalCad,
+      status: c.status,
+      createdAt: c.createdAt,
+      decidedAt: c.decidedAt ?? null,
+      decidedBy: c.decidedBy ?? null,
+    })),
   });
 }

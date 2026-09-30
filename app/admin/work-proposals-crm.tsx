@@ -2,6 +2,8 @@
 
 import { useCallback, useMemo, useState } from "react";
 
+import type { ChangeOrder } from "@/lib/client-portal-store";
+
 export type WorkProposalRow = {
   id: string;
   status: string;
@@ -16,6 +18,7 @@ export type WorkProposalRow = {
   spacePhotos?: Array<{ id: string; mimeType: string; dataUrl: string; caption?: string }>;
   budgetNotes?: string;
   renderings?: Array<{ id: string; mimeType: string; dataUrl: string; caption?: string }>;
+  changeOrders?: ChangeOrder[];
 };
 
 function cadMoney(cents: number) {
@@ -239,6 +242,12 @@ function ProposalEditor(props: {
         </button>
       </div>
 
+      <ChangeOrdersSection
+        portalUserId={portalUserId}
+        proposal={proposal}
+        onRefresh={onRefresh}
+      />
+
       <div className="border-t border-zinc-800 pt-4 space-y-2">
         <h5 className="text-[11px] font-semibold uppercase text-zinc-500">
           AI assistant (edits proposal)
@@ -276,6 +285,317 @@ function ProposalEditor(props: {
         </p>
       ) : null}
     </>
+  );
+}
+
+function ChangeOrdersSection(props: {
+  portalUserId: string;
+  proposal: WorkProposalRow;
+  onRefresh: () => void | Promise<void>;
+}) {
+  const { portalUserId, proposal, onRefresh } = props;
+  const changeOrders = proposal.changeOrders ?? [];
+  const [formOpen, setFormOpen] = useState(false);
+  const [title, setTitle] = useState("");
+  const [description, setDescription] = useState("");
+  const [internalNote, setInternalNote] = useState("");
+  const [lines, setLines] = useState<
+    Array<{ description: string; quantity: string; unit: string; unitCost: string }>
+  >([{ description: "", quantity: "1", unit: "each", unitCost: "" }]);
+  const [busy, setBusy] = useState<"" | "create" | string>("");
+  const [flash, setFlash] = useState<{ type: "ok" | "err"; message: string } | null>(null);
+
+  const approvedTotal = changeOrders
+    .filter((c) => c.status === "approved")
+    .reduce((s, c) => s + c.totalCad, 0);
+  const formTotal = lines.reduce(
+    (s, l) => s + (parseFloat(l.quantity) || 0) * (parseFloat(l.unitCost) || 0),
+    0,
+  );
+
+  const setLine = (
+    i: number,
+    patch: Partial<{ description: string; quantity: string; unit: string; unitCost: string }>,
+  ) => setLines((prev) => prev.map((l, j) => (j === i ? { ...l, ...patch } : l)));
+
+  const create = useCallback(async () => {
+    setBusy("create");
+    setFlash(null);
+    try {
+      const res = await fetch("/api/admin/change-orders/create", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          portalUserId,
+          proposalId: proposal.id,
+          title,
+          description,
+          internalNote,
+          lineItems: lines
+            .filter((l) => l.description.trim())
+            .map((l) => ({
+              description: l.description.trim(),
+              quantity: parseFloat(l.quantity) || 0,
+              unit: l.unit.trim() || "each",
+              unitCostCad: parseFloat(l.unitCost) || 0,
+            })),
+        }),
+      });
+      const json = (await res.json()) as { error?: string };
+      if (!res.ok) {
+        setFlash({ type: "err", message: json.error || "Could not create change order." });
+        return;
+      }
+      setTitle("");
+      setDescription("");
+      setInternalNote("");
+      setLines([{ description: "", quantity: "1", unit: "each", unitCost: "" }]);
+      setFormOpen(false);
+      setFlash({ type: "ok", message: "Change order proposed. Share the customer link so they can approve it." });
+      await onRefresh();
+    } catch {
+      setFlash({ type: "err", message: "Something went wrong." });
+    } finally {
+      setBusy("");
+    }
+  }, [portalUserId, proposal.id, title, description, internalNote, lines, onRefresh]);
+
+  const decide = useCallback(
+    async (changeOrderId: string, decision: "approved" | "rejected") => {
+      setBusy(changeOrderId);
+      setFlash(null);
+      try {
+        const res = await fetch("/api/admin/change-orders/decide", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ portalUserId, proposalId: proposal.id, changeOrderId, decision }),
+        });
+        const json = (await res.json()) as { error?: string };
+        if (!res.ok) {
+          setFlash({ type: "err", message: json.error || "Could not record decision." });
+          return;
+        }
+        setFlash({
+          type: "ok",
+          message: decision === "approved" ? "Change order approved." : "Change order declined.",
+        });
+        await onRefresh();
+      } catch {
+        setFlash({ type: "err", message: "Something went wrong." });
+      } finally {
+        setBusy("");
+      }
+    },
+    [portalUserId, proposal.id, onRefresh],
+  );
+
+  return (
+    <div className="border-t border-zinc-800 pt-4 space-y-3">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <h5 className="text-[11px] font-semibold uppercase text-zinc-500">
+          Change orders {changeOrders.length ? `(${changeOrders.length})` : ""}
+        </h5>
+        {approvedTotal > 0 ? (
+          <span className="rounded-full bg-emerald-950/60 border border-emerald-900/50 px-3 py-1 text-[11px] font-medium text-emerald-300">
+            Approved extra: {cadMoney(Math.round(approvedTotal * 100))} on top of quote
+          </span>
+        ) : null}
+      </div>
+
+      {changeOrders.length === 0 ? (
+        <p className="text-xs text-zinc-500">
+          None yet. When site conditions need extra work outside the approved scope, propose it
+          here — the customer approves it on their proposal link before any extra work proceeds.
+        </p>
+      ) : (
+        <ul className="space-y-2">
+          {changeOrders.map((co) => (
+            <li
+              key={co.id}
+              className="rounded-lg border border-zinc-800 bg-zinc-950/60 p-3 text-xs"
+            >
+              <div className="flex flex-wrap items-start justify-between gap-2">
+                <div>
+                  <p className="text-sm font-medium text-zinc-100">{co.title}</p>
+                  {co.description ? (
+                    <p className="mt-1 whitespace-pre-wrap text-zinc-400">{co.description}</p>
+                  ) : null}
+                </div>
+                <span
+                  className={`rounded-full px-2.5 py-0.5 text-[11px] font-medium ${
+                    co.status === "approved"
+                      ? "bg-emerald-950/70 text-emerald-300 border border-emerald-900/50"
+                      : co.status === "rejected"
+                        ? "bg-zinc-800 text-zinc-400"
+                        : "bg-amber-950/60 text-amber-300 border border-amber-900/50"
+                  }`}
+                >
+                  {co.status === "approved" ? "Approved" : co.status === "rejected" ? "Declined" : "Proposed"}
+                </span>
+              </div>
+              <ul className="mt-2 space-y-1 text-zinc-300">
+                {co.lineItems.map((li, i) => (
+                  <li key={i} className="flex items-baseline justify-between gap-2">
+                    <span>
+                      {li.description}
+                      <span className="text-zinc-500">
+                        {" "}· {li.quantity} {li.unit} @ ${li.unitCostCad.toFixed(2)}
+                      </span>
+                    </span>
+                    <span className="font-medium">${li.totalCad.toFixed(2)}</span>
+                  </li>
+                ))}
+              </ul>
+              <p className="mt-2 text-right text-sm font-semibold text-zinc-100">
+                {cadMoney(Math.round(co.totalCad * 100))}
+              </p>
+              {co.internalNote ? (
+                <p className="mt-2 rounded-md border border-amber-900/40 bg-amber-950/40 px-2 py-1.5 text-amber-100/90">
+                  <span className="font-medium text-amber-400">Internal only: </span>
+                  {co.internalNote}
+                </p>
+              ) : null}
+              <p className="mt-2 text-[11px] text-zinc-500">
+                Proposed {new Date(co.createdAt).toLocaleString()}
+                {co.decidedAt
+                  ? ` · ${co.status === "approved" ? "Approved" : "Declined"} ${new Date(co.decidedAt).toLocaleString()}${co.decidedBy ? ` by ${co.decidedBy}` : ""}${co.decidedVia === "customer" ? " (customer link)" : ""}`
+                  : ""}
+              </p>
+              {co.status === "proposed" ? (
+                <div className="mt-2 flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    disabled={busy !== ""}
+                    onClick={() => void decide(co.id, "approved")}
+                    className="rounded-lg bg-emerald-700 px-3 py-1.5 text-xs font-medium text-white hover:bg-emerald-600 disabled:opacity-50"
+                  >
+                    {busy === co.id ? "Saving…" : "Mark approved"}
+                  </button>
+                  <button
+                    type="button"
+                    disabled={busy !== ""}
+                    onClick={() => void decide(co.id, "rejected")}
+                    className="rounded-lg bg-zinc-700 px-3 py-1.5 text-xs font-medium text-white hover:bg-zinc-600 disabled:opacity-50"
+                  >
+                    {busy === co.id ? "Saving…" : "Mark declined"}
+                  </button>
+                </div>
+              ) : null}
+            </li>
+          ))}
+        </ul>
+      )}
+
+      {!formOpen ? (
+        <button
+          type="button"
+          onClick={() => setFormOpen(true)}
+          className="rounded-lg border border-violet-700/60 bg-violet-950/40 px-4 py-2 text-xs font-medium text-violet-200 hover:bg-violet-900/50"
+        >
+          + Propose change order
+        </button>
+      ) : (
+        <div className="space-y-2 rounded-lg border border-zinc-800 bg-zinc-950/80 p-3">
+          <label className="block text-xs text-zinc-500">
+            Title
+            <input
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              placeholder="e.g. Rot repair behind vanity"
+              className="mt-1 w-full rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2 text-sm text-white"
+            />
+          </label>
+          <label className="block text-xs text-zinc-500">
+            What changed / added scope (customer sees this)
+            <textarea
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              rows={2}
+              placeholder="Found water damage behind the vanity during demo…"
+              className="mt-1 w-full rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2 text-sm text-white"
+            />
+          </label>
+          <label className="block text-xs text-zinc-500">
+            Internal note — never shown to the customer (sub cost, target hours)
+            <input
+              value={internalNote}
+              onChange={(e) => setInternalNote(e.target.value)}
+              placeholder="Sub cost $180 · target 3h · no buffer shown"
+              className="mt-1 w-full rounded-lg border border-amber-900/60 bg-amber-950/30 px-3 py-2 text-sm text-amber-100"
+            />
+          </label>
+          <div className="space-y-2">
+            <p className="text-xs text-zinc-500">Line items</p>
+            {lines.map((l, i) => (
+              <div key={i} className="grid grid-cols-12 gap-2">
+                <input
+                  value={l.description}
+                  onChange={(e) => setLine(i, { description: e.target.value })}
+                  placeholder="Description"
+                  className="col-span-6 rounded-lg border border-zinc-700 bg-zinc-950 px-2 py-1.5 text-xs text-white"
+                />
+                <input
+                  value={l.quantity}
+                  onChange={(e) => setLine(i, { quantity: e.target.value })}
+                  placeholder="Qty"
+                  inputMode="decimal"
+                  className="col-span-2 rounded-lg border border-zinc-700 bg-zinc-950 px-2 py-1.5 text-xs text-white"
+                />
+                <input
+                  value={l.unit}
+                  onChange={(e) => setLine(i, { unit: e.target.value })}
+                  placeholder="Unit"
+                  className="col-span-2 rounded-lg border border-zinc-700 bg-zinc-950 px-2 py-1.5 text-xs text-white"
+                />
+                <input
+                  value={l.unitCost}
+                  onChange={(e) => setLine(i, { unitCost: e.target.value })}
+                  placeholder="$/unit"
+                  inputMode="decimal"
+                  className="col-span-2 rounded-lg border border-zinc-700 bg-zinc-950 px-2 py-1.5 text-xs text-white"
+                />
+              </div>
+            ))}
+            <button
+              type="button"
+              onClick={() =>
+                setLines((prev) => [...prev, { description: "", quantity: "1", unit: "each", unitCost: "" }])
+              }
+              className="text-xs text-violet-300 underline"
+            >
+              + Add line
+            </button>
+          </div>
+          <p className="text-right text-sm font-semibold text-zinc-100">
+            Total: {cadMoney(Math.round(formTotal * 100))}
+          </p>
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              disabled={busy !== "" || !title.trim()}
+              onClick={() => void create()}
+              className="rounded-lg bg-violet-700 px-4 py-2 text-xs font-medium text-white hover:bg-violet-600 disabled:opacity-50"
+            >
+              {busy === "create" ? "Saving…" : "Propose change order"}
+            </button>
+            <button
+              type="button"
+              disabled={busy !== ""}
+              onClick={() => setFormOpen(false)}
+              className="rounded-lg bg-zinc-800 px-4 py-2 text-xs font-medium text-zinc-300 hover:bg-zinc-700 disabled:opacity-50"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
+
+      {flash ? (
+        <p className={`text-xs ${flash.type === "ok" ? "text-emerald-400" : "text-rose-400"}`}>
+          {flash.message}
+        </p>
+      ) : null}
+    </div>
   );
 }
 

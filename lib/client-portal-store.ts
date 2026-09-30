@@ -155,6 +155,36 @@ export type WorkProposal = {
   aiChat?: WorkProposalAiTurn[];
   /** Carpenter account assigned to perform the install; null/undefined = Tom himself. Internal. */
   assignedCarpenterId?: string | null;
+  /** Site-condition / extra-scope change orders issued against the accepted proposal. */
+  changeOrders?: ChangeOrder[];
+};
+
+export type ChangeOrderStatus = "proposed" | "approved" | "rejected";
+
+export type ChangeOrderLineItem = {
+  description: string;
+  quantity: number;
+  unit: string;
+  unitCostCad: number;
+  totalCad: number;
+};
+
+export type ChangeOrder = {
+  id: string;
+  title: string;
+  description: string;
+  lineItems: ChangeOrderLineItem[];
+  totalCad: number;
+  status: ChangeOrderStatus;
+  createdAt: string;
+  /** Set when the change order leaves "proposed". */
+  decidedAt?: string;
+  /** Who approved/rejected: customer name (public link) or "Tom" (admin). */
+  decidedBy?: string;
+  /** Source of the decision: "customer" (public link) or "admin". */
+  decidedVia?: "customer" | "admin";
+  /** Admin-only: sub cost, target hours, anything the customer never sees. */
+  internalNote?: string;
 };
 
 export type PortalAnalytics = {
@@ -585,6 +615,58 @@ function parseWorkProposals(value: Prisma.JsonValue): WorkProposal[] {
       aiChat: aiChat.length ? aiChat : undefined,
       ...(typeof raw.assignedCarpenterId === "string" && raw.assignedCarpenterId
         ? { assignedCarpenterId: raw.assignedCarpenterId }
+        : {}),
+      ...(Array.isArray(raw.changeOrders) && raw.changeOrders.length
+        ? { changeOrders: parseChangeOrders(raw.changeOrders) }
+        : {}),
+    });
+  }
+  return out;
+}
+
+function parseChangeOrders(raw: unknown[]): ChangeOrder[] {
+  const out: ChangeOrder[] = [];
+  for (const c of raw) {
+    if (!c || typeof c !== "object") continue;
+    const o = c as Record<string, unknown>;
+    const id = String(o.id ?? "");
+    if (!id) continue;
+    const status: ChangeOrderStatus =
+      o.status === "approved" || o.status === "rejected" ? o.status : "proposed";
+    const lineRaw = Array.isArray(o.lineItems) ? o.lineItems : [];
+    const lineItems: ChangeOrderLineItem[] = lineRaw
+      .filter((l): l is Record<string, unknown> => !!l && typeof l === "object")
+      .map((l) => {
+        const qty = Math.max(0, Number(l.quantity ?? 0) || 0);
+        const unitCost = Math.max(0, Number(l.unitCostCad ?? 0) || 0);
+        return {
+          description: String(l.description ?? "").slice(0, 500),
+          quantity: qty,
+          unit: String(l.unit ?? "").slice(0, 40),
+          unitCostCad: Math.round(unitCost * 100) / 100,
+          totalCad: Math.round(qty * unitCost * 100) / 100,
+        };
+      })
+      .filter((l) => l.description.trim().length > 0);
+    const totalCad =
+      Number.isFinite(Number(o.totalCad)) && Number(o.totalCad) > 0
+        ? Math.round(Number(o.totalCad) * 100) / 100
+        : Math.round(lineItems.reduce((s, l) => s + l.totalCad, 0) * 100) / 100;
+    out.push({
+      id,
+      title: String(o.title ?? "Change order").slice(0, 200),
+      description: String(o.description ?? "").slice(0, 5000),
+      lineItems,
+      totalCad,
+      status,
+      createdAt: String(o.createdAt ?? new Date().toISOString()),
+      ...(o.decidedAt !== undefined ? { decidedAt: String(o.decidedAt) } : {}),
+      ...(o.decidedBy !== undefined ? { decidedBy: String(o.decidedBy).slice(0, 120) } : {}),
+      ...(o.decidedVia === "customer" || o.decidedVia === "admin"
+        ? { decidedVia: o.decidedVia }
+        : {}),
+      ...(typeof o.internalNote === "string" && o.internalNote.trim()
+        ? { internalNote: o.internalNote.slice(0, 2000) }
         : {}),
     });
   }
@@ -1853,6 +1935,133 @@ export async function markWorkProposalPaid(params: {
     } as unknown as Prisma.InputJsonValue,
   });
   return next;
+}
+
+export async function addChangeOrderToProposal(params: {
+  portalUserId: string;
+  proposalId: string;
+  title: string;
+  description: string;
+  internalNote?: string;
+  lineItems: Array<{
+    description: string;
+    quantity: number;
+    unit: string;
+    unitCostCad: number;
+  }>;
+}): Promise<ChangeOrder | null> {
+  const row = await prisma.portalUser.findUnique({ where: { id: params.portalUserId } });
+  if (!row) return null;
+
+  const user = rowToUserRecord(row);
+  const idx = user.workProposals.findIndex((p) => p.id === params.proposalId);
+  if (idx < 0) return null;
+
+  const title = params.title.trim().slice(0, 200);
+  const lineItems: ChangeOrderLineItem[] = params.lineItems
+    .filter((l) => l.description.trim().length > 0)
+    .slice(0, 50)
+    .map((l) => {
+      const qty = Math.max(0, Number(l.quantity) || 0);
+      const unitCost = Math.max(0, Number(l.unitCostCad) || 0);
+      return {
+        description: l.description.trim().slice(0, 500),
+        quantity: Math.round(qty * 100) / 100,
+        unit: String(l.unit ?? "").slice(0, 40),
+        unitCostCad: Math.round(unitCost * 100) / 100,
+        totalCad: Math.round(qty * unitCost * 100) / 100,
+      };
+    });
+  if (!title || lineItems.length === 0) return null;
+
+  const totalCad = Math.round(lineItems.reduce((s, l) => s + l.totalCad, 0) * 100) / 100;
+  const now = new Date().toISOString();
+  const changeOrder: ChangeOrder = {
+    id: randomUUID(),
+    title,
+    description: params.description.trim().slice(0, 5000),
+    lineItems,
+    totalCad,
+    status: "proposed",
+    createdAt: now,
+    ...(params.internalNote && params.internalNote.trim()
+      ? { internalNote: params.internalNote.trim().slice(0, 2000) }
+      : {}),
+  };
+
+  const cur = user.workProposals[idx];
+  const next: WorkProposal = {
+    ...cur,
+    updatedAt: now,
+    changeOrders: [...(cur.changeOrders ?? []), changeOrder],
+  };
+  user.workProposals[idx] = next;
+  await persistJsonSnapshots(row.id, {
+    workProposals: user.workProposals as unknown as Prisma.InputJsonValue,
+    projectStatus: {
+      phase: "Change order proposed",
+      updatedAt: now,
+      details: `Change order "${title}" (${totalCad.toFixed(2)} CAD) proposed on "${cur.title}". Awaiting customer approval before the extra work proceeds.`,
+    } as unknown as Prisma.InputJsonValue,
+  });
+  return changeOrder;
+}
+
+export async function decideChangeOrder(params: {
+  portalUserId: string;
+  proposalId: string;
+  changeOrderId: string;
+  decision: "approved" | "rejected";
+  decidedBy: string;
+  decidedVia: "customer" | "admin";
+}): Promise<ChangeOrder | null> {
+  const row = await prisma.portalUser.findUnique({ where: { id: params.portalUserId } });
+  if (!row) return null;
+
+  const user = rowToUserRecord(row);
+  const idx = user.workProposals.findIndex((p) => p.id === params.proposalId);
+  if (idx < 0) return null;
+
+  const cur = user.workProposals[idx];
+  const coIdx = (cur.changeOrders ?? []).findIndex((c) => c.id === params.changeOrderId);
+  if (coIdx < 0) return null;
+
+  const curOrder = (cur.changeOrders ?? [])[coIdx];
+  if (curOrder.status !== "proposed") return curOrder;
+
+  const now = new Date().toISOString();
+  const decided: ChangeOrder = {
+    ...curOrder,
+    status: params.decision,
+    decidedAt: now,
+    decidedBy: params.decidedBy.trim().slice(0, 120) || "—",
+    decidedVia: params.decidedVia,
+  };
+  const changeOrders = [...(cur.changeOrders ?? [])];
+  changeOrders[coIdx] = decided;
+  const next: WorkProposal = { ...cur, updatedAt: now, changeOrders };
+  user.workProposals[idx] = next;
+  await persistJsonSnapshots(row.id, {
+    workProposals: user.workProposals as unknown as Prisma.InputJsonValue,
+    projectStatus: {
+      phase: params.decision === "approved" ? "Change order approved" : "Change order declined",
+      updatedAt: now,
+      details:
+        params.decision === "approved"
+          ? `Customer approved change order "${curOrder.title}" (${curOrder.totalCad.toFixed(2)} CAD) on "${cur.title}". Extra work may proceed; amount added to project balance.`
+          : `Change order "${curOrder.title}" on "${cur.title}" was declined. No extra work charged.`,
+    } as unknown as Prisma.InputJsonValue,
+  });
+  return decided;
+}
+
+/** Sum of approved change-order totals for a proposal (rolls into the project balance). */
+export function approvedChangeOrderTotalCad(proposal: WorkProposal): number {
+  return Math.round(
+    (proposal.changeOrders ?? [])
+      .filter((c) => c.status === "approved")
+      .reduce((s, c) => s + c.totalCad, 0) * 100,
+  ) / 100;
 }
 
 export async function getWorkProposalById(
