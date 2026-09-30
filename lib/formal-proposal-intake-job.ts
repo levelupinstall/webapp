@@ -52,7 +52,8 @@ function pickIntakeCarpenterId(): string | null {
 
 /**
  * Creates an **upcoming** CRM job so admins see proposal intake alongside scheduling.
- * Uses `CRM_FORMAL_PROPOSAL_INTAKE_CARPENTER_ID` when set; otherwise assigns to the first carpenter account.
+ * Uses the explicit `carpenterId` when provided, then
+ * `CRM_FORMAL_PROPOSAL_INTAKE_CARPENTER_ID`, then the first carpenter account.
  */
 export async function createFormalProposalIntakeJob(params: {
   portalUserId: string;
@@ -65,8 +66,10 @@ export async function createFormalProposalIntakeJob(params: {
   renderings: WorkProposalRendering[];
   /** When true, skip `createStructuredJobRow` — caller persists full Prisma Job (planner submit pipeline). */
   skipStructuredJobRow?: boolean;
+  /** Explicit installer (e.g. from an estimate's assigned sub) — overrides the default pick. */
+  carpenterId?: string | null;
 }): Promise<{ carpenterId: string; jobId: string }> {
-  let carpenterId = pickIntakeCarpenterId();
+  let carpenterId = params.carpenterId?.trim() || pickIntakeCarpenterId();
   if (!carpenterId) {
     const row = await prisma.carpenterAccount.findFirst({
       orderBy: { createdAt: "asc" },

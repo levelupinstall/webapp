@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
 export type EstimateRow = {
   id: string;
@@ -19,12 +19,17 @@ export type EstimateRow = {
     unit: string;
     unitCostCad: number;
     totalCad: number;
+    assignee?: "tom" | "sub";
+    subRateCad?: number;
   }>;
   materialsTotalCad: number;
   laborHours: number;
   laborTotalCad: number;
   feesTotalCad: number;
   totalCad: number;
+  subcontractedCostCad: number;
+  laborMarginCad: number;
+  assignedCarpenterId?: string | null;
   notes: string;
   aiChat: Array<{ role: string; content: string; at: string }>;
   sourceSummary: string;
@@ -47,6 +52,7 @@ export function EstimateCrm(props: {
   portalUserId: string;
   estimates: EstimateRow[];
   clientPhase: string;
+  carpenters: Array<{ id: string; name: string }>;
   onRefresh: () => void | Promise<void>;
 }) {
   const [origin] = useState(() =>
@@ -68,9 +74,26 @@ export function EstimateCrm(props: {
   }, [sorted, pickedId]);
   const selected = sorted.find((e) => e.id === selectedId) ?? null;
 
-  const [busy, setBusy] = useState<"" | "generate" | "ai" | "send" | "status" | "convert">("");
+  const [busy, setBusy] = useState<"" | "generate" | "ai" | "send" | "status" | "convert" | "assign">("");
   const [aiInstruction, setAiInstruction] = useState("");
   const [flash, setFlash] = useState<{ type: "ok" | "err"; message: string } | null>(null);
+  const [defaultSubRateCad, setDefaultSubRateCad] = useState(50);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/admin/rate-card")
+      .then((r) => r.json())
+      .then((j: { rateCard?: { defaultSubRateCad?: number } }) => {
+        const v = j.rateCard?.defaultSubRateCad;
+        if (!cancelled && typeof v === "number" && Number.isFinite(v) && v >= 0) {
+          setDefaultSubRateCad(v);
+        }
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const post = useCallback(
     async (path: string, payload: Record<string, unknown>) => {
@@ -129,12 +152,43 @@ export function EstimateCrm(props: {
     selected &&
     run("convert", () => post("/api/admin/estimates/convert", { estimateId: selected.id }).then(() => undefined), "Final quote created — review it under Formal proposals.");
 
+  const setLineAssignee = (lineId: string, assignee: "tom" | "sub", subRateCad?: number) =>
+    selected &&
+    run(
+      "assign",
+      () =>
+        post("/api/admin/estimates/assign", {
+          estimateId: selected.id,
+          lineId,
+          assignee,
+          ...(subRateCad !== undefined ? { subRateCad } : {}),
+        }).then(() => undefined),
+      assignee === "sub" ? "Labour assigned to sub." : "Labour assigned to Tom.",
+    );
+
+  const setInstaller = (carpenterId: string) =>
+    selected &&
+    run(
+      "assign",
+      () =>
+        post("/api/admin/estimates/assign", {
+          estimateId: selected.id,
+          assignedCarpenterId: carpenterId || null,
+        }).then(() => undefined),
+      "Installer updated.",
+    );
+
   const locked = selected && ["approved", "paid", "final_quote"].includes(selected.status);
   const canGenerate =
     !selected &&
     ["Design approved", "Call scheduled", "Estimate drafted", "Estimate sent"].includes(
       props.clientPhase,
     );
+
+  const installerName = !selected?.assignedCarpenterId
+    ? "Tom"
+    : (props.carpenters.find((c) => c.id === selected.assignedCarpenterId)?.name ??
+      "Unknown sub");
 
   return (
     <div className="rounded-lg border border-zinc-700 bg-zinc-950/60 p-4 space-y-4">
@@ -183,6 +237,29 @@ export function EstimateCrm(props: {
             </label>
           ) : null}
 
+          {!locked ? (
+            <label className="block text-xs text-zinc-500">
+              Installer (who does the work)
+              <select
+                value={selected.assignedCarpenterId ?? ""}
+                disabled={busy !== ""}
+                onChange={(e) => setInstaller(e.target.value)}
+                className="mt-1 w-full rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2 text-sm text-white"
+              >
+                <option value="">Tom (me)</option>
+                {props.carpenters.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.name} (sub)
+                  </option>
+                ))}
+              </select>
+            </label>
+          ) : (
+            <p className="text-xs text-zinc-500">
+              Installer: <span className="text-zinc-300">{installerName}</span>
+            </p>
+          )}
+
           <div className="overflow-x-auto rounded-lg border border-zinc-800">
             <table className="w-full text-left text-xs text-zinc-300">
               <thead>
@@ -192,42 +269,101 @@ export function EstimateCrm(props: {
                   <th className="px-3 py-2">Qty</th>
                   <th className="px-3 py-2 text-right">Unit</th>
                   <th className="px-3 py-2 text-right">Total</th>
+                  <th className="px-3 py-2 text-right">Who</th>
                 </tr>
               </thead>
               <tbody>
-                {selected.lineItems.map((it) => (
-                  <tr key={it.id} className="border-t border-zinc-800/60">
-                    <td className="px-3 py-2">
-                      <span className="font-medium text-zinc-200">{it.description}</span>
-                      {it.detail ? (
-                        <span className="block text-[11px] text-zinc-500">{it.detail}</span>
-                      ) : null}
-                    </td>
-                    <td className="px-3 py-2">
-                      <span
-                        className={`rounded-full px-2 py-0.5 text-[11px] ${
-                          it.sourcing === "buy"
-                            ? "bg-emerald-900/60 text-emerald-300"
-                            : it.sourcing === "build"
-                              ? "bg-sky-900/60 text-sky-300"
-                              : "bg-zinc-800 text-zinc-400"
-                        }`}
-                      >
-                        {typeLabel(it)}
-                      </span>
-                    </td>
-                    <td className="px-3 py-2 whitespace-nowrap">
-                      {it.quantity} {it.unit}
-                    </td>
-                    <td className="px-3 py-2 text-right">{cad(it.unitCostCad)}</td>
-                    <td className="px-3 py-2 text-right font-medium text-zinc-100">
-                      {cad(it.totalCad)}
-                    </td>
-                  </tr>
-                ))}
+                {selected.lineItems.map((it) => {
+                  const isLabor = it.category === "labor";
+                  const assignee = it.assignee === "sub" ? "sub" : "tom";
+                  const subRate = it.subRateCad ?? defaultSubRateCad;
+                  const margin = isLabor && assignee === "sub" ? it.totalCad - it.quantity * subRate : 0;
+                  return (
+                    <tr key={it.id} className="border-t border-zinc-800/60">
+                      <td className="px-3 py-2">
+                        <span className="font-medium text-zinc-200">{it.description}</span>
+                        {it.detail ? (
+                          <span className="block text-[11px] text-zinc-500">{it.detail}</span>
+                        ) : null}
+                        {isLabor && assignee === "sub" ? (
+                          <span className="block text-[11px] text-emerald-400">
+                            Sub @ {cad(subRate)}/hr · margin {cad(margin)}
+                          </span>
+                        ) : null}
+                      </td>
+                      <td className="px-3 py-2">
+                        <span
+                          className={`rounded-full px-2 py-0.5 text-[11px] ${
+                            it.sourcing === "buy"
+                              ? "bg-emerald-900/60 text-emerald-300"
+                              : it.sourcing === "build"
+                                ? "bg-sky-900/60 text-sky-300"
+                                : "bg-zinc-800 text-zinc-400"
+                          }`}
+                        >
+                          {typeLabel(it)}
+                        </span>
+                      </td>
+                      <td className="px-3 py-2 whitespace-nowrap">
+                        {it.quantity} {it.unit}
+                      </td>
+                      <td className="px-3 py-2 text-right">{cad(it.unitCostCad)}</td>
+                      <td className="px-3 py-2 text-right font-medium text-zinc-100">
+                        {cad(it.totalCad)}
+                      </td>
+                      <td className="px-3 py-2 text-right">
+                        {isLabor && !locked ? (
+                          <span className="inline-flex items-center gap-1">
+                            <button
+                              type="button"
+                              disabled={busy !== ""}
+                              onClick={() => setLineAssignee(it.id, "tom")}
+                              title="Tom does this labour"
+                              className={`rounded-full px-2 py-0.5 text-[11px] ${
+                                assignee === "tom"
+                                  ? "bg-amber-700 text-white"
+                                  : "bg-zinc-800 text-zinc-400 hover:text-zinc-200"
+                              }`}
+                            >
+                              Tom
+                            </button>
+                            <button
+                              type="button"
+                              disabled={busy !== ""}
+                              onClick={() => setLineAssignee(it.id, "sub", subRate)}
+                              title="Subcontract this labour"
+                              className={`rounded-full px-2 py-0.5 text-[11px] ${
+                                assignee === "sub"
+                                  ? "bg-sky-700 text-white"
+                                  : "bg-zinc-800 text-zinc-400 hover:text-zinc-200"
+                              }`}
+                            >
+                              Sub
+                            </button>
+                          </span>
+                        ) : isLabor ? (
+                          <span className="text-[11px] text-zinc-500">
+                            {assignee === "sub" ? "Sub" : "Tom"}
+                          </span>
+                        ) : (
+                          <span className="text-[11px] text-zinc-600">—</span>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
+
+          {!locked ? (
+            <div className="rounded-lg border border-zinc-800 bg-zinc-950/80 px-3 py-2 text-[11px] text-zinc-500">
+              <p>
+                Sub rate defaults to {cad(defaultSubRateCad)}/hr from your rate card.
+                Ask the AI to change a sub rate, e.g. “set the sub rate to $55 on the labour line”.
+              </p>
+            </div>
+          ) : null}
 
           <div className="rounded-lg border border-zinc-800 bg-zinc-900/60 px-3 py-2 text-xs text-zinc-400 space-y-1">
             <p>Materials: <span className="text-zinc-200">{cad(selected.materialsTotalCad)}</span></p>
@@ -235,6 +371,18 @@ export function EstimateCrm(props: {
               Labour ({selected.laborHours}h):{" "}
               <span className="text-zinc-200">{cad(selected.laborTotalCad)}</span>
             </p>
+            {selected.subcontractedCostCad > 0 ? (
+              <>
+                <p>
+                  Subcontracted cost:{" "}
+                  <span className="text-zinc-200">{cad(selected.subcontractedCostCad)}</span>
+                </p>
+                <p>
+                  Your labour margin:{" "}
+                  <span className="text-emerald-300">{cad(selected.laborMarginCad)}</span>
+                </p>
+              </>
+            ) : null}
             <p>Fees: <span className="text-zinc-200">{cad(selected.feesTotalCad)}</span></p>
             <p className="text-sm">
               Total: <span className="font-semibold text-amber-300">{cad(selected.totalCad)}</span>

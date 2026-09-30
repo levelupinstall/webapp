@@ -183,3 +183,18 @@ model Job {
   @@index([status])
   @@map("jobs")
 }
+
+/// Tom's business rate card — editable in the admin CRM, drives the AI estimate engine.
+/// Single row with id "default".
+model BusinessSettings {
+  id                   String   @id @default("default")
+  laborRateCad         Float    @default(75) @map("labor_rate_cad")
+  callOutFeeCad        Float    @default(150) @map("call_out_fee_cad")
+  procurementMarkupPct Float    @default(15) @map("procurement_markup_pct")
+  defaultSubRateCad    Float    @default(50) @map("default_sub_rate_cad")
+  includedLaborHours   Float    @default(2) @map("included_labor_hours")
+  carpentryMarginPct   Float    @default(15) @map("carpentry_margin_pct")
+  updatedAt            DateTime @updatedAt @map("updated_at")
+
+  @@map("business_settings")
+}

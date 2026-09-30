@@ -153,6 +153,8 @@ export type WorkProposal = {
   acceptedSignerName?: string;
   stripeCheckoutSessionId?: string;
   aiChat?: WorkProposalAiTurn[];
+  /** Carpenter account assigned to perform the install; null/undefined = Tom himself. Internal. */
+  assignedCarpenterId?: string | null;
 };
 
 export type PortalAnalytics = {
@@ -438,6 +440,16 @@ function parseEstimates(value: Prisma.JsonValue): Estimate[] {
             : "each",
         unitCostCad,
         totalCad: Math.max(0, Math.round(quantity * unitCostCad * 100) / 100),
+        ...(o.category === "labor"
+          ? {
+              assignee: o.assignee === "sub" ? ("sub" as const) : ("tom" as const),
+              ...(typeof o.subRateCad === "number" &&
+              Number.isFinite(o.subRateCad) &&
+              o.subRateCad >= 0
+                ? { subRateCad: Math.max(0, Math.round(o.subRateCad * 100) / 100) }
+                : {}),
+            }
+          : {}),
       });
     }
     const totals = recomputeEstimateTotals(lineItems);
@@ -463,6 +475,10 @@ function parseEstimates(value: Prisma.JsonValue): Estimate[] {
       sentAt: typeof r.sentAt === "string" ? r.sentAt : undefined,
       lineItems,
       ...totals,
+      assignedCarpenterId:
+        typeof r.assignedCarpenterId === "string" && r.assignedCarpenterId
+          ? r.assignedCarpenterId
+          : null,
       notes: typeof r.notes === "string" ? r.notes.slice(0, 4000) : "",
       aiChat: aiChatRaw
         .filter(
@@ -567,6 +583,9 @@ function parseWorkProposals(value: Prisma.JsonValue): WorkProposal[] {
           ? String(raw.stripeCheckoutSessionId)
           : undefined,
       aiChat: aiChat.length ? aiChat : undefined,
+      ...(typeof raw.assignedCarpenterId === "string" && raw.assignedCarpenterId
+        ? { assignedCarpenterId: raw.assignedCarpenterId }
+        : {}),
     });
   }
   return out;
@@ -1385,6 +1404,7 @@ export async function adminPatchEstimate(params: {
   lineItems?: EstimateLineItem[];
   notes?: string;
   title?: string;
+  assignedCarpenterId?: string | null;
 }): Promise<Estimate> {
   return writeEstimate(params.portalUserId, params.estimateId, (e) => {
     const lineItems = params.lineItems ?? e.lineItems;
@@ -1393,6 +1413,9 @@ export async function adminPatchEstimate(params: {
       ...e,
       ...(params.title?.trim() ? { title: params.title.trim().slice(0, 200) } : {}),
       ...(params.notes !== undefined ? { notes: params.notes.slice(0, 4000) } : {}),
+      ...(params.assignedCarpenterId !== undefined
+        ? { assignedCarpenterId: params.assignedCarpenterId || null }
+        : {}),
       lineItems,
       ...totals,
     };
@@ -1562,6 +1585,7 @@ export async function createWorkProposalDraftForPortalUser(params: {
   renderings: Array<{ mimeType: string; dataUrl: string; caption?: string }>;
   spacePhotos?: Array<{ mimeType: string; dataUrl: string; caption?: string }>;
   budgetNotes?: string;
+  assignedCarpenterId?: string | null;
 }): Promise<WorkProposal | null> {
   const row = await prisma.portalUser.findUnique({ where: { id: params.portalUserId } });
   if (!row || row.signupVerificationPending) return null;
@@ -1589,6 +1613,7 @@ export async function createWorkProposalDraftForPortalUser(params: {
     ...(params.budgetNotes?.trim()
       ? { budgetNotes: params.budgetNotes.trim().slice(0, 2000) }
       : {}),
+    ...(params.assignedCarpenterId ? { assignedCarpenterId: params.assignedCarpenterId } : {}),
     renderings: params.renderings.map((r) => ({
       id: randomUUID(),
       mimeType: r.mimeType || "image/jpeg",

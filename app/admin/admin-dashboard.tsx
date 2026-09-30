@@ -12,6 +12,7 @@ import { useRouter } from "next/navigation";
 import { JobCompletionSocialPanel } from "./job-completion-social-panel";
 import { WorkProposalsCrm, type WorkProposalRow } from "./work-proposals-crm";
 import { EstimateCrm, type EstimateRow } from "./estimate-crm";
+import { RateCardTab } from "./rate-card-tab";
 import type {
   AiPlannerActivity,
   AiPlannerBlueprintSnapshot,
@@ -565,6 +566,7 @@ export default function AdminDashboard() {
     | "payments"
     | "clients"
     | "carpenters"
+    | "rates"
   >("feed");
   const [feedTypeFilter, setFeedTypeFilter] = useState<"all" | ActivityRow["type"]>("all");
   const [feedClientFilter, setFeedClientFilter] = useState("all");
@@ -1396,6 +1398,7 @@ export default function AdminDashboard() {
               ["payments", "Payments"],
               ["clients", "Clients & AI planner"],
               ["carpenters", "Carpenters"],
+              ["rates", "Rate card"],
             ] as const
           ).map(([key, label]) => (
             <button
@@ -2780,6 +2783,10 @@ export default function AdminDashboard() {
                       portalUserId={selectedClient.id}
                       estimates={selectedClient.estimates ?? []}
                       clientPhase={selectedClient.projectStatus.phase}
+                      carpenters={carpenters.map((c) => ({
+                        id: c.id,
+                        name: c.fullName || c.username,
+                      }))}
                       onRefresh={() => void refreshOverview()}
                     />
 
@@ -2898,6 +2905,12 @@ export default function AdminDashboard() {
             {carpenters.length === 0 ? (
               <p className="text-sm text-zinc-500">No carpenter accounts yet.</p>
             ) : null}
+          </section>
+        ) : null}
+
+        {tab === "rates" ? (
+          <section className="rounded-xl border border-zinc-800 bg-zinc-900/40 p-4">
+            <RateCardTab />
           </section>
         ) : null}
       </main>

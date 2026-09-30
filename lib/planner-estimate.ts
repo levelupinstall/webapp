@@ -25,8 +25,27 @@ export const ESTIMATE_CALL_OUT_FEE_CAD = 150;
 /** Level Up procurement markup on buy-item supplier costs. */
 export const ESTIMATE_PROCUREMENT_MARKUP = 1.15;
 
+/** Pricing inputs for the estimate engine — normally loaded from the rate card. */
+export type EstimateRates = {
+  laborRateCad: number;
+  callOutFeeCad: number;
+  procurementMarkupPct: number;
+  /** Default hourly cost when a labour line is assigned to a subcontractor. */
+  defaultSubRateCad: number;
+};
+
+export const ESTIMATE_DEFAULT_RATES: EstimateRates = {
+  laborRateCad: ESTIMATE_LABOR_RATE_CAD,
+  callOutFeeCad: ESTIMATE_CALL_OUT_FEE_CAD,
+  procurementMarkupPct: 15,
+  defaultSubRateCad: 50,
+};
+
 export type EstimateSourcing = "buy" | "build";
 export type EstimateItemCategory = "material" | "labor" | "fee";
+
+/** Who performs the labour: Tom ("tom") or a subcontractor ("sub"). */
+export type EstimateAssignee = "tom" | "sub";
 
 export type EstimateLineItem = {
   id: string;
@@ -39,6 +58,11 @@ export type EstimateLineItem = {
   unit: string;
   unitCostCad: number;
   totalCad: number;
+  /** Labour lines only: who does the work. Defaults to "tom". */
+  assignee?: EstimateAssignee;
+  /** Labour lines only: what the sub is paid per unit when assignee === "sub".
+   *  Internal — never shown to the customer. */
+  subRateCad?: number;
 };
 
 export type EstimateStatus =
@@ -68,6 +92,12 @@ export type Estimate = {
   laborTotalCad: number;
   feesTotalCad: number;
   totalCad: number;
+  /** Internal sub cost on subbed labour lines (sell − this = laborMarginCad). Never customer-facing. */
+  subcontractedCostCad: number;
+  /** Sell price minus sub cost on subbed labour lines. Internal. */
+  laborMarginCad: number;
+  /** Which carpenter account performs the install; null/undefined = Tom himself. */
+  assignedCarpenterId?: string | null;
   notes: string;
   aiChat: EstimateAiChatTurn[];
   sourceSummary: string;
@@ -157,22 +187,38 @@ function lineItem(params: {
   };
 }
 
-export function recomputeEstimateTotals(items: EstimateLineItem[]): {
+export function recomputeEstimateTotals(
+  items: EstimateLineItem[],
+  defaultSubRateCad = ESTIMATE_DEFAULT_RATES.defaultSubRateCad,
+): {
   materialsTotalCad: number;
   laborHours: number;
   laborTotalCad: number;
   feesTotalCad: number;
+  subcontractedCostCad: number;
+  laborMarginCad: number;
   totalCad: number;
 } {
   let materials = 0;
   let laborHours = 0;
   let labor = 0;
   let fees = 0;
+  let subCost = 0;
+  let margin = 0;
   for (const it of items) {
     if (it.category === "material") materials += it.totalCad;
     else if (it.category === "labor") {
       labor += it.totalCad;
       if (/hour/i.test(it.unit)) laborHours += it.quantity;
+      if (it.assignee === "sub") {
+        const rate =
+          typeof it.subRateCad === "number" && Number.isFinite(it.subRateCad) && it.subRateCad >= 0
+            ? it.subRateCad
+            : defaultSubRateCad;
+        const cost = money(it.quantity * rate);
+        subCost += cost;
+        margin += money(it.totalCad - cost);
+      }
     } else fees += it.totalCad;
   }
   const total = materials + labor + fees;
@@ -181,6 +227,8 @@ export function recomputeEstimateTotals(items: EstimateLineItem[]): {
     laborHours: Math.round(laborHours * 100) / 100,
     laborTotalCad: money(labor),
     feesTotalCad: money(fees),
+    subcontractedCostCad: money(subCost),
+    laborMarginCad: money(margin),
     totalCad: money(total),
   };
 }
@@ -198,11 +246,15 @@ export type EstimateInput = {
 /**
  * Build a draft estimate from the planner conversation. Heavy AI work —
  * call from an admin action or background job, never inline in a chat reply.
+ *
+ * `rates` comes from the admin rate card; defaults keep old call sites working.
  */
 export async function generatePlannerEstimate(
   input: EstimateInput,
+  rates: EstimateRates = ESTIMATE_DEFAULT_RATES,
 ): Promise<Estimate> {
   const transcript = input.transcript.trim().slice(-16_000);
+  const markup = 1 + Math.max(0, rates.procurementMarkupPct) / 100;
   const materials = await geminiEstimateMaterialsShoppingList({
     transcript,
     dimsSummary: input.dimsSummary,
@@ -212,15 +264,14 @@ export async function generatePlannerEstimate(
 
   const items: EstimateLineItem[] = materials.items.map((m, i) => {
     const s = sourcing[i] ?? "build";
-    const markedUp =
-      s === "buy" ? m.estimatedCad * ESTIMATE_PROCUREMENT_MARKUP : m.estimatedCad;
+    const markedUp = s === "buy" ? m.estimatedCad * markup : m.estimatedCad;
     return lineItem({
       category: "material",
       sourcing: s,
       description: m.description,
       detail: [
         m.notes ?? "",
-        s === "buy" ? "Includes 15% Level Up procurement markup." : "",
+        s === "buy" ? `Includes ${rates.procurementMarkupPct}% Level Up procurement markup.` : "",
       ]
         .filter(Boolean)
         .join(" "),
@@ -258,10 +309,10 @@ export async function generatePlannerEstimate(
       category: "labor",
       sourcing: "na",
       description: "Finish carpentry installation labour",
-      detail: `Estimated ${labor.estimatedTotalHours.toFixed(1)} hours at $${ESTIMATE_LABOR_RATE_CAD}/hr (includes 15% complexity margin). Verify on site.`,
+      detail: `Estimated ${labor.estimatedTotalHours.toFixed(1)} hours at $${rates.laborRateCad}/hr (includes 15% complexity margin). Verify on site.`,
       quantity: Math.round(labor.estimatedTotalHours * 10) / 10,
       unit: "hours",
-      unitCostCad: ESTIMATE_LABOR_RATE_CAD,
+      unitCostCad: rates.laborRateCad,
     }),
   );
   items.push(
@@ -271,11 +322,11 @@ export async function generatePlannerEstimate(
       description: "Call-out / site visit fee",
       quantity: 1,
       unit: "each",
-      unitCostCad: ESTIMATE_CALL_OUT_FEE_CAD,
+      unitCostCad: rates.callOutFeeCad,
     }),
   );
 
-  const totals = recomputeEstimateTotals(items);
+  const totals = recomputeEstimateTotals(items, rates.defaultSubRateCad);
   const now = new Date().toISOString();
   const categoryLabel = input.category?.trim() || "Custom project";
   return {
@@ -286,22 +337,24 @@ export async function generatePlannerEstimate(
     updatedAt: now,
     lineItems: items,
     ...totals,
+    assignedCarpenterId: null,
     notes: "",
     aiChat: [],
-    sourceSummary: `Generated from the AI planning conversation${materials.grounded ? " (search-grounded pricing)" : ""}. Labour estimated at $${ESTIMATE_LABOR_RATE_CAD}/hr. Review every line before sending — dimensions and site conditions must be verified.`,
+    sourceSummary: `Generated from the AI planning conversation${materials.grounded ? " (search-grounded pricing)" : ""}. Labour estimated at $${rates.laborRateCad}/hr. Review every line before sending — dimensions and site conditions must be verified.`,
   };
 }
 
 const REVISE_SYSTEM = `You are the estimating assistant for Level Up Install (Toronto finish carpentry). Tom (the owner) gives plain-English instructions to adjust a cost estimate.
 
 You receive the current estimate as JSON: { lineItems: [...], notes: string }.
-Line item shape: { id, category: "material"|"labor"|"fee", sourcing: "buy"|"build"|"na", description, detail, quantity, unit, unitCostCad, totalCad }.
+Line item shape: { id, category: "material"|"labor"|"fee", sourcing: "buy"|"build"|"na", description, detail, quantity, unit, unitCostCad, totalCad, assignee: "tom"|"sub" (labour only), subRateCad (labour only, internal sub pay rate — never show to customer) }.
 
 Apply Tom's instruction and return ONLY valid JSON (no markdown fences):
 { "lineItems": [ ...full updated array, same shape... ], "notes": string, "summary": string }
 
 Rules:
-- Return the COMPLETE line item array with your changes applied (add, remove, or edit items). Keep untouched items identical, including their ids.
+- Return the COMPLETE line item array with your changes applied (add, remove, or edit items). Keep untouched items identical, including their ids, assignee, and subRateCad.
+- "sub" assignee and subRateCad are INTERNAL cost data — never mention them in summaries shown to customers.
 - New items get fresh ids like "new-1", "new-2".
 - "summary" is one short sentence describing what changed, for the chat log.
 - Do NOT compute final totals — the platform recomputes them. Set each item's totalCad = quantity × unitCostCad yourself.
@@ -361,6 +414,14 @@ export async function reviseEstimateFromInstruction(params: {
         typeof r.unitCostCad === "number" && Number.isFinite(r.unitCostCad)
           ? money(r.unitCostCad)
           : 0;
+      const assignee: EstimateAssignee =
+        category === "labor" && r.assignee === "sub" ? "sub" : "tom";
+      const subRateCad =
+        category === "labor" && assignee === "sub"
+          ? typeof r.subRateCad === "number" && Number.isFinite(r.subRateCad) && r.subRateCad >= 0
+            ? money(r.subRateCad)
+            : undefined
+          : undefined;
       items.push({
         id: typeof r.id === "string" && r.id ? r.id : `new-${idx + 1}`,
         category,
@@ -377,6 +438,8 @@ export async function reviseEstimateFromInstruction(params: {
             : "each",
         unitCostCad,
         totalCad: money(quantity * unitCostCad),
+        ...(category === "labor" ? { assignee } : {}),
+        ...(subRateCad !== undefined ? { subRateCad } : {}),
       });
     }
     if (items.length === 0) return { error: "The AI did not return usable line items." };

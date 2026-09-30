@@ -8,6 +8,7 @@ import {
   setPortalUserProjectPhase,
 } from "@/lib/client-portal-store";
 import { generatePlannerEstimate } from "@/lib/planner-estimate";
+import { getRateCard } from "@/lib/rate-card";
 import { SALES_PIPELINE_PHASES } from "@/lib/planner-sales-handoff";
 
 type Body = { portalUserId?: string };
@@ -60,12 +61,15 @@ export async function POST(request: Request) {
   );
   const activities = (full as { aiPlannerActivity?: Array<{ promptFull?: string; replyFull?: string; promptPreview?: string; replyPreview?: string }> } | null)?.aiPlannerActivity ?? [];
 
-  const estimate = await generatePlannerEstimate({
-    transcript: buildTranscript(activities) || "(no planner transcript captured)",
-    dimsSummary: "",
-    dwellingLabel: "",
-    category: "",
-  });
+  const estimate = await generatePlannerEstimate(
+    {
+      transcript: buildTranscript(activities) || "(no planner transcript captured)",
+      dimsSummary: "",
+      dwellingLabel: "",
+      category: "",
+    },
+    await getRateCard(),
+  );
   estimate.title = `${(profile.fullName || profile.email || "Client").trim().slice(0, 60)} — AI estimate`;
 
   await createEstimateForPortalUser(portalUserId, estimate);
