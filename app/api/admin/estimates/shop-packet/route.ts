@@ -85,8 +85,7 @@ export async function POST(request: Request) {
   });
   if (!generated || generated.elements.length === 0) {
     return NextResponse.json(
-      { error: "The AI could not draft the packet from this rendering. Try again or check the measurements.",
-        _debug: (globalThis as Record<string, unknown>).__shopPacketDebug ?? null },
+      { error: "The AI could not draft the packet from this rendering. Try again or check the measurements." },
       { status: 502 },
     );
   }

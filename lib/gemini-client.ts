@@ -914,23 +914,12 @@ export async function geminiGenerateShopPacket(params: {
       },
     });
     if (!res.ok) {
-      (globalThis as Record<string, unknown>).__shopPacketDebug = { stage: "gemini-call-failed", status: res.status, body: res.body.slice(0, 300) };
       console.error("[shop-packet] gemini call failed", res.status, res.body.slice(0, 300));
       return null;
     }
-    const extracted = extractParts(res.json);
-    (globalThis as Record<string, unknown>).__shopPacketDebug = {
-      stage: "raw-response",
-      finishReason: extracted.candidateFinishReason,
-      blockReason: extracted.blockReason,
-      textLen: extracted.text.length,
-      textHead: extracted.text.slice(0, 200),
-      textTail: extracted.text.slice(-200),
-    };
-    const { text } = extracted;
+    const { text } = extractParts(res.json);
     const stripped = text.trim().replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/i, "").trim();
     if (!stripped) {
-      (globalThis as Record<string, unknown>).__shopPacketDebug = { stage: "empty-text" };
       console.error("[shop-packet] empty text response");
       return null;
     }
@@ -948,14 +937,11 @@ export async function geminiGenerateShopPacket(params: {
         warnings?: unknown;
       };
     } catch (parseErr) {
-      const prev = (globalThis as Record<string, unknown>).__shopPacketDebug as Record<string, unknown>;
-      (globalThis as Record<string, unknown>).__shopPacketDebug = { stage: "json-parse-failed", err: String(parseErr).slice(0, 120), textHead: stripped.slice(0, 300), finishReason: (prev as Record<string, unknown>)?.finishReason, textLen: (prev as Record<string, unknown>)?.textLen };
-      console.error("[shop-packet] JSON parse failed", String(parseErr).slice(0, 120), "text head:", stripped.slice(0, 300));
+      console.error("[shop-packet] JSON parse failed", String(parseErr).slice(0, 120));
       return null;
     }
     if (!parsed || typeof parsed !== "object" || !Array.isArray(parsed.elements)) {
-      (globalThis as Record<string, unknown>).__shopPacketDebug = { stage: "no-elements-array", textHead: stripped.slice(0, 300) };
-      console.error("[shop-packet] no elements array", "text head:", stripped.slice(0, 300));
+      console.error("[shop-packet] no elements array in response");
       return null;
     }
 

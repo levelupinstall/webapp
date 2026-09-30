@@ -1774,53 +1774,6 @@ export async function appendAiPlannerActivity(
   return activity;
 }
 
-/**
- * Attach CRM concept images to the newest planner activity turn.
- * Admin-only backfill utility (used by E2E seeding); the live planner flow
- * persists concept images itself via conceptImagesForAdminCrm.
- */
-export async function backfillConceptImages(
-  userId: string,
-  images: Array<{ mimeType: string; dataUrl: string }>,
-): Promise<boolean> {
-  const row = await prisma.portalUser.findUnique({ where: { id: userId } });
-  if (!row) return false;
-  const clean = (images ?? [])
-    .filter(
-      (x) =>
-        x &&
-        typeof x.dataUrl === "string" &&
-        x.dataUrl.startsWith("data:") &&
-        x.dataUrl.length < 2_000_000,
-    )
-    .slice(0, 3)
-    .map((x) => ({
-      mimeType: (x.mimeType || "image/jpeg").trim() || "image/jpeg",
-      dataUrl: x.dataUrl,
-    }));
-  if (!clean.length) return false;
-
-  const user = rowToUserRecord(row);
-  const activity: AiPlannerActivity[] = [...(user.aiPlannerActivity ?? [])];
-  if (activity.length > 0) {
-    activity[0] = { ...activity[0], conceptImages: clean };
-  } else {
-    activity.unshift({
-      id: randomUUID(),
-      createdAt: new Date().toISOString(),
-      promptPreview: "(backfilled concept images)",
-      replyPreview: "",
-      intakeSummary: "",
-      imageCount: clean.length,
-      conceptImages: clean,
-    });
-  }
-  await persistJsonSnapshots(row.id, {
-    aiPlannerActivity: activity as unknown as Prisma.InputJsonValue,
-  });
-  return true;
-}
-
 export async function createWorkProposalDraftForPortalUser(params: {
   portalUserId: string;
   title: string;
