@@ -3,6 +3,7 @@ import { getSessionFromCookie } from "@/lib/client-portal-auth";
 import {
   buildGeminiConceptImagePromptText,
   defaultGeminiImageModel,
+  geminiCountShelvesInImage,
   geminiExtractPlannerVisualSpec,
   geminiGenerateConceptImage,
   geminiPlannerMultiTurn,
@@ -19,7 +20,6 @@ import {
 import {
   deriveNorthStarLabelsFromUserText,
   evaluateSimplifiedIntakeReadiness,
-  formatIntakeBlockedRenderReason,
   hasBudgetContextInText,
   hasEarlyPhotoInviteContext,
 } from "@/lib/planner-intake-detect";
@@ -70,6 +70,10 @@ import {
   syncHarvestFromSpec,
   type RefinementGeometryIntent,
 } from "@/lib/planner-refinement-geometry";
+import {
+  buildPlannerSchematicGuide,
+  buildSchematicBindingDirective,
+} from "@/lib/planner-schematic-guide";
 import type { ConceptRenderAudit } from "@/lib/client-portal-store";
 
 /** After this many assistant turns that included a concept sketch, steer toward in-person consult. */
@@ -85,6 +89,53 @@ function isPlannerImageUpload(file: File): boolean {
 
 /** User messages shorter than this skip generic blank-room sketch generation (avoids noisy renders). */
 const MIN_USER_CHARS_FOR_GENERIC_SKETCH = 40;
+
+/**
+ * Refinement turns: only re-render when the message actually asks for a
+ * visual change. Previously EVERY message after the first sketch triggered
+ * a full re-render (even "thanks" or "what's the price"), which produced
+ * surprise images and wasted generation calls.
+ */
+function messageRequestsVisualChange(
+  text: string,
+  intent: RefinementGeometryIntent,
+): boolean {
+  if (intent.hasGeometryChange) return true;
+  const t = text.toLowerCase();
+  // Explicit render requests ("show me what it would look like", "render another version").
+  if (
+    /\b(show|render|generate|draw|sketch|visualiz|visualis)\b/i.test(t) &&
+    /\b(me|it|this|that|how|what|another|new|updated|revised|option|version|idea)\b/i.test(t)
+  ) {
+    return true;
+  }
+  if (/\bwhat\s+(would|will)\s+it\s+look\s+like\b/i.test(t)) return true;
+  // Add / remove / swap element requests.
+  if (
+    /\b(add|remove|taking\s+out|take\s+out|another|extra|instead|rather|prefer|change\s+it|different\s+look)\b/i.test(
+      t,
+    )
+  ) {
+    return true;
+  }
+  // Negative visual feedback ("too big", "looks off", "hate the color").
+  if (
+    /\btoo\s+(big|small|long|short|high|low|dark|light|wide|narrow|deep|tall)\b/i.test(t) ||
+    /\blooks\s+(bad|weird|off|wrong)\b/i.test(t) ||
+    /\b(don't|dont|do\s+not)\s+like\b/i.test(t) ||
+    /\bhate\b/i.test(t)
+  ) {
+    return true;
+  }
+  // Finish / color-only changes the geometry detector classifies as non-geometry.
+  if (
+    /\b(color|colour|paint|stain|finish|white|black|walnut|oak|natural)\b/i.test(t) &&
+    /\b(change|make|try|darker|lighter)\b/i.test(t)
+  ) {
+    return true;
+  }
+  return false;
+}
 
 /** Persist AI-generated concept images for admin CRM (bounded size). */
 function conceptImagesForAdminCrm(
@@ -169,7 +220,7 @@ Your immediately previous assistant turn included a **concept visualization** th
     if (params.blockFirstRenderImage) {
       chunks.push(`
 ## Session hint (platform — no visualization this turn)
-The **first** concept image is **not** being attached on this reply because simplified intake is **not** complete yet (need space photos plus project type, budget, style, and rough dimensions in chat). Do **not** say you created, generated, produced, attached, or showed a sketch or picture, and do **not** say they should see an image **below** this message — **there will not be one**. Use the **3-question intake** script (type+budget → style → dimensions in one ask each) — do not drill many small questions.`);
+The **first** concept image is **not** being attached on this reply because there still isn't enough to draw from — need a photo of the space **or** a clear description of what they want added (e.g. "floating shelves on the living room wall"). Do **not** say you created, generated, produced, attached, or showed a sketch or picture, and do **not** say they should see an image **below** this message — **there will not be one**. Ask **at most ONE question** to get what's missing (photo or description) — do not run a questionnaire. Budget, style, and dimensions can be collected **after** the first visual, as reactions to it.`);
     } else {
       chunks.push(`
 ## Session hint (platform)
@@ -225,8 +276,8 @@ Callback timing is still missing for **scheduling / follow-up**. Ask for ideal d
     !params.blockFirstRenderImage
   ) {
     chunks.push(`
-## Session hint (optional — light draft confirm)
-Simplified intake looks complete (photos, type, budget, style, dimensions). You **may** ask once in natural language if they want to see a **first draft visual** — e.g. “Want me to show how this could look?” This is **optional** and **not** required for the platform to attach a sketch. Do **not** use the old verbatim gate question or require “go ahead” / “proceed”.`);
+## Session hint (first visual going out now)
+A concept sketch is being attached after this reply. Keep your text short — point at one thing in the visual and ask a single reaction question (e.g. "Does that shelf height feel right, or should it sit lower?"). Do **not** ask a batch of intake questions here; collect budget, style, and dimensions one at a time as follow-ups to the visual.`);
   }
 
   const hints = params.roomPhotoHintsBlock?.trim();
@@ -431,7 +482,6 @@ function explainConceptRenderSkip(params: {
   allowConceptImage: boolean;
   blockFirstRenderImage: boolean;
   simplifiedIntakeReady: boolean;
-  intakeBlockedReason?: string;
   hasPhotoContextInSession: boolean;
   pureEnthusiasmAfterSketch: boolean;
   hasUserMessage: boolean;
@@ -450,21 +500,10 @@ function explainConceptRenderSkip(params: {
     return "Planner chat returned inline images; separate concept render was skipped.";
   }
   if (params.blockFirstRenderImage) {
-    if (!params.simplifiedIntakeReady) {
-      return params.intakeBlockedReason ?? formatIntakeBlockedRenderReason({
-        ready: false,
-        category: false,
-        style: false,
-        budget: false,
-        dimensions: false,
-        augmentedFromAssistant: [],
-        missing: ["category", "style", "budget", "dimensions"],
-        summary: "intake incomplete",
-      });
-    }
     if (!params.hasPhotoContextInSession) {
-      return "First render blocked: no space photos on this request. Re-attach room photos or sign in so saved CRM photos can be used.";
+      return "First render blocked: need a photo of the space or a clear description of what the homeowner wants added.";
     }
+    return "First render blocked: no project-type signal in chat yet (could not tell what the homeowner wants built).";
   }
   if (params.pureEnthusiasmAfterSketch) {
     return "Render skipped: short positive reply after a prior sketch (no change requested).";
@@ -566,11 +605,27 @@ export async function POST(request: Request) {
       userAttachedPhotosThisTurn ||
       sketchReferenceFiles.length > 0 ||
       portalSpacePhotoParts.length > 0;
+    const trimmedUser = lastUserText.trim();
+    const hasUserMessage = trimmedUser.length > 0;
+    const substantiveForGenericSketch =
+      trimmedUser.length >= MIN_USER_CHARS_FOR_GENERIC_SKETCH;
+
     const hasAnyPriorRender =
       sketchRoundsDelivered > 0 || priorTurnHadConceptImage;
+    /**
+     * Fast first render: photo(s) + what they want (a category signal like
+     * "shelves"/"closet", or a substantive description) is enough for a
+     * first draft. Style, budget, and dimensions still get collected — but
+     * as reactions to the visual, not as a questionnaire blocking it.
+     * No-photo users with a substantive description render in a neutral
+     * studio room instead of being blocked forever.
+     */
+    const firstRenderMinimalReady =
+      (hasPhotoContextInSession &&
+        (substantiveForGenericSketch || intakeDiagnostics.category)) ||
+      (substantiveForGenericSketch && intakeDiagnostics.category);
     const blockFirstRenderImage =
-      !hasAnyPriorRender &&
-      (!simplifiedIntakeReady || !hasPhotoContextInSession);
+      !hasAnyPriorRender && !firstRenderMinimalReady;
 
     const pureEnthusiasmAfterSketch =
       priorTurnHadConceptImage &&
@@ -582,11 +637,6 @@ export async function POST(request: Request) {
       (clientPhase === "recommend" ||
         clientPhase === "refine" ||
         priorTurnHadConceptImage);
-
-    const trimmedUser = lastUserText.trim();
-    const hasUserMessage = trimmedUser.length > 0;
-    const substantiveForGenericSketch =
-      trimmedUser.length >= MIN_USER_CHARS_FOR_GENERIC_SKETCH;
 
     const likelyGenericBlankSketch =
       substantiveForGenericSketch &&
@@ -682,6 +732,17 @@ export async function POST(request: Request) {
     let usedPlannerFallbackReply = false;
     let plannerInlineImages: { mimeType: string; data: string }[] = [];
 
+    /**
+     * Lightweight visual-change signal from the user's text alone. (The
+     * full geometry intent, which also folds in Alex's reply summary, is
+     * computed later for the actual render.)
+     */
+    const gatingIntent = detectRefinementGeometryIntent(lastUserText.trim());
+    const wantsVisualThisTurn = !hasAnyPriorRender
+      ? firstRenderMinimalReady
+      : userAttachedPhotosThisTurn ||
+        messageRequestsVisualChange(lastUserText, gatingIntent);
+
     try {
       if (isGeminiConfigured()) {
         const result = await geminiPlannerMultiTurn({
@@ -719,7 +780,7 @@ export async function POST(request: Request) {
               mimeType: img.mimeType,
               data: img.dataBase64,
             }));
-          if (blockFirstRenderImage) {
+          if (blockFirstRenderImage || !wantsVisualThisTurn) {
             plannerInlineImages = [];
           }
           if (!replyRaw) {
@@ -770,24 +831,13 @@ export async function POST(request: Request) {
     } = extractPlannerPhase(replyForPhase);
     let phase = phaseFromModel;
 
-    const genericBlankSketchEligible =
-      substantiveForGenericSketch &&
-      !userAttachedPhotosThisTurn &&
-      conceptReferenceParts.length === 0 &&
-      (phase === "consultation" ||
-        phase === "recommend" ||
-        phase === "refine");
-
     const allowConceptImage =
       isGeminiConfigured() &&
       plannerInlineImages.length === 0 &&
       !blockFirstRenderImage &&
       !pureEnthusiasmAfterSketch &&
       hasUserMessage &&
-      (userAttachedPhotosThisTurn ||
-        (priorTurnHadConceptImage && hasUserMessage) ||
-        genericBlankSketchEligible ||
-        (conceptReferenceParts.length > 0 && !blockFirstRenderImage));
+      wantsVisualThisTurn;
 
     const responseImages: { mimeType: string; data: string }[] = [
       ...plannerInlineImages,
@@ -1054,95 +1104,191 @@ export async function POST(request: Request) {
         );
       }
 
+      /**
+       * Deterministic layout schematic (code-drawn, cannot miscount): the
+       * image model copies its shelf count / spans / positions instead of
+       * inventing them. Attached FIRST so the LAST reference image stays
+       * the prior concept render in refinement mode.
+       */
+      let schematicReferencePart:
+        | { inline_data: { mime_type: string; data: string } }
+        | null = null;
+      if (conceptRenderSpec) {
+        const schematic = await buildPlannerSchematicGuide(
+          conceptRenderSpec,
+          refinementGeometryIntent.hasGeometryChange
+            ? refinementGeometryIntent
+            : null,
+        );
+        if (schematic) {
+          schematicReferencePart = {
+            inline_data: { mime_type: "image/png", data: schematic.dataBase64 },
+          };
+          extractedVisualDirective =
+            `${extractedVisualDirective}\n\n${buildSchematicBindingDirective(schematic.shelfCount)}`;
+        }
+      }
+
+      /**
+       * Refinement fidelity: the model tends to recompose the whole scene
+       * instead of editing. Constrain it to a surgical edit of the baseline.
+       */
+      if (conceptImageVisualMode === "refinement-delta") {
+        extractedVisualDirective =
+          `${extractedVisualDirective}\n\nSURGICAL EDIT (this is an edit of the prior concept render, NOT a new composition):\n` +
+          "- Start from the LAST reference image (the prior concept render) and change ONLY what the homeowner asked to change.\n" +
+          "- Keep identical: the room, walls, flooring, ceiling, lighting, camera angle, colors, materials, finishes, and every element the request did not mention.\n" +
+          '- Do not restyle, recolor, recompose, or "improve" the scene. Do not add or remove furniture, decor, or fixtures beyond the request.\n' +
+          "- The only allowed visible difference is the requested change itself (the geometry TARGET above still applies to that change).";
+      }
+
+      const conceptReferencePartsForRender = schematicReferencePart
+        ? [schematicReferencePart, ...combinedConceptReferenceParts]
+        : [...combinedConceptReferenceParts];
       const conceptReferenceForRender =
-        combinedConceptReferenceParts.length > 0 ? combinedConceptReferenceParts : undefined;
+        conceptReferencePartsForRender.length > 0
+          ? conceptReferencePartsForRender
+          : undefined;
 
       console.log("--- RENDERING START (Gemini) ---");
       console.log("Target Dimensions:", harvestedDimensions);
       console.log("Scale Anchors Used:", categoryAnchors);
 
-      let imageGenerationFailureDetail: string | null = null;
       let conceptRenderAudit: ConceptRenderAudit | undefined;
 
-      let prevOkNoImages = false;
-      for (let attempt = 0; attempt < 4; attempt++) {
-        if (attempt >= 1 && prevOkNoImages) {
-          await new Promise((r) => setTimeout(r, attempt === 1 ? 800 : attempt === 2 ? 1400 : 2000));
-        }
-        prevOkNoImages = false;
-
-        const geometryRetryHint =
-          refinementGeometryIntent.hasGeometryChange && attempt >= 1
-            ? "\n\n(The shelf size or position must be visibly different from the baseline image — not a duplicate.)"
-            : "";
-
-        const userGoalAug =
-          attempt === 0
-            ? baseGoal
-            : attempt === 1
-              ? `${baseGoal}\n\n(Second attempt: output must include one clear IMAGE part showing the finish-carpentry concept.)${geometryRetryHint}`
-              : attempt === 2
-                ? `${baseGoal}\n\n(Third attempt: mandatory — emit at least one IMAGE part; no text-only replies; prioritize a single clear finish-carpentry concept render.)${geometryRetryHint}`
-                : `${baseGoal}\n\n(Fourth attempt: you MUST return one IMAGE inlineData part — no text-only response; single clearest concept render.)${geometryRetryHint}`;
-
-        const renderPrep = buildGeminiConceptImagePromptText({
-          promptContext: basePrompt,
-          userGoal: userGoalAug,
-          extractedVisualDirective,
-          visualMode: conceptImageVisualMode,
-          geometryRefinement: refinementGeometryIntent.hasGeometryChange,
-        });
-
-        const visual = await geminiGenerateConceptImage({
-          promptContext: basePrompt,
-          userGoal: userGoalAug,
-          referenceImageParts: conceptReferenceForRender,
-          extractedVisualDirective,
-          visualMode: conceptImageVisualMode,
-          geometryRefinement: refinementGeometryIntent.hasGeometryChange,
-        });
-
-        conceptRenderAudit = {
-          provider: "gemini",
-          imageModel: renderPrep.imageModel,
-          homeownerPrompt: lastUserText.slice(0, 16_000) || "(photo)",
-          renderPromptText: renderPrep.fullPromptText,
-          ...(extractedVisualDirective?.trim()
-            ? { extractedVisualDirective: extractedVisualDirective.trim().slice(0, 12_000) }
-            : {}),
-          referenceImageCount: conceptReferenceForRender?.length ?? 0,
-          renderedAt: new Date().toISOString(),
-        };
-
-        if (!("error" in visual) && visual.images.length > 0) {
-          for (const img of visual.images) {
-            responseImages.push({ mimeType: img.mimeType, data: img.dataBase64 });
+      /**
+       * One full render pass (up to 4 attempts: the image model sometimes
+       * returns text-only). extraGoalSuffix lets the accuracy-correction
+       * pass demand a fixed shelf count. Returns the images plus the
+       * failure detail for the reply / audit trail.
+       */
+      const runOneRender = async (
+        extraGoalSuffix: string,
+      ): Promise<{
+        images: Array<{ mimeType: string; dataBase64: string }>;
+        failureDetail: string | null;
+      }> => {
+        const out: Array<{ mimeType: string; dataBase64: string }> = [];
+        let failure: string | null = null;
+        let prevOkNoImages = false;
+        for (let attempt = 0; attempt < 4; attempt++) {
+          if (attempt >= 1 && prevOkNoImages) {
+            await new Promise((r) =>
+              setTimeout(r, attempt === 1 ? 800 : attempt === 2 ? 1400 : 2000),
+            );
           }
-          break;
-        }
-        if (!("error" in visual) && visual.images.length === 0) {
-          prevOkNoImages = true;
-          if (attempt === 3) {
-            imageGenerationFailureDetail = "Gemini returned no image parts";
-          }
-        }
-        if ("error" in visual) {
-          console.warn(
-            "[project-assistant] geminiGenerateConceptImage error:",
-            visual.error,
-          );
-          imageGenerationFailureDetail = visual.error;
+          prevOkNoImages = false;
+
+          const geometryRetryHint =
+            refinementGeometryIntent.hasGeometryChange && attempt >= 1
+              ? "\n\n(The shelf size or position must be visibly different from the baseline image — not a duplicate.)"
+              : "";
+
+          const userGoalAug =
+            attempt === 0
+              ? `${baseGoal}${extraGoalSuffix}`
+              : attempt === 1
+                ? `${baseGoal}\n\n(Second attempt: output must include one clear IMAGE part showing the finish-carpentry concept.)${geometryRetryHint}${extraGoalSuffix}`
+                : attempt === 2
+                  ? `${baseGoal}\n\n(Third attempt: mandatory — emit at least one IMAGE part; no text-only replies; prioritize a single clear finish-carpentry concept render.)${geometryRetryHint}${extraGoalSuffix}`
+                  : `${baseGoal}\n\n(Fourth attempt: you MUST return one IMAGE inlineData part — no text-only response; single clearest concept render.)${geometryRetryHint}${extraGoalSuffix}`;
+
+          const renderPrep = buildGeminiConceptImagePromptText({
+            promptContext: basePrompt,
+            userGoal: userGoalAug,
+            extractedVisualDirective,
+            visualMode: conceptImageVisualMode,
+            geometryRefinement: refinementGeometryIntent.hasGeometryChange,
+          });
+
+          const visual = await geminiGenerateConceptImage({
+            promptContext: basePrompt,
+            userGoal: userGoalAug,
+            referenceImageParts: conceptReferenceForRender,
+            extractedVisualDirective,
+            visualMode: conceptImageVisualMode,
+            geometryRefinement: refinementGeometryIntent.hasGeometryChange,
+          });
+
           conceptRenderAudit = {
-            ...conceptRenderAudit,
-            renderError: visual.error.slice(0, 2000),
+            provider: "gemini",
+            imageModel: renderPrep.imageModel,
+            homeownerPrompt: lastUserText.slice(0, 16_000) || "(photo)",
+            renderPromptText: renderPrep.fullPromptText,
+            ...(extractedVisualDirective?.trim()
+              ? {
+                  extractedVisualDirective: extractedVisualDirective
+                    .trim()
+                    .slice(0, 12_000),
+                }
+              : {}),
+            referenceImageCount: conceptReferenceForRender?.length ?? 0,
+            renderedAt: new Date().toISOString(),
           };
-        } else if (visual.images.length === 0) {
-          const fr = visual.candidateFinishReason;
-          console.warn(
-            "[project-assistant] geminiGenerateConceptImage returned no image parts",
-            fr ? { candidateFinishReason: fr } : {},
-          );
+
+          if (!("error" in visual) && visual.images.length > 0) {
+            for (const img of visual.images) {
+              out.push({ mimeType: img.mimeType, dataBase64: img.dataBase64 });
+            }
+            break;
+          }
+          if (!("error" in visual) && visual.images.length === 0) {
+            prevOkNoImages = true;
+            if (attempt === 3) {
+              failure = "Gemini returned no image parts";
+            }
+          }
+          if ("error" in visual) {
+            console.warn(
+              "[project-assistant] geminiGenerateConceptImage error:",
+              visual.error,
+            );
+            failure = visual.error;
+            conceptRenderAudit = {
+              ...conceptRenderAudit,
+              renderError: visual.error.slice(0, 2000),
+            };
+          } else if (visual.images.length === 0) {
+            const fr = visual.candidateFinishReason;
+            console.warn(
+              "[project-assistant] geminiGenerateConceptImage returned no image parts",
+              fr ? { candidateFinishReason: fr } : {},
+            );
+          }
         }
+        return { images: out, failureDetail: failure };
+      };
+
+      const firstPass = await runOneRender("");
+      let renderedImages = firstPass.images;
+      let imageGenerationFailureDetail = firstPass.failureDetail;
+
+      /**
+       * Accuracy check: the model hallucinates shelf counts, so verify with
+       * vision and regenerate once with an explicit correction when wrong.
+       * A null/failed count never blocks delivery.
+       */
+      const expectedShelfCount = conceptRenderSpec?.shelfCount ?? null;
+      if (renderedImages.length > 0 && expectedShelfCount !== null) {
+        const first = renderedImages[0];
+        const observed = await geminiCountShelvesInImage({
+          imageMimeType: first.mimeType,
+          imageDataBase64: first.dataBase64,
+        });
+        if (observed !== null && observed !== expectedShelfCount) {
+          console.warn(
+            `[project-assistant] shelf-count mismatch (expected ${expectedShelfCount}, saw ${observed}) — regenerating once with correction.`,
+          );
+          renderedImages = (
+            await runOneRender(
+              `\n\n(Accuracy correction: the previous render showed ${observed} shelf boards but the homeowner asked for exactly ${expectedShelfCount}. This render MUST show exactly ${expectedShelfCount} shelf boards — count them in the schematic reference and match it.)`,
+            )
+          ).images;
+        }
+      }
+
+      for (const img of renderedImages) {
+        responseImages.push({ mimeType: img.mimeType, data: img.dataBase64 });
       }
 
       if (responseImages.length === 0) {
@@ -1173,9 +1319,6 @@ export async function POST(request: Request) {
           allowConceptImage,
           blockFirstRenderImage,
           simplifiedIntakeReady,
-          intakeBlockedReason: !simplifiedIntakeReady
-            ? formatIntakeBlockedRenderReason(intakeDiagnostics)
-            : undefined,
           hasPhotoContextInSession,
           pureEnthusiasmAfterSketch,
           hasUserMessage,

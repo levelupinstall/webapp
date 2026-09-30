@@ -13,6 +13,8 @@ export type RefinementGeometryIntent = {
   scaleShelfSpanFactor: number | null;
   scaleDepthFactor: number | null;
   verticalShift: "down" | "up" | null;
+  /** "move it left / shift the unit right" — horizontal reposition of the whole assembly. */
+  horizontalShift: "left" | "right" | null;
   /** User asked to change shelf size/position (not only color/finish). */
   repositionShelves: boolean;
 };
@@ -22,6 +24,7 @@ export const EMPTY_REFINEMENT_GEOMETRY_INTENT: RefinementGeometryIntent = {
   scaleShelfSpanFactor: null,
   scaleDepthFactor: null,
   verticalShift: null,
+  horizontalShift: null,
   repositionShelves: false,
 };
 
@@ -29,7 +32,7 @@ const COLOR_FINISH_ONLY =
   /\b(color|colour|paint|painted|stain|stained|finish|white|black|gray|grey|walnut|oak|natural|darker|lighter)\b/i;
 
 const GEOMETRY_SIGNAL =
-  /\b(smaller|bigger|larger|longer|shorter|narrower|wider|move\s+down|move\s+up|lower|higher|raise|drop|bring\s+down|shift\s+down|shift\s+up|closer\s+to\s+the\s+floor|closer\s+to\s+the\s+ceiling|not\s+as\s+(?:long|wide|tall|deep)|less\s+(?:wide|deep)|more\s+(?:wide|deep)|resize|reposition|spacing|apart|below\s+the\s+clock)\b/i;
+  /\b(?:smaller|bigger|larger|longer|shorter|narrower|wider|move\s+down|move\s+up|lower|higher|raise|drop|bring\s+down|shift\s+down|shift\s+up|closer\s+to\s+the\s+floor|closer\s+to\s+the\s+ceiling|not\s+as\s+(?:long|wide|tall|deep)|less\s+(?:wide|deep)|more\s+(?:wide|deep)|resize|reposition|spacing|apart|below\s+the\s+clock|(?:move|shift|slide|push|nudge)(?:\s+\w+){0,4}\s+(?:over\s+)?(?:to\s+the\s+)?(?:left|right))\b/i;
 
 function clampIn(n: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, Math.round(n)));
@@ -54,6 +57,7 @@ export function detectRefinementGeometryIntent(feedbackBlob: string): Refinement
       scaleShelfSpanFactor: null,
       scaleDepthFactor: null,
       verticalShift: null,
+      horizontalShift: null,
       repositionShelves: false,
     };
   }
@@ -70,6 +74,7 @@ export function detectRefinementGeometryIntent(feedbackBlob: string): Refinement
       scaleShelfSpanFactor: null,
       scaleDepthFactor: null,
       verticalShift: null,
+      horizontalShift: null,
       repositionShelves: false,
     };
   }
@@ -77,6 +82,7 @@ export function detectRefinementGeometryIntent(feedbackBlob: string): Refinement
   let scaleShelfSpanFactor: number | null = null;
   let scaleDepthFactor: number | null = null;
   let verticalShift: "down" | "up" | null = null;
+  let horizontalShift: "left" | "right" | null = null;
 
   if (
     /\b(smaller|shorter|not\s+as\s+long|less\s+long|narrower|reduce\s+the\s+size|make\s+(?:them|it|the\s+shelves?)\s+smaller)\b/i.test(
@@ -112,19 +118,42 @@ export function detectRefinementGeometryIntent(feedbackBlob: string): Refinement
     verticalShift = "up";
   }
 
+  // Horizontal moves: verb + up to a few words + optional "over/to the" + left|right.
+  // ("move the shelves to the left", "shift it right", "nudge them over to the left")
+  const horizMatch =
+    /\b(move|shift|slide|push|nudge)(?:\s+\w+){0,4}\s+(?:over\s+)?(?:to\s+the\s+)?(left|right)\b/i.exec(
+      p,
+    );
+  if (horizMatch) {
+    horizontalShift = horizMatch[2].toLowerCase() === "left" ? "left" : "right";
+  } else if (/\bmore\s+to\s+the\s+left\b/i.test(p) || /\bfurther\s+left\b/i.test(p)) {
+    horizontalShift = "left";
+  } else if (
+    /\bmore\s+to\s+the\s+right\b/i.test(p) ||
+    /\bfurther\s+right\b/i.test(p)
+  ) {
+    horizontalShift = "right";
+  }
+
   const repositionShelves =
     verticalShift !== null ||
+    horizontalShift !== null ||
     scaleShelfSpanFactor !== null ||
     /\b(reposition|relocate|spacing|apart|between\s+(?:each\s+)?shelf)\b/i.test(p);
 
   const hasGeometryChange =
-    geometrySignal && (repositionShelves || scaleShelfSpanFactor !== null || verticalShift !== null);
+    geometrySignal &&
+    (repositionShelves ||
+      scaleShelfSpanFactor !== null ||
+      verticalShift !== null ||
+      horizontalShift !== null);
 
   return {
     hasGeometryChange,
     scaleShelfSpanFactor,
     scaleDepthFactor,
     verticalShift,
+    horizontalShift,
     repositionShelves,
   };
 }
@@ -233,6 +262,15 @@ export function formatRefinementChangeRequest(
     } else if (intent.verticalShift === "up") {
       parts.push(
         "Move the entire shelf stack UP on the wall (closer to ceiling / higher position). The change must be obvious in the render.",
+      );
+    }
+    if (intent.horizontalShift === "left") {
+      parts.push(
+        "Shift the entire shelf assembly toward the LEFT side of the wall (roughly the left third of the wall run), keeping it at the same height. The change must be obvious in the render.",
+      );
+    } else if (intent.horizontalShift === "right") {
+      parts.push(
+        "Shift the entire shelf assembly toward the RIGHT side of the wall (roughly the right third of the wall run), keeping it at the same height. The change must be obvious in the render.",
       );
     }
     parts.push(`Homeowner request: ${t.slice(0, 600)}.`);

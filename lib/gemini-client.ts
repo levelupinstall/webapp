@@ -889,6 +889,49 @@ export async function geminiGenerateConceptImage(params: {
 }
 
 /**
+ * Vision accuracy check: count shelf boards in a generated concept image.
+ * Diffusion models hallucinate counts ("exactly 4 shelves" renders 3), so
+ * after a render we verify with a cheap text-model vision call and let the
+ * caller retry with a correction when the count is wrong. Returns the
+ * observed count, or null when the model can't answer / the call fails —
+ * a null never blocks delivery on its own.
+ */
+export async function geminiCountShelvesInImage(params: {
+  imageMimeType: string;
+  imageDataBase64: string;
+}): Promise<number | null> {
+  if (!isGeminiConfigured()) return null;
+  const res = await geminiGenerateContent({
+    model: defaultGeminiTextModel(),
+    systemInstruction:
+      "You inspect an AI-generated interior concept image. Count ONLY the horizontal shelf boards that are part of the proposed finish-carpentry built-in/shelving (ignore countertops, mantels, windowsills, and background furniture). Reply with exactly one integer and nothing else.",
+    contents: [
+      {
+        role: "user",
+        parts: [
+          {
+            text: "How many horizontal shelf boards are part of the proposed built-in shelving in this image? Reply with exactly one integer.",
+          },
+          {
+            inline_data: {
+              mime_type: params.imageMimeType,
+              data: params.imageDataBase64,
+            },
+          },
+        ],
+      },
+    ],
+    generationConfig: { maxOutputTokens: 16, temperature: 0.1 },
+  });
+  if (!res.ok) return null;
+  const { text } = extractParts(res.json);
+  const m = text.trim().match(/(\d{1,2})/);
+  if (!m) return null;
+  const n = parseInt(m[1], 10);
+  return Number.isFinite(n) ? n : null;
+}
+
+/**
  * Vision check: is the candidate interior photo essentially the same shot as the reference?
  * Used for ambiguous near-duplicate space uploads (CRM / portal dedupe).
  */
