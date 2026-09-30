@@ -290,3 +290,12 @@ body {
     background: white !important;
   }
 }
+
+/* Hide scrollbars on horizontal scroll containers (tab bars, carousels) */
+.scrollbar-none {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+.scrollbar-none::-webkit-scrollbar {
+  display: none;
+}

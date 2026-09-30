@@ -209,32 +209,32 @@ function HomeContent() {
       </div>
       <section className={lu.container}>
         <div className={`${lu.tabsBar} mb-6`}>
-          <div className="flex flex-wrap gap-2">
+          <div className="scrollbar-none flex gap-2 overflow-x-auto pb-0.5 [-webkit-overflow-scrolling:touch]">
             <button
               type="button"
               onClick={() => navigateToSection("overview")}
-              className={sectionButtonClass("overview")}
+              className={`${sectionButtonClass("overview")} shrink-0 whitespace-nowrap`}
             >
               Overview
             </button>
             <button
               type="button"
               onClick={() => navigateToSection("reviews")}
-              className={sectionButtonClass("reviews")}
+              className={`${sectionButtonClass("reviews")} shrink-0 whitespace-nowrap`}
             >
               Why Us
             </button>
             <button
               type="button"
               onClick={() => navigateToSection("rates")}
-              className={sectionButtonClass("rates")}
+              className={`${sectionButtonClass("rates")} shrink-0 whitespace-nowrap`}
             >
               Rates
             </button>
             <button
               type="button"
               onClick={() => navigateToSection("planner")}
-              className={sectionButtonClass("planner")}
+              className={`${sectionButtonClass("planner")} shrink-0 whitespace-nowrap`}
             >
               Planner
             </button>
@@ -247,7 +247,7 @@ function HomeContent() {
                   openAuth("login");
                 }
               }}
-              className={lu.btnSecondary}
+              className={`${lu.btnSecondary} shrink-0 whitespace-nowrap`}
             >
               Saved Designs
             </button>

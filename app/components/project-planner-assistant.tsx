@@ -873,11 +873,13 @@ export default function ProjectPlannerAssistant({
         Meet {PLANNER_ASSISTANT_NAME}, your planning consultant
       </h2>
       <p className={`mt-3 ${lu.body}`}>
-        Conversational guidance from a finish-carpentry mindset — budget and practical constraints matter early.
-        {PLANNER_ASSISTANT_NAME} asks tailored questions (sizes, what you already bought, closet habits, IKEA lines when relevant)
-        and invites photos when it helps; if you skip photos, you may still see a neutral blank-room sketch so you can react visually.
-        Refinements stay in chat until the direction feels right — no prices or store-specific products here, just the look.
-        When you&apos;re ready to proceed, Level Up reviews your designs and reaches out with a detailed proposal for approval.
+        Conversational guidance from a finish-carpentry mindset — budget and practical constraints
+        matter early. {PLANNER_ASSISTANT_NAME} asks tailored questions (sizes, what you already bought,
+        closet habits, IKEA lines when relevant) and invites photos when it helps; if you skip photos,
+        you may still see a neutral blank-room sketch so you can react visually. Refinements stay in
+        chat until the direction feels right — no prices or store-specific products here, just the look.
+        When you&apos;re ready to proceed, Level Up reviews your designs and reaches out with a detailed
+        proposal for approval.
       </p>
 
       <div className={`mt-6 ${lu.chatScroll}`}>
