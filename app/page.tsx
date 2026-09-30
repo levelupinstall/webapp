@@ -188,20 +188,20 @@ function HomeContent() {
               ) : null}
             </div>
           ) : (
-            <div className="flex shrink-0 items-center gap-2">
+            <div className="flex shrink-0 items-center gap-3">
               <button
                 type="button"
-                onClick={() => openAuth("login")}
-                className={lu.btnSecondary}
+                onClick={() => navigateToSection("planner")}
+                className={`${lu.btnPrimary} !px-4 !py-2 sm:!px-5`}
               >
-                Login
+                Get a Free Quote
               </button>
               <button
                 type="button"
-                onClick={() => openAuth("register")}
-                className={`${lu.btnPrimary} !px-3 !py-2 sm:!px-4`}
+                onClick={() => openAuth("login")}
+                className="text-sm font-semibold text-[#5b3292] underline-offset-4 hover:underline"
               >
-                Create Account
+                Log in
               </button>
             </div>
           )}
@@ -222,7 +222,7 @@ function HomeContent() {
               onClick={() => navigateToSection("reviews")}
               className={sectionButtonClass("reviews")}
             >
-              Reviews
+              Why Us
             </button>
             <button
               type="button"
@@ -256,117 +256,142 @@ function HomeContent() {
 
         {currentSection === "overview" ? (
           <div className={lu.card}>
-            <div className="mb-6 overflow-hidden rounded-2xl border border-[#e6d7ff] bg-white p-2 shadow-[0_8px_24px_-16px_rgba(91,33,182,0.6)]">
-              <Image
-                src="/level-up-install-logo.jpg"
-                alt="Level Up Install logo"
-                width={1024}
-                height={576}
-                className="h-auto w-full rounded-xl object-cover"
-                priority
-              />
+            <div className="mb-8 overflow-hidden rounded-3xl border border-[#e6d7ff] bg-gradient-to-br from-[#ffffff] via-[#faf6ff] to-[#f0e8ff] shadow-[0_16px_48px_-24px_rgba(91,33,182,0.45)]">
+              <div className="grid gap-6 p-6 sm:p-10 lg:grid-cols-2 lg:items-center">
+                <div>
+                  <p className="text-sm font-semibold uppercase tracking-[0.2em] text-[#7a4bb8]">
+                    Finish carpenter · Toronto &amp; the GTA
+                  </p>
+                  <h1 className="mt-3 text-3xl font-bold leading-tight text-[#230f35] sm:text-4xl lg:text-[2.75rem] lg:leading-[1.15]">
+                    Toronto Finish Carpentry, Designed Around Your Space
+                  </h1>
+                  <p className="mt-4 max-w-xl text-base leading-relaxed text-[#4d2e70] sm:text-lg">
+                    Shelving, built-ins, trim, and wall upgrades — see your room redesigned by AI
+                    before we lift a hammer. $150 call-out, $75/hr, upfront fixed quotes.
+                  </p>
+                  <div className="mt-6 flex flex-col gap-3 sm:flex-row sm:flex-wrap">
+                    <button
+                      type="button"
+                      onClick={() => navigateToSection("planner")}
+                      className="inline-flex items-center justify-center rounded-full bg-[#6e3eb2] px-8 py-4 text-base font-semibold text-white shadow-[0_12px_30px_-10px_rgba(110,62,178,0.9)] transition hover:-translate-y-0.5 hover:bg-[#5b3292] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#6e3eb2]"
+                    >
+                      See My Space Redesigned — Free
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => navigateToSection("planner")}
+                      className="inline-flex items-center justify-center rounded-full border-2 border-[#6e3eb2] bg-white px-8 py-4 text-base font-semibold text-[#5b3292] transition hover:bg-[#f5efff]"
+                    >
+                      Get a Fixed Quote
+                    </button>
+                  </div>
+                  <p className="mt-4 text-xs text-[#6a4a8f] sm:text-sm">
+                    Insured &amp; WSIB-covered · Serving Toronto &amp; the GTA · No-obligation quotes
+                  </p>
+                </div>
+                <div className="overflow-hidden rounded-2xl border border-[#e6d7ff] bg-white shadow-[0_8px_24px_-16px_rgba(91,33,182,0.6)]">
+                  <Image
+                    src="/hero-ai-render.jpg"
+                    alt="AI-generated concept of dark walnut floating shelves in a living room"
+                    width={1024}
+                    height={768}
+                    className="h-auto w-full object-cover"
+                    priority
+                  />
+                  <p className="px-4 py-2.5 text-[11px] leading-snug text-[#6a4a8f] sm:text-xs">
+                    AI concept visual — upload a photo of your own room to see it redesigned free.
+                  </p>
+                </div>
+              </div>
             </div>
 
             <div className="rounded-2xl border border-[#e8d9ff] bg-[#faf8ff] p-6 sm:p-8">
               <p className="text-sm font-semibold uppercase tracking-[0.2em] text-[#7a4bb8]">
-                Scope we&apos;re built for
+                What we do
               </p>
               <h2 className="mt-2 text-xl font-semibold text-[#230f35] sm:text-2xl">
-                Here are some different ways we can level up your space.
+                Finish carpentry for the details that make a room feel done
               </h2>
               <p className="mt-3 max-w-2xl text-base leading-relaxed text-[#4d2e70]">
-                Every visit starts with what you need done—big or small. Below are the kinds of tasks
-                homeowners book us for most often; if something similar is on your list, we&apos;ll
-                confirm feasibility and timing when we scope the job.
+                From floating shelves to full feature walls — here&apos;s what Toronto homeowners book
+                us for most. If it&apos;s on your list, we&apos;ll confirm feasibility and timing when
+                we scope the job.
               </p>
               <ul className="mt-6 grid gap-3 text-sm leading-relaxed text-[#55337b] sm:grid-cols-2 sm:gap-x-8 sm:text-[15px]">
                 <li className="flex gap-3">
                   <span className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-[#6e3eb2]" />
                   <span>
                     <span className="font-semibold text-[#31184a]">Pictures &amp; wall décor —</span>{" "}
-                    Hang framed art, canvas, mirrors, gallery walls, and lighter wall-mounted displays
-                    with the right anchors for your walls (drywall, plaster, or masonry where applicable).
-                    Bathroom accessories (towel bars, TP holders, robe hooks), curtain rods, coat hooks,
-                    mailboxes, and house numbers too.
+                    Gallery walls, mirrors, and art hung level and secure on any wall type — plus
+                    curtain rods, hooks, and house numbers.
                   </span>
                 </li>
                 <li className="flex gap-3">
                   <span className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-[#6e3eb2]" />
                   <span>
                     <span className="font-semibold text-[#31184a]">Shelving —</span> Floating
-                    shelves, bracketed units, closet rods, closet shelving, and adjustable systems
-                    installed level and secure—including closet organizers and shoe racks, whether custom
-                    built-ins or IKEA closet systems we assemble and install for you.
+                    shelves, bracketed units, and closet systems installed level and anchored to last —
+                    including IKEA assemblies.
                   </span>
                 </li>
                 <li className="flex gap-3">
                   <span className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-[#6e3eb2]" />
                   <span>
                     <span className="font-semibold text-[#31184a]">IKEA &amp; flat-pack furniture —</span>{" "}
-                    Assembly of IKEA and similar ready-to-assemble pieces—bookcases, wardrobes, desks,
-                    dressers, tables, and storage units—built square, leveled, and wall-anchored when
-                    the instructions or safety requirements call for it.
+                    Bookcases, wardrobes, desks, and storage built square, leveled, and wall-anchored
+                    where safety calls for it.
                   </span>
                 </li>
                 <li className="flex gap-3">
                   <span className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-[#6e3eb2]" />
                   <span>
                     <span className="font-semibold text-[#31184a]">Cabinets —</span> Wall and base
-                    cabinet installs, filler panels, scribes, hardware and hinge adjustments, and
-                    coordination with appliances where the scope fits our trade.
+                    cabinet installs with filler panels, scribes, and hardware dialed in around your
+                    appliances.
                   </span>
                 </li>
                 <li className="flex gap-3">
                   <span className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-[#6e3eb2]" />
                   <span>
                     <span className="font-semibold text-[#31184a]">Trim &amp; moulding —</span>{" "}
-                    Baseboard, casing, quarter-round or shoe, chair rail, and crown where appropriate
-                    to the space—installed tight with clean miters and returns. Minor trim touch-ups
-                    after a move, plus backing or blocking we coordinate for grab bars or handrails when
-                    it ties into casing or nearby carpentry.
+                    Baseboard, casing, and crown installed tight, with clean miters and returns.
                   </span>
                 </li>
                 <li className="flex gap-3">
                   <span className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-[#6e3eb2]" />
                   <span>
-                    <span className="font-semibold text-[#31184a]">Doors —</span> Hang or swap
-                    interior doors, adjust hinges and strikes, bore for hardware, and minor planing
-                    when clearances need tuning (within safe limits). Baby or pet gates secured to jambs
-                    or studs when the opening is part of the scope.
+                    <span className="font-semibold text-[#31184a]">Doors —</span> Prehung interior door
+                    installs and slab replacement, with hardware and clearances set right.
                   </span>
                 </li>
                 <li className="flex gap-3">
                   <span className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-[#6e3eb2]" />
                   <span>
-                    <span className="font-semibold text-[#31184a]">TV mounting —</span> Secure mounts
-                    to studs or rated anchors, level and centered to your layout; basic cable tidy and
-                    bracket installs where access allows (complex low-voltage runs may need a
-                    specialist). Tip-over safety: anchoring dressers and similar pieces to studs when that
-                    is the core of the task.
+                    <span className="font-semibold text-[#31184a]">TV mounting —</span> Flat-panel TVs on
+                    tilt, full-motion, or fixed mounts — load-rated and set at the right height for the room.
                   </span>
                 </li>
               </ul>
               <p className="mt-6 text-sm text-[#6a4a8f]">
-                Larger renovations, structural changes, or trades outside carpentry may require
-                partners we can help you line up after we see the site. We maintain commercial general
-                liability insurance and WSIB coverage for workers on jobs booked through Level Up
-                Install—ask if you need a certificate for your building or insurer.
+                Bigger renovations or trades outside carpentry? We&apos;ll flag them after the site
+                visit and help you line up the right partner. Commercial general liability insurance and
+                WSIB coverage on every job — ask if your building needs a certificate.
               </p>
             </div>
 
             <div className="mt-10 rounded-2xl border border-[#e8d9ff] bg-[#faf8ff] p-6 sm:p-8">
               <p className="text-sm font-semibold uppercase tracking-[0.2em] text-[#7a4bb8]">
-                About our AI tools
+                Free AI design consult
               </p>
               <h2 className="mt-2 text-xl font-semibold text-[#230f35] sm:text-2xl">
-                See what&apos;s possible before you pick up a hammer.
+                Upload a photo. See your room redesigned in minutes.
               </h2>
               <p className="mt-3 max-w-2xl text-base leading-relaxed text-[#4d2e70]">
-                {PLANNER_ASSISTANT_NAME}, our planning consultant, chats through scope and your space, then helps you
-                iterate on <span className="font-semibold text-[#31184a]">concept visuals</span> — no prices, products, or store names in that chat.
-                Add photos anytime. Save highlights with a free account. When you&apos;re happy with the design direction,
-                Level Up <span className="font-semibold text-[#31184a]">reviews your designs</span> and reaches out with a{" "}
-                <span className="font-semibold text-[#31184a]">detailed proposal for approval</span>. Nothing here replaces an on-site visit or firm quote.
+                {PLANNER_ASSISTANT_NAME}, our planning consultant, chats through your space and goals,
+                then generates <span className="font-semibold text-[#31184a]">concept visuals</span> so you
+                can see directions before committing. No pricing or product talk in that chat — just ideas.
+                When you love a direction, we review your designs and send a{" "}
+                <span className="font-semibold text-[#31184a]">detailed fixed-price proposal for approval</span>.
               </p>
               <ul className="mt-6 grid gap-4 text-sm leading-relaxed text-[#55337b] sm:grid-cols-2 sm:text-[15px]">
                 <li className="flex flex-col overflow-hidden rounded-xl border border-[#eddfff] bg-white shadow-[0_8px_28px_-18px_rgba(91,33,182,0.35)]">
@@ -467,134 +492,6 @@ function HomeContent() {
               </div>
             </div>
 
-            <div className="mt-10 rounded-2xl border border-[#dcc6fb] bg-gradient-to-br from-[#ffffff] via-[#f9f5ff] to-[#f0e8ff] p-6 shadow-[0_12px_40px_-24px_rgba(91,33,182,0.35)] sm:p-8">
-              <p className="text-sm font-semibold uppercase tracking-[0.2em] text-[#7a4bb8]">
-                Our process
-              </p>
-              <h2 className="mt-2 text-xl font-semibold text-[#230f35] sm:text-2xl">
-                We match the carpenter to your job—so your upgrade stays smooth.
-              </h2>
-              <p className="mt-3 max-w-2xl text-base leading-relaxed text-[#4d2e70]">
-                After you book and share your scope, we look at{" "}
-                <span className="font-semibold text-[#31184a]">skills</span>,{" "}
-                <span className="font-semibold text-[#31184a]">experience</span>,{" "}
-                <span className="font-semibold text-[#31184a]">location</span>, and{" "}
-                <span className="font-semibold text-[#31184a]">availability</span> to assign a crew member
-                who fits your project—not just whoever has an open slot. That means clearer communication,
-                fewer surprises, and workmanship aligned with what your space needs. Crews assigned to
-                your visit operate under our commercial general liability insurance and WSIB (Ontario
-                workplace insurance) coverage for eligible workers.
-              </p>
-              <ul className="mt-6 grid gap-4 text-sm leading-relaxed text-[#55337b] sm:grid-cols-2 sm:text-[15px]">
-                <li className="flex flex-col overflow-hidden rounded-xl border border-[#eddfff] bg-white shadow-[0_8px_28px_-18px_rgba(91,33,182,0.35)]">
-                  <div
-                    className="relative aspect-[5/3] bg-gradient-to-br from-[#faf8ff] via-[#efe8ff] to-[#e4dcff]"
-                    aria-hidden
-                  >
-                    <svg className="absolute inset-2 h-[calc(100%-1rem)] w-[calc(100%-1rem)]" viewBox="0 0 280 168" fill="none">
-                      <circle cx="140" cy="84" r="52" fill="#fff" stroke="#c9a5f1" strokeWidth="2" />
-                      <path d="M118 96 L128 76 L138 88 L158 64 L172 96" stroke="#6e3eb2" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" />
-                      <rect x="98" y="108" width="84" height="14" rx="6" fill="#ede4ff" stroke="#b894e8" strokeWidth="1.5" />
-                      <circle cx="112" cy="115" r="4" fill="#6e3eb2" opacity="0.6" />
-                      <circle cx="140" cy="115" r="4" fill="#6e3eb2" opacity="0.4" />
-                      <circle cx="168" cy="115" r="4" fill="#6e3eb2" opacity="0.25" />
-                    </svg>
-                    <span className="absolute left-3 top-3 rounded-full bg-white/90 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-[#6e3eb2] shadow-sm">
-                      Skills
-                    </span>
-                  </div>
-                  <div className="p-4">
-                    <p className="font-semibold text-[#31184a]">Right craft for the scope</p>
-                    <p className="mt-2">
-                      Trim, built-ins, and finishing details take different strengths—we pair your job with
-                      carpenters whose strengths align with the work you need done.
-                    </p>
-                  </div>
-                </li>
-                <li className="flex flex-col overflow-hidden rounded-xl border border-[#eddfff] bg-white shadow-[0_8px_28px_-18px_rgba(91,33,182,0.35)]">
-                  <div
-                    className="relative aspect-[5/3] bg-gradient-to-br from-[#fdfaff] via-[#f3ebff] to-[#eadcff]"
-                    aria-hidden
-                  >
-                    <svg className="absolute inset-2 h-[calc(100%-1rem)] w-[calc(100%-1rem)]" viewBox="0 0 280 168" fill="none">
-                      <rect x="56" y="36" width="168" height="100" rx="12" fill="#fff" stroke="#c9a5f1" strokeWidth="2" />
-                      <path d="M76 56 L204 56" stroke="#ede4ff" strokeWidth="8" strokeLinecap="round" />
-                      <path d="M76 80 L172 80" stroke="#f5efff" strokeWidth="8" strokeLinecap="round" />
-                      <path d="M76 104 L196 104" stroke="#f5efff" strokeWidth="8" strokeLinecap="round" />
-                      <path d="M204 72 L228 56 L228 112 Z" fill="#fde68a" stroke="#d97706" strokeWidth="1.5" />
-                      <circle cx="218" cy="72" r="5" fill="#fff" stroke="#b45309" strokeWidth="1" />
-                    </svg>
-                    <span className="absolute left-3 top-3 rounded-full bg-white/90 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-[#6e3eb2] shadow-sm">
-                      Experience
-                    </span>
-                  </div>
-                  <div className="p-4">
-                    <p className="font-semibold text-[#31184a]">Seasoned where it counts</p>
-                    <p className="mt-2">
-                      Similar projects in the rear view mirror reduce rework—we weigh relevant experience so
-                      your timeline and finishes benefit from carpenters who have done comparable work.
-                    </p>
-                  </div>
-                </li>
-                <li className="flex flex-col overflow-hidden rounded-xl border border-[#eddfff] bg-white shadow-[0_8px_28px_-18px_rgba(91,33,182,0.35)]">
-                  <div
-                    className="relative aspect-[5/3] bg-gradient-to-br from-[#f8f6ff] via-[#ebe4ff] to-[#dfd5ff]"
-                    aria-hidden
-                  >
-                    <svg className="absolute inset-2 h-[calc(100%-1rem)] w-[calc(100%-1rem)]" viewBox="0 0 280 168" fill="none">
-                      <ellipse cx="140" cy="92" rx="88" ry="52" fill="#faf6ff" stroke="#c9a5f1" strokeWidth="2" />
-                      <circle cx="140" cy="88" r="8" fill="#6e3eb2" stroke="#fff" strokeWidth="2" />
-                      <path d="M140 96 L140 118" stroke="#6e3eb2" strokeWidth="3" strokeLinecap="round" />
-                      <path d="M72 104 Q112 72 140 72 Q176 72 216 104" stroke="#b894e8" strokeWidth="2" strokeDasharray="6 6" fill="none" />
-                      <rect x="204" y="44" width="36" height="28" rx="6" fill="#fff" stroke="#6e3eb2" strokeWidth="1.75" />
-                      <path d="M216 54 L228 62 L216 68 Z" fill="#ede4ff" stroke="#6e3eb2" strokeWidth="1" />
-                    </svg>
-                    <span className="absolute left-3 top-3 rounded-full bg-white/90 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-[#6e3eb2] shadow-sm">
-                      Location
-                    </span>
-                  </div>
-                  <div className="p-4">
-                    <p className="font-semibold text-[#31184a]">Sensible routing to your address</p>
-                    <p className="mt-2">
-                      Service geography matters—we factor where your project is so crews spend less time in
-                      transit and more time on your upgrade.
-                    </p>
-                  </div>
-                </li>
-                <li className="flex flex-col overflow-hidden rounded-xl border border-[#eddfff] bg-white shadow-[0_8px_28px_-18px_rgba(91,33,182,0.35)]">
-                  <div
-                    className="relative aspect-[5/3] bg-gradient-to-br from-[#faf6ff] via-[#efe9ff] to-[#e2d8ff]"
-                    aria-hidden
-                  >
-                    <svg className="absolute inset-2 h-[calc(100%-1rem)] w-[calc(100%-1rem)]" viewBox="0 0 280 168" fill="none">
-                      <rect x="72" y="36" width="136" height="104" rx="12" fill="#fff" stroke="#c9a5f1" strokeWidth="2" />
-                      <rect x="88" y="52" width="104" height="72" rx="8" fill="#faf6ff" stroke="#dcc6fb" strokeWidth="1.5" />
-                      <rect x="96" y="62" width="22" height="18" rx="3" fill="#ede4ff" stroke="#6e3eb2" strokeWidth="1.25" />
-                      <rect x="126" y="62" width="22" height="18" rx="3" fill="#ede4ff" stroke="#b894e8" strokeWidth="1.25" opacity="0.6" />
-                      <rect x="156" y="62" width="22" height="18" rx="3" fill="#ede4ff" stroke="#b894e8" strokeWidth="1.25" opacity="0.35" />
-                      <rect x="96" y="88" width="88" height="10" rx="2" fill="#ede4ff" opacity="0.7" />
-                      <circle cx="200" cy="116" r="22" fill="#6e3eb2" opacity="0.92" />
-                      <path d="M200 106 L200 116 L206 122" stroke="#fff" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
-                    </svg>
-                    <span className="absolute left-3 top-3 rounded-full bg-white/90 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-[#6e3eb2] shadow-sm">
-                      Availability
-                    </span>
-                  </div>
-                  <div className="p-4">
-                    <p className="font-semibold text-[#31184a]">Schedules that actually fit</p>
-                    <p className="mt-2">
-                      Calendar-aware coordination helps avoid juggling—we align your preferred timing with
-                      carpenter availability so installs stay predictable from kickoff to walk-through.
-                    </p>
-                  </div>
-                </li>
-              </ul>
-              <p className="mt-6 text-xs text-[#6a4a8f]">
-                We finalize crew assignment after payment details and scope review—usually alongside your
-                confirmation messages.
-              </p>
-            </div>
-
             {!authUser ? (
               <div className="mt-10 rounded-2xl border border-[#dcc6fb] bg-gradient-to-br from-[#faf6ff] via-[#f5efff] to-[#ffffff] p-6 shadow-[0_12px_40px_-24px_rgba(91,33,182,0.45)] sm:p-8">
                 <p className="text-sm font-semibold uppercase tracking-[0.2em] text-[#7a4bb8]">
@@ -660,6 +557,53 @@ function HomeContent() {
                 </p>
               </div>
             ) : null}
+
+            <div className="mt-10 rounded-2xl border border-[#dcc6fb] bg-gradient-to-br from-[#ffffff] via-[#f9f5ff] to-[#f0e8ff] p-6 shadow-[0_12px_40px_-24px_rgba(91,33,182,0.35)] sm:p-8">
+              <p className="text-sm font-semibold uppercase tracking-[0.2em] text-[#7a4bb8]">
+                How it works
+              </p>
+              <h2 className="mt-2 text-xl font-semibold text-[#230f35] sm:text-2xl">
+                From photo to finished install in 4 steps
+              </h2>
+              <p className="mt-3 max-w-2xl text-base leading-relaxed text-[#4d2e70]">
+                No haggling, no mystery quotes. Every job runs on our insured crews, with commercial
+                general liability and WSIB (Ontario workplace insurance) coverage on eligible workers.
+              </p>
+              <ol className="mt-6 grid gap-4 text-sm leading-relaxed text-[#55337b] sm:grid-cols-2 sm:text-[15px]">
+                <li className="rounded-xl border border-[#eddfff] bg-white p-5 shadow-[0_8px_28px_-18px_rgba(91,33,182,0.35)]">
+                  <p className="flex h-9 w-9 items-center justify-center rounded-full bg-[#6e3eb2] text-base font-bold text-white">1</p>
+                  <p className="mt-3 font-semibold text-[#31184a]">Show us your space</p>
+                  <p className="mt-2">
+                    Upload photos and chat with Alex, our AI design consultant, to explore directions —
+                    free, no account needed to start.
+                  </p>
+                </li>
+                <li className="rounded-xl border border-[#eddfff] bg-white p-5 shadow-[0_8px_28px_-18px_rgba(91,33,182,0.35)]">
+                  <p className="flex h-9 w-9 items-center justify-center rounded-full bg-[#6e3eb2] text-base font-bold text-white">2</p>
+                  <p className="mt-3 font-semibold text-[#31184a]">Approve a fixed quote</p>
+                  <p className="mt-2">
+                    You get a detailed written proposal. The price we agree on is the price you pay —
+                    no hourly drift.
+                  </p>
+                </li>
+                <li className="rounded-xl border border-[#eddfff] bg-white p-5 shadow-[0_8px_28px_-18px_rgba(91,33,182,0.35)]">
+                  <p className="flex h-9 w-9 items-center justify-center rounded-full bg-[#6e3eb2] text-base font-bold text-white">3</p>
+                  <p className="mt-3 font-semibold text-[#31184a]">We handle the build</p>
+                  <p className="mt-2">
+                    An insured, WSIB-covered installer does the work — tidy site, careful cuts, progress
+                    photos along the way.
+                  </p>
+                </li>
+                <li className="rounded-xl border border-[#eddfff] bg-white p-5 shadow-[0_8px_28px_-18px_rgba(91,33,182,0.35)]">
+                  <p className="flex h-9 w-9 items-center justify-center rounded-full bg-[#6e3eb2] text-base font-bold text-white">4</p>
+                  <p className="mt-3 font-semibold text-[#31184a]">Walk through &amp; pay</p>
+                  <p className="mt-2">
+                    You approve the finished work before final payment. Anything not right gets fixed,
+                    not invoiced.
+                  </p>
+                </li>
+              </ol>
+            </div>
           </div>
         ) : null}
 
@@ -676,19 +620,16 @@ function HomeContent() {
                 Quoting &amp; billing
               </p>
               <h2 className="mt-2 text-xl font-semibold text-[#230f35] sm:text-2xl">
-                Straightforward pricing—with room for what the site reveals on the day.
+                One call-out fee. One hourly rate. Zero mystery.
               </h2>
               <p className="mt-3 max-w-2xl text-base leading-relaxed text-[#4d2e70]">
                 Every job starts with our{" "}
-                <span className="font-semibold text-[#31184a]">minimum call-out charge</span>, then moves
-                to labor at{" "}
-                <span className="font-semibold text-[#31184a]">$75 per hour</span> once work extends beyond
-                that window.{" "}
-                <span className="font-semibold text-[#31184a]">Materials</span> are tracked and billed
-                separately from labor so you can see lumber, hardware, finishes, and supplies clearly.
-                Before we swing tools, you&apos;ll get an{" "}
-                <span className="font-semibold text-[#31184a]">estimate of how long the work should take</span>
-                —helpful for budgeting and scheduling—but treat it as a planning guide, not a guarantee.
+                <span className="font-semibold text-[#31184a]">$150 minimum call-out</span>, then labor at{" "}
+                <span className="font-semibold text-[#31184a]">$75 per hour</span> beyond that window.{" "}
+                <span className="font-semibold text-[#31184a]">Materials</span> are billed separately so
+                you see lumber, hardware, and finishes clearly. Before we swing tools, you&apos;ll get an{" "}
+                <span className="font-semibold text-[#31184a]">estimated duration</span> for planning — and
+                a fixed written quote you approve first.
               </p>
               <p className="mt-4 max-w-2xl text-base leading-relaxed text-[#4d2e70]">
                 On this site today,{" "}
@@ -879,6 +820,69 @@ function HomeContent() {
           />
         ) : null}
       </section>
+
+      <footer className="border-t border-[#e9d9ff] bg-[#faf6ff] py-10">
+        <div className="mx-auto grid max-w-6xl gap-8 px-4 text-sm leading-relaxed text-[#55337b] sm:grid-cols-3 sm:px-6">
+          <div>
+            <p className="text-sm font-semibold uppercase tracking-[0.2em] text-[#7a4bb8]">
+              Level Up Install
+            </p>
+            <p className="mt-3">
+              Finish carpenter serving Toronto &amp; the GTA — shelving, built-ins, trim, and wall
+              upgrades with fixed upfront quotes.
+            </p>
+            <p className="mt-3">
+              <button
+                type="button"
+                onClick={() => navigateToSection("planner")}
+                className="font-semibold text-[#4a2381] underline decoration-[#c9a5f1] underline-offset-4 hover:text-[#3f1d70]"
+              >
+                Start your free design consult
+              </button>
+            </p>
+          </div>
+          <div>
+            <p className="text-sm font-semibold uppercase tracking-[0.2em] text-[#7a4bb8]">
+              Service area
+            </p>
+            <p className="mt-3">
+              Toronto · North York · Scarborough · Etobicoke · Mississauga · Markham · Vaughan ·
+              Richmond Hill
+            </p>
+            <p className="mt-2 text-xs text-[#6a4a8f]">
+              Elsewhere in the GTA? Ask — we&apos;ll confirm coverage when you book.
+            </p>
+          </div>
+          <div>
+            <p className="text-sm font-semibold uppercase tracking-[0.2em] text-[#7a4bb8]">
+              Explore
+            </p>
+            <ul className="mt-3 space-y-2">
+              <li>
+                <button type="button" onClick={() => navigateToSection("rates")} className="font-semibold text-[#4a2381] underline decoration-[#c9a5f1] underline-offset-4 hover:text-[#3f1d70]">
+                  Rates &amp; quoting
+                </button>
+              </li>
+              <li>
+                <button type="button" onClick={() => navigateToSection("planner")} className="font-semibold text-[#4a2381] underline decoration-[#c9a5f1] underline-offset-4 hover:text-[#3f1d70]">
+                  AI design planner
+                </button>
+              </li>
+              <li>
+                <button type="button" onClick={() => navigateToSection("reviews")} className="font-semibold text-[#4a2381] underline decoration-[#c9a5f1] underline-offset-4 hover:text-[#3f1d70]">
+                  Why Level Up Install
+                </button>
+              </li>
+            </ul>
+          </div>
+        </div>
+        <div className="mx-auto mt-8 max-w-6xl px-4 text-xs text-[#6a4a8f] sm:px-6">
+          <p>
+            Commercial general liability insurance &amp; WSIB coverage on eligible workers.
+            © {new Date().getFullYear()} Level Up Install · Toronto, Ontario
+          </p>
+        </div>
+      </footer>
     </main>
   );
 }

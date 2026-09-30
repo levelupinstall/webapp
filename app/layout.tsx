@@ -13,9 +13,9 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Level Up Install | Finish Carpentry",
+  title: "Level Up Install | Finish Carpenter Toronto & GTA",
   description:
-    "Book a finish carpenter with Level Up Install for premium detail work, transparent pricing, and mobile-friendly booking.",
+    "Toronto finish carpenter for shelving, built-ins, trim & wall upgrades. See your room redesigned by AI free, then get a fixed upfront quote. $150 call-out, $75/hr.",
 };
 
 export default function RootLayout({
