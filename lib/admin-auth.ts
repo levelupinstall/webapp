@@ -15,6 +15,13 @@ export function getAdminPassword() {
   return process.env.ADMIN_PASSWORD?.trim() || "";
 }
 
+/** Second admin credential reserved for Muse (the owner's AI assistant).
+ *  Accepts the same admin session; the owner can rotate or revoke it any
+ *  time by changing/removing the env var in Vercel. */
+export function getMuseAdminPassword() {
+  return process.env.MUSE_ADMIN_PASSWORD?.trim() || "";
+}
+
 export async function setAdminSessionCookie() {
   const token = jwt.sign({ role: "admin" } satisfies AdminPayload, getAdminSecret(), {
     expiresIn: "12h",

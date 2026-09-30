@@ -1,9 +1,9 @@
 import { NextResponse } from "next/server";
-import { getAdminPassword, setAdminSessionCookie } from "@/lib/admin-auth";
+import { getAdminPassword, getMuseAdminPassword, setAdminSessionCookie } from "@/lib/admin-auth";
 
 export async function POST(request: Request) {
-  const configured = getAdminPassword();
-  if (!configured) {
+  const configured = [getAdminPassword(), getMuseAdminPassword()].filter((p) => p.length > 0);
+  if (configured.length === 0) {
     return NextResponse.json(
       { error: "Admin access is not configured. Set ADMIN_PASSWORD in your environment." },
       { status: 503 },
@@ -18,7 +18,7 @@ export async function POST(request: Request) {
   }
 
   const password = String(body.password ?? "");
-  if (password !== configured) {
+  if (!configured.includes(password)) {
     return NextResponse.json({ error: "Invalid password." }, { status: 401 });
   }
 
