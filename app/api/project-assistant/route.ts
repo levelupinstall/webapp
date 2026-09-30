@@ -153,6 +153,28 @@ function messageRequestsVisualChange(
   ) {
     return true;
   }
+  // User providing NEW design information (answering the planner's questions).
+  // Style preferences, depth choices, purpose — these are visual details that
+  // should trigger an updated render, not just more chat.
+  if (
+    /\b(modern|traditional|contemporary|rustic|minimalist|clean\s+look|classic)\b/i.test(t) &&
+    /\b(style|look|feel|vibe|prefer|like)\b/i.test(t)
+  ) {
+    return true;
+  }
+  if (
+    /\b(\d+\s*(?:inch|inches|")\s*deep|deep\s+enough)\b/i.test(t)
+  ) {
+    return true;
+  }
+  // Short affirmative answers that confirm the planner's summary
+  // ("yes", "that's right", "looks good") after a spec confirmation
+  // mean "proceed with this design" — generate the visual.
+  if (
+    /^(yes|yeah|yep|yup|correct|that's\s+right|looks\s+good|sounds\s+good|perfect)\.?$/i.test(t.trim())
+  ) {
+    return true;
+  }
   return false;
 }
 
