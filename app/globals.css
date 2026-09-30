@@ -114,7 +114,7 @@ body {
   }
 
   .lu-tab {
-    @apply inline-flex items-center justify-center rounded-full px-4 py-2 text-xs font-semibold transition duration-200 sm:text-sm;
+    @apply inline-flex min-h-[44px] items-center justify-center rounded-full px-4 py-2 text-xs font-semibold transition duration-200 sm:text-sm;
   }
 
   .lu-tab-active {
@@ -298,4 +298,31 @@ body {
 }
 .scrollbar-none::-webkit-scrollbar {
   display: none;
+}
+
+/* Gentle hero entrance — one orchestrated moment; off for reduced motion */
+@keyframes lu-fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(14px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.lu-hero-enter {
+  animation: lu-fade-up 0.7s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.lu-hero-enter-delay {
+  animation: lu-fade-up 0.7s cubic-bezier(0.22, 1, 0.36, 1) 0.15s both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .lu-hero-enter,
+  .lu-hero-enter-delay {
+    animation: none;
+  }
 }

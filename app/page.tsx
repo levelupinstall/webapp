@@ -194,7 +194,8 @@ function HomeContent() {
                 onClick={() => navigateToSection("planner")}
                 className={`${lu.btnPrimary} !px-4 !py-2 sm:!px-5`}
               >
-                Get a Free Quote
+                <span className="sm:hidden">Free Quote</span>
+                <span className="hidden sm:inline">Get a Free Quote</span>
               </button>
               <button
                 type="button"
@@ -209,7 +210,7 @@ function HomeContent() {
       </div>
       <section className={lu.container}>
         <div className={`${lu.tabsBar} mb-6`}>
-          <div className="scrollbar-none flex gap-2 overflow-x-auto pb-0.5 [-webkit-overflow-scrolling:touch]">
+          <div className="scrollbar-none flex flex-nowrap gap-2 overflow-x-auto pb-0.5 [-webkit-overflow-scrolling:touch]">
             <button
               type="button"
               onClick={() => navigateToSection("overview")}
@@ -258,7 +259,7 @@ function HomeContent() {
           <div className={lu.card}>
             <div className="mb-8 overflow-hidden rounded-3xl border border-[#e6d7ff] bg-gradient-to-br from-[#ffffff] via-[#faf6ff] to-[#f0e8ff] shadow-[0_16px_48px_-24px_rgba(91,33,182,0.45)]">
               <div className="grid gap-6 p-6 sm:p-10 lg:grid-cols-2 lg:items-center">
-                <div>
+                <div className="lu-hero-enter">
                   <p className="text-sm font-semibold uppercase tracking-[0.2em] text-[#7a4bb8]">
                     Finish carpenter · Toronto &amp; the GTA
                   </p>
@@ -267,7 +268,7 @@ function HomeContent() {
                   </h1>
                   <p className="mt-4 max-w-xl text-base leading-relaxed text-[#4d2e70] sm:text-lg">
                     Shelving, built-ins, trim, and wall upgrades — see your room redesigned by AI
-                    before we lift a hammer. $150 call-out, $75/hr, upfront fixed quotes.
+                    before we lift a hammer. Fixed quotes, approved by you before we start.
                   </p>
                   <div className="mt-6 flex flex-col gap-3 sm:flex-row sm:flex-wrap">
                     <button
@@ -289,7 +290,7 @@ function HomeContent() {
                     Insured &amp; WSIB-covered · Serving Toronto &amp; the GTA · No-obligation quotes
                   </p>
                 </div>
-                <div className="overflow-hidden rounded-2xl border border-[#e6d7ff] bg-white shadow-[0_8px_24px_-16px_rgba(91,33,182,0.6)]">
+                <div className="lu-hero-enter-delay overflow-hidden rounded-2xl border border-[#e6d7ff] bg-white shadow-[0_8px_24px_-16px_rgba(91,33,182,0.6)]">
                   <Image
                     src="/hero-ai-render.jpg"
                     alt="AI-generated concept of dark walnut floating shelves in a living room"
@@ -566,8 +567,8 @@ function HomeContent() {
                 From photo to finished install in 4 steps
               </h2>
               <p className="mt-3 max-w-2xl text-base leading-relaxed text-[#4d2e70]">
-                No haggling, no mystery quotes. Every job runs on our insured crews, with commercial
-                general liability and WSIB (Ontario workplace insurance) coverage on eligible workers.
+                No haggling, no mystery quotes. Every job is backed by commercial general liability
+                insurance, with WSIB (Ontario workplace insurance) coverage on eligible workers.
               </p>
               <ol className="mt-6 grid gap-4 text-sm leading-relaxed text-[#55337b] sm:grid-cols-2 sm:text-[15px]">
                 <li className="rounded-xl border border-[#eddfff] bg-white p-5 shadow-[0_8px_28px_-18px_rgba(91,33,182,0.35)]">
@@ -590,7 +591,7 @@ function HomeContent() {
                   <p className="flex h-9 w-9 items-center justify-center rounded-full bg-[#6e3eb2] text-base font-bold text-white">3</p>
                   <p className="mt-3 font-semibold text-[#31184a]">We handle the build</p>
                   <p className="mt-2">
-                    An insured, WSIB-covered installer does the work — tidy site, careful cuts, progress
+                    Your carpenter does the work — tidy site, careful cuts, progress
                     photos along the way.
                   </p>
                 </li>
@@ -760,8 +761,8 @@ function HomeContent() {
             <div className="mt-8 rounded-2xl border border-[#dcc6fb] bg-[#faf8ff] p-5 sm:p-6">
               <h3 className="text-lg font-semibold text-[#230f35]">Ready to explore?</h3>
               <p className="mt-2 text-sm leading-relaxed text-[#4d2e70] sm:text-[15px]">
-                Chat with <span className="font-semibold text-[#31184a]">{PLANNER_ASSISTANT_NAME}</span> in the
-                planner to refine how your project could look. When you&apos;re happy with the design direction, Level Up will{" "}
+                Chat with <span className="font-semibold text-[#31184a]">{PLANNER_ASSISTANT_NAME}</span>{" "}
+                in the planner to refine how your project could look. When you&apos;re happy with the design direction, Level Up will{" "}
                 <span className="font-semibold text-[#31184a]">review your designs</span> and contact you with a{" "}
                 <span className="font-semibold text-[#31184a]">more detailed proposal for approval</span>—pricing and next steps move forward from there.
               </p>
@@ -838,6 +839,14 @@ function HomeContent() {
               >
                 Start your free design consult
               </button>
+            </p>
+            <p className="mt-3">
+              <a
+                href="mailto:info@levelupinstall.ca"
+                className="font-semibold text-[#4a2381] underline decoration-[#c9a5f1] underline-offset-4 hover:text-[#3f1d70]"
+              >
+                info@levelupinstall.ca
+              </a>
             </p>
           </div>
           <div>

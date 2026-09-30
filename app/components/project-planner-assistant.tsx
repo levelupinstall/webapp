@@ -119,13 +119,20 @@ async function restoreSketchSpacePhotosFromSession(
   }
 }
 
-/** Opening turn — upload-first; server-side first-render rules unchanged. */
+/** Opening turn — short, states capabilities; starter chips render below it. */
 function initialPlannerAssistantMessage(): ChatMessage {
   return {
     role: "assistant",
-    content: `Hi — I'm ${PLANNER_ASSISTANT_NAME}, Level Up's planning consultant. Upload a few photos of the space when you can (wide shots help most). Then I'll ask just three quick things: what you're building and your budget, your style vibe, and your rough dimensions — all in plain language. Prefer to describe the room first? Tell me which wall you're focused on and add pictures whenever you're ready.`,
+    content: `Hi — I'm ${PLANNER_ASSISTANT_NAME}, your planning consultant. I help you explore what your space could look like, then generate concept visuals of the direction. Upload a photo of the room to begin, or tap a starter below.`,
   };
 }
+
+/** Clickable starter prompts (NN/g: no blank-state anxiety). */
+const SUGGESTED_STARTERS = [
+  "I want floating shelves in my living room",
+  "Help me plan a home office feature wall",
+  "What can I do with an awkward empty hallway?",
+] as const;
 
 function isLikelyImageFile(file: File): boolean {
   const t = (file.type || "").toLowerCase();
@@ -320,8 +327,14 @@ export default function ProjectPlannerAssistant({
 
   async function handleSubmit(event: FormEvent) {
     event.preventDefault();
+    await sendPlannerMessage();
+  }
 
-    if (!draft.trim() && images.length === 0) {
+  /** Sends the draft — or a tapped starter chip — as the next user turn. */
+  async function sendPlannerMessage(presetText?: string) {
+    const text = presetText?.trim() || draft.trim();
+
+    if (!text && images.length === 0) {
       setError("Type a message or add a photo.");
       return;
     }
@@ -333,8 +346,7 @@ export default function ProjectPlannerAssistant({
     const draftBefore = draft;
 
     const userMessage =
-      draft.trim() ||
-      "I'm sharing a photo of the space — please take a look.";
+      text || "I'm sharing a photo of the space — please take a look.";
 
     const lastAssistantBeforeSend = [...messages]
       .reverse()
@@ -870,16 +882,37 @@ export default function ProjectPlannerAssistant({
         </div>
       ) : null}
       <h2 className={lu.headingLg}>
-        Meet {PLANNER_ASSISTANT_NAME}, your planning consultant
+        Meet {PLANNER_ASSISTANT_NAME},{" "}your planning consultant
       </h2>
-      <p className={`mt-3 ${lu.body}`}>
-        Conversational guidance from a finish-carpentry mindset — budget and practical constraints
-        matter early. {PLANNER_ASSISTANT_NAME} asks tailored questions (sizes, what you already bought,
-        closet habits, IKEA lines when relevant) and invites photos when it helps; if you skip photos,
-        you may still see a neutral blank-room sketch so you can react visually. Refinements stay in
-        chat until the direction feels right — no prices or store-specific products here, just the look.
-        When you&apos;re ready to proceed, Level Up reviews your designs and reaches out with a detailed
-        proposal for approval.
+      <ul className="mt-4 space-y-2.5 text-[15px] leading-relaxed text-[#4d2e70] sm:text-base">
+        <li className="flex gap-2.5">
+          <span className={lu.bullet} aria-hidden />
+          <span>
+            <span className="font-semibold text-[#31184a]">Show your space.</span>{" "}
+            Upload a few room photos — wide shots help most. No photos handy? You&apos;ll still get
+            a blank-room sketch to react to.
+          </span>
+        </li>
+        <li className="flex gap-2.5">
+          <span className={lu.bullet} aria-hidden />
+          <span>
+            <span className="font-semibold text-[#31184a]">Answer three quick questions.</span>{" "}
+            What you&apos;re building and your budget, your style, your rough dimensions — plain
+            language is fine.
+          </span>
+        </li>
+        <li className="flex gap-2.5">
+          <span className={lu.bullet} aria-hidden />
+          <span>
+            <span className="font-semibold text-[#31184a]">Refine the look together.</span>{" "}
+            No prices or product pitches in this chat — just design. When you love a direction, we
+            send a fixed-price proposal for your approval.
+          </span>
+        </li>
+      </ul>
+      <p className="mt-4 text-xs leading-relaxed text-[#6a4a8f]">
+        Your photos stay between you and Level Up — used only for your design. A real person
+        reviews every submission before you receive a quote.
       </p>
 
       <div className={`mt-6 ${lu.chatScroll}`}>
@@ -929,6 +962,20 @@ export default function ProjectPlannerAssistant({
             ) : null}
           </div>
         ))}
+        {messages.length === 1 && messages[0]?.role === "assistant" && !isLoading ? (
+          <div className="flex flex-wrap gap-2 pt-1" aria-label="Suggested starting prompts">
+            {SUGGESTED_STARTERS.map((starter) => (
+              <button
+                key={starter}
+                type="button"
+                onClick={() => void sendPlannerMessage(starter)}
+                className={`${lu.btnGhost} !py-3 text-left`}
+              >
+                {starter}
+              </button>
+            ))}
+          </div>
+        ) : null}
         {isLoading ? (
           <div className={`${lu.chatAssistant} animate-pulse text-[#6a4a8f]`}>
             {PLANNER_ASSISTANT_NAME} is thinking…

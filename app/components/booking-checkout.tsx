@@ -105,50 +105,68 @@ export default function BookingCheckout({
       </p>
 
       <form className="mt-6 space-y-4" onSubmit={handleSubmit}>
-        <div className="grid gap-3 sm:grid-cols-2">
-          <input
-            required
-            value={form.fullName}
-            onChange={(event) =>
-              setForm((prev) => ({ ...prev, fullName: event.target.value }))
-            }
-            placeholder="Full Name"
-            className={lu.input}
-          />
-          <input
-            required
-            type="email"
-            value={form.email}
-            onChange={(event) =>
-              setForm((prev) => ({ ...prev, email: event.target.value }))
-            }
-            placeholder="Email"
-            className={lu.input}
-          />
-          <input
-            required
-            value={form.phone}
-            onChange={(event) =>
-              setForm((prev) => ({ ...prev, phone: event.target.value }))
-            }
-            placeholder="Phone Number"
-            className={lu.input}
-          />
-          <input
-            required
-            value={form.projectAddress}
-            onChange={(event) =>
-              setForm((prev) => ({
-                ...prev,
-                projectAddress: event.target.value,
-              }))
-            }
-            placeholder="Project Address"
-            className={lu.input}
-          />
+        <div className="grid gap-4 sm:grid-cols-2">
+          <label className="block">
+            <span className="mb-1 block text-sm font-medium text-[#4a2381]">Full name</span>
+            <input
+              required
+              autoComplete="name"
+              value={form.fullName}
+              onChange={(event) =>
+                setForm((prev) => ({ ...prev, fullName: event.target.value }))
+              }
+              placeholder="Jane Smith"
+              className={lu.input}
+            />
+          </label>
+          <label className="block">
+            <span className="mb-1 block text-sm font-medium text-[#4a2381]">Email</span>
+            <input
+              required
+              type="email"
+              autoComplete="email"
+              value={form.email}
+              onChange={(event) =>
+                setForm((prev) => ({ ...prev, email: event.target.value }))
+              }
+              placeholder="jane@example.com"
+              className={lu.input}
+            />
+          </label>
+          <label className="block">
+            <span className="mb-1 block text-sm font-medium text-[#4a2381]">Phone number</span>
+            <input
+              required
+              type="tel"
+              autoComplete="tel"
+              inputMode="tel"
+              value={form.phone}
+              onChange={(event) =>
+                setForm((prev) => ({ ...prev, phone: event.target.value }))
+              }
+              placeholder="(416) 555-0134"
+              className={lu.input}
+            />
+          </label>
+          <label className="block">
+            <span className="mb-1 block text-sm font-medium text-[#4a2381]">Project address</span>
+            <input
+              required
+              autoComplete="street-address"
+              value={form.projectAddress}
+              onChange={(event) =>
+                setForm((prev) => ({
+                  ...prev,
+                  projectAddress: event.target.value,
+                }))
+              }
+              placeholder="123 Main St, Toronto"
+              className={lu.input}
+            />
+          </label>
           <label className="sm:col-span-2">
             <span className="mb-1 block text-sm font-medium text-[#4a2381]">
-              Preferred Service Date
+              Preferred service date
             </span>
             <input
               required
@@ -165,15 +183,18 @@ export default function BookingCheckout({
           </label>
         </div>
 
-        <textarea
-          value={form.projectDetails}
-          onChange={(event) =>
-            setForm((prev) => ({ ...prev, projectDetails: event.target.value }))
-          }
-          placeholder="Project details (scope, room, goals — your AI brief is prefilled when you start from the planner)"
-          rows={4}
-          className={lu.textarea}
-        />
+        <label className="block">
+          <span className="mb-1 block text-sm font-medium text-[#4a2381]">Project details</span>
+          <textarea
+            value={form.projectDetails}
+            onChange={(event) =>
+              setForm((prev) => ({ ...prev, projectDetails: event.target.value }))
+            }
+            placeholder="Scope, room, goals — your AI brief is prefilled when you start from the planner"
+            rows={4}
+            className={lu.textarea}
+          />
+        </label>
 
         <div className="rounded-2xl border border-[#dcc6fb] bg-white p-4">
           <h4 className="font-semibold text-[#2f1748]">Terms of Service</h4>
@@ -209,6 +230,9 @@ export default function BookingCheckout({
             ? "Redirecting to secure checkout..."
             : "Book — pay $150 call-out (Stripe)"}
         </button>
+        <p className="text-center text-xs leading-relaxed text-[#6a4a8f]">
+          Secure payment via Stripe. The $150 call-out fee applies to your project total.
+        </p>
       </form>
     </div>
   );
