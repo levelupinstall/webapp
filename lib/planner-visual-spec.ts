@@ -1101,7 +1101,17 @@ export function buildImageRenderDirective(
   if (spec.shelfBoardSpanAlongWallIn !== null) {
     layoutLines.push(`Each shelf board ≈ ${spec.shelfBoardSpanAlongWallIn}" long along the wall.`);
   }
-  if (spec.shelfVerticalSpacingIn !== null) {
+  // Horizontal arrangement: user explicitly wants shelves side by side on the same
+  // level (not stacked vertically). This overrides the default vertical-tier assumption.
+  const wantsHorizontalRow =
+    /\b(side\s+by\s+side|same\s+level|in\s+a\s+row|horizontally\s+aligned|horizontal\s+row)\b/i.test(
+      ctx.extractionTranscript,
+    );
+  if (wantsHorizontalRow) {
+    layoutLines.push(
+      `ARRANGEMENT: All ${spec.shelfCount ?? ""} shelves in a SINGLE HORIZONTAL ROW at the SAME HEIGHT \u2014 side by side, NOT stacked vertically. This is the most important layout instruction.`,
+    );
+  } else if (spec.shelfVerticalSpacingIn !== null) {
     layoutLines.push(`≈ ${spec.shelfVerticalSpacingIn}" vertical spacing between shelf tiers.`);
   }
   if (spec.scopeNotes?.trim()) {
