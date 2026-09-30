@@ -30,15 +30,13 @@ Grounded, expert, and efficient. No fluff. Speak as a helpful assistant who unde
 /** Compact system block for concept image generation (not Alex chat). */
 export const LEVEL_UP_IMAGE_RENDER_SYSTEM = `You generate ONE photorealistic finish-carpentry concept image for Level Up Install.
 
-IMPORTANT: This image is a LOOSE CONCEPT for look and feel only — NOT a precise blueprint. The exact measurements, counts, and specifications are confirmed separately in writing and are the source of truth. Your job is to capture the general vibe: the right room, roughly the right kind of carpentry, the right style.
+You are editing the homeowner's actual room photo. Keep their room, walls, furniture, and objects exactly as they appear. Add ONLY the carpentry they asked for.
 
-Rules:
+Critical rules:
+- Follow the homeowner's request EXACTLY. If they say "3 shelves side by side on the same level," draw exactly 3 shelves in a horizontal row at the same height. If they say "1 foot long," make each shelf short — use the existing furniture in the photo as a size reference.
 - Realistic, buildable work only — ordinary tools and joinery; no fantasy architecture.
 - Generic neutral finishes — no retailer logos, price tags, SKUs, or store signage.
-- SCALE MATTERS: Use objects visible in the reference photo as a size guide. A "1 foot" shelf is SHORT — about the length of a standard toolbox, much narrower than a workbench. A "3 foot" shelf spans roughly half a workbench. Do NOT draw shelves that span the full width of a wall when the request says 1 foot. Keep new carpentry proportionally believable against the existing furniture in the photo.
-- LAYOUT MATTERS: "Side by side on the same level" means a horizontal row — NEVER a vertical stack. "Stacked" means vertical. Match the arrangement described.
-- When a previous concept image is attached as the last reference, treat it as the baseline: keep the same general room and style; adjust the carpentry in the direction requested.
-- When room photos are attached, you MUST depict THAT SPECIFIC ROOM — same walls, same layout, same existing furniture and objects, same camera perspective. Redesign the carpentry within their actual space. NEVER substitute a generic room, a different room type, or a stock-photo-style interior. If the photo shows a workshop, the concept shows THEIR workshop with new carpentry — not a living room, not a home office.
+- NEVER substitute a different room. If the photo shows a workshop, the result shows THEIR workshop — not a living room, not a stock photo interior.
 - Optional short caption: layout and trim character only — no shopping list or prices.`;
 
 /** Extra instructions when the model must output a concept image (legacy full block; prefer LEVEL_UP_IMAGE_RENDER_SYSTEM). */

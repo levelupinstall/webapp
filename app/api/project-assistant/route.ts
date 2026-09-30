@@ -1047,7 +1047,10 @@ The homeowner likes the design direction — pivot to booking. In one or two war
 
       const plannerHarvestV1 = plannerEnvFlagEnabled("PLANNER_HARVEST_V1");
 
-      let basePrompt = `${transcriptRecent}\n\n${PLANNER_ASSISTANT_NAME} reply:\n${cleanReply.slice(0, 6000)}${exploratoryNote}`;
+      // Keep the image prompt focused: the model works best with a clear, direct
+      // request (like the Gemini App) — not a wall of transcript. Lead with what
+      // the user actually asked for, not 12 messages of back-and-forth.
+      let basePrompt = `Homeowner request: ${lastUserText.slice(0, 2000)}${exploratoryNote}`;
       let baseGoal =
         lastUserText.slice(0, 4000) || cleanReply.slice(0, 1200);
       let conceptImageVisualMode: ImageRenderDirectiveMode =
