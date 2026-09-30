@@ -77,6 +77,14 @@ export async function createFormalProposalIntakeJob(params: {
     if (assigned) carpenterId = assigned;
   }
   if (!carpenterId) {
+    // Prefer Tom's account (business owner) over test accounts.
+    const tom = await prisma.carpenterAccount.findFirst({
+      where: { email: "info@levelupinstall.ca" },
+      select: { id: true },
+    });
+    carpenterId = tom?.id ?? null;
+  }
+  if (!carpenterId) {
     const row = await prisma.carpenterAccount.findFirst({
       orderBy: { createdAt: "asc" },
       select: { id: true },
