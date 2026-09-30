@@ -1300,14 +1300,25 @@ The homeowner likes the design direction — pivot to booking. In one or two war
               ? "\n\n(The shelf size or position must be visibly different from the baseline image — not a duplicate.)"
               : "";
 
+          // Direct horizontal layout override: if the user explicitly asked for
+          // side-by-side/same-level, inject an unmissable instruction. The visual
+          // spec pipeline defaults to vertical tiers, so this bypasses it.
+          const wantsHorizontalRowDirect =
+            /\b(side\s+by\s+side|same\s+level|in\s+a\s+row|horizontally\s+aligned|horizontal\s+row|all\s+in\s+a\s+row)\b/i.test(
+              lastUserText,
+            );
+          const horizontalLayoutOverride = wantsHorizontalRowDirect
+            ? "\n\nCRITICAL LAYOUT: Draw the shelves in ONE HORIZONTAL ROW — all at the SAME HEIGHT, SIDE BY SIDE. Do NOT stack them vertically. Do NOT arrange them in tiers."
+            : "";
+
           const userGoalAug =
             attempt === 0
-              ? `${baseGoal}${extraGoalSuffix}`
+              ? `${baseGoal}${horizontalLayoutOverride}${extraGoalSuffix}`
               : attempt === 1
-                ? `${baseGoal}\n\n(Second attempt: output must include one clear IMAGE part showing the finish-carpentry concept.)${geometryRetryHint}${extraGoalSuffix}`
+                ? `${baseGoal}\n\n(Second attempt: output must include one clear IMAGE part showing the finish-carpentry concept.)${geometryRetryHint}${horizontalLayoutOverride}${extraGoalSuffix}`
                 : attempt === 2
-                  ? `${baseGoal}\n\n(Third attempt: mandatory — emit at least one IMAGE part; no text-only replies; prioritize a single clear finish-carpentry concept render.)${geometryRetryHint}${extraGoalSuffix}`
-                  : `${baseGoal}\n\n(Fourth attempt: you MUST return one IMAGE inlineData part — no text-only response; single clearest concept render.)${geometryRetryHint}${extraGoalSuffix}`;
+                  ? `${baseGoal}\n\n(Third attempt: mandatory — emit at least one IMAGE part; no text-only replies; prioritize a single clear finish-carpentry concept render.)${geometryRetryHint}${horizontalLayoutOverride}${extraGoalSuffix}`
+                  : `${baseGoal}\n\n(Fourth attempt: you MUST return one IMAGE inlineData part — no text-only response; single clearest concept render.)${geometryRetryHint}${horizontalLayoutOverride}${extraGoalSuffix}`;
 
           const renderPrep = buildGeminiConceptImagePromptText({
             promptContext: basePrompt,
