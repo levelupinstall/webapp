@@ -175,6 +175,14 @@ function messageRequestsVisualChange(
   ) {
     return true;
   }
+  // Count changes ("make it 3 shelves", "just do 3", "actually make it 2").
+  // The user is revising the quantity — this needs a new visual.
+  if (
+    /\b(make\s+it|just\s+do|actually\s+make\s+it|change\s+it\s+to)\s+(2|3|4|5|6)\b/i.test(t) ||
+    /\b(2|3|4|5|6)\s+shelves?\b/i.test(t)
+  ) {
+    return true;
+  }
   return false;
 }
 
