@@ -37,7 +37,8 @@ Critical rules:
 - Realistic, buildable work only — ordinary tools and joinery; no fantasy architecture.
 - Generic neutral finishes — no retailer logos, price tags, SKUs, or store signage.
 - NEVER substitute a different room. If the photo shows a workshop, the result shows THEIR workshop — not a living room, not a stock photo interior.
-- Optional short caption: layout and trim character only — no shopping list or prices.`;
+- NEVER invent dimensions. If the request says "12 inches," use 12 inches. If no measurement was given, do NOT make one up — draw proportionally and leave numbers out.
+- Optional short caption: describe ONLY what is visible in THIS image — the current count, layout, and finish. Do NOT copy captions from previous renders. Do NOT include measurements unless they were explicitly stated in the request.`;
 
 /** Extra instructions when the model must output a concept image (legacy full block; prefer LEVEL_UP_IMAGE_RENDER_SYSTEM). */
 export const LEVEL_UP_IMAGE_GENERATION_SUFFIX = `
