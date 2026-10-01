@@ -206,11 +206,52 @@ function HomeContent() {
                   >
                     Bookings
                   </button>
+                  <div className="my-1 border-t border-[#e8d9ff]" aria-hidden />
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setMenuOpen(false);
+                      navigateToSection("overview");
+                    }}
+                    className={lu.navMenuItem}
+                  >
+                    Overview
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setMenuOpen(false);
+                      navigateToSection("reviews");
+                    }}
+                    className={lu.navMenuItem}
+                  >
+                    Why Us
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setMenuOpen(false);
+                      navigateToSection("rates");
+                    }}
+                    className={lu.navMenuItem}
+                  >
+                    Rates
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setMenuOpen(false);
+                      navigateToSection("planner");
+                    }}
+                    className={lu.navMenuItem}
+                  >
+                    Planner
+                  </button>
                 </div>
               ) : null}
             </div>
           ) : (
-            <div className="flex shrink-0 items-center gap-3">
+            <div className="relative flex shrink-0 items-center gap-2 sm:gap-3">
               <button
                 type="button"
                 onClick={() => navigateToSection("planner")}
@@ -221,62 +262,72 @@ function HomeContent() {
               </button>
               <button
                 type="button"
-                onClick={() => openAuth("login")}
-                className="text-sm font-semibold text-[#5b3292] underline-offset-4 hover:underline"
+                onClick={() => setMenuOpen((prev) => !prev)}
+                className={`${lu.btnPrimary} !px-3 !py-2 sm:!px-4`}
+                aria-label="Open menu"
               >
-                Log in
+                Menu
               </button>
+              {menuOpen ? (
+                <div className={lu.navMenu}>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setMenuOpen(false);
+                      navigateToSection("overview");
+                    }}
+                    className={lu.navMenuItem}
+                  >
+                    Overview
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setMenuOpen(false);
+                      navigateToSection("reviews");
+                    }}
+                    className={lu.navMenuItem}
+                  >
+                    Why Us
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setMenuOpen(false);
+                      navigateToSection("rates");
+                    }}
+                    className={lu.navMenuItem}
+                  >
+                    Rates
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setMenuOpen(false);
+                      navigateToSection("planner");
+                    }}
+                    className={lu.navMenuItem}
+                  >
+                    Planner
+                  </button>
+                  <div className="my-1 border-t border-[#e8d9ff]" aria-hidden />
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setMenuOpen(false);
+                      openAuth("login");
+                    }}
+                    className={lu.navMenuItem}
+                  >
+                    Log in
+                  </button>
+                </div>
+              ) : null}
             </div>
           )}
         </div>
       </div>
       <section className={lu.container}>
-        <div className={`${lu.tabsBar} mb-6`}>
-          <div className="scrollbar-none flex flex-nowrap gap-2 overflow-x-auto pb-0.5 [-webkit-overflow-scrolling:touch]">
-            <button
-              type="button"
-              onClick={() => navigateToSection("overview")}
-              className={`${sectionButtonClass("overview")} shrink-0 whitespace-nowrap`}
-            >
-              Overview
-            </button>
-            <button
-              type="button"
-              onClick={() => navigateToSection("reviews")}
-              className={`${sectionButtonClass("reviews")} shrink-0 whitespace-nowrap`}
-            >
-              Why Us
-            </button>
-            <button
-              type="button"
-              onClick={() => navigateToSection("rates")}
-              className={`${sectionButtonClass("rates")} shrink-0 whitespace-nowrap`}
-            >
-              Rates
-            </button>
-            <button
-              type="button"
-              onClick={() => navigateToSection("planner")}
-              className={`${sectionButtonClass("planner")} shrink-0 whitespace-nowrap`}
-            >
-              Planner
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                if (authUser) {
-                  openAccountView("saved-projects");
-                } else {
-                  openAuth("login");
-                }
-              }}
-              className={`${lu.btnSecondary} shrink-0 whitespace-nowrap`}
-            >
-              Saved Designs
-            </button>
-          </div>
-        </div>
-
         {currentSection === "overview" ? (
           <div className={lu.card}>
             <div className="mb-8 overflow-hidden rounded-3xl border border-[#e6d7ff] bg-gradient-to-br from-[#ffffff] via-[#faf6ff] to-[#f0e8ff] shadow-[0_16px_48px_-24px_rgba(91,33,182,0.45)]">
