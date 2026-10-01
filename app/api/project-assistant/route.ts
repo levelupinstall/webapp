@@ -668,7 +668,20 @@ export async function POST(request: Request) {
       .filter((m) => m.role === "user")
       .map((m) => m.content)
       .join("\n");
-    const intakeHasBudget = hasBudgetContextInText(allUserText);
+    const allAssistantText = messages
+      .filter((m) => m.role === "assistant")
+      .map((m) => m.content)
+      .join("\n")
+      .toLowerCase();
+    // If the AI already asked about budget, treat it as known so the prompt
+    // builder emits "DO NOT ASK AGAIN" instead of "budget missing, ask!".
+    const aiAlreadyAskedBudget =
+      allAssistantText.includes("budget") ||
+      allAssistantText.includes("how much") ||
+      allAssistantText.includes("spend") ||
+      allAssistantText.includes("price range");
+    const intakeHasBudget =
+      hasBudgetContextInText(allUserText) || aiAlreadyAskedBudget;
     const intakeHasPhone = hasPhoneNumber(allUserText);
     const intakeHasCallWindow = hasCallWindow(allUserText);
     const northStarReadyForPhotoPrompt = hasEarlyPhotoInviteContext(allUserText);
