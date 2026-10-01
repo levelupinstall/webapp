@@ -871,57 +871,26 @@ export default function ProjectPlannerAssistant({
 
   return (
     <section
-      className={`mt-8 ${lu.panel}`}
+      className="flex min-h-[70vh] flex-col rounded-3xl border border-[#e8d9ff] bg-white/80 shadow-sm"
       data-planner-work-category={workCategory ?? ""}
       data-planner-style-preference={stylePreference ?? ""}
     >
-      {welcome ? (
-        <div className={`mb-6 ${lu.alertSuccess} px-5 py-4 sm:px-6`}>
-          <p className="text-lg font-semibold text-[#1a4d2e] sm:text-xl">
-            Welcome, {welcome}
+      {/* Compact chat header */}
+      <div className="flex items-center gap-3 border-b border-[#e8d9ff] px-4 py-3 sm:px-5">
+        <div className="flex h-10 w-10 items-center justify-center rounded-full bg-[#6e3eb2] text-lg font-bold text-white">
+          A
+        </div>
+        <div className="min-w-0 flex-1">
+          <p className="truncate text-base font-semibold text-[#31184a]">
+            {PLANNER_ASSISTANT_NAME}
           </p>
-          <p className="mt-2 text-sm leading-relaxed text-[#2d6a45]">
-            You&apos;re signed in — continue your project plan with {PLANNER_ASSISTANT_NAME}. When the assistant
-            confirms your design and asks if you&apos;re ready for the next stage, you&apos;ll see an in-chat{" "}
-            <strong className="font-semibold">Submit design for review</strong> button.
+          <p className="text-xs text-[#6a4a8f]">
+            Planning consultant • Concept visuals, no prices in chat
           </p>
         </div>
-      ) : null}
-      <h2 className={lu.headingLg}>
-        Meet {PLANNER_ASSISTANT_NAME},{" "}your planning consultant
-      </h2>
-      <ul className="mt-4 space-y-2.5 text-[15px] leading-relaxed text-[#4d2e70] sm:text-base">
-        <li className="flex gap-2.5">
-          <span className={lu.bullet} aria-hidden />
-          <span>
-            <span className="font-semibold text-[#31184a]">Show your space.</span>{" "}
-            Upload a few room photos — wide shots help most. No photos handy? You&apos;ll still get
-            a blank-room sketch to react to.
-          </span>
-        </li>
-        <li className="flex gap-2.5">
-          <span className={lu.bullet} aria-hidden />
-          <span>
-            <span className="font-semibold text-[#31184a]">Answer three quick questions.</span>{" "}
-            What you&apos;re building and your budget, your style, your rough dimensions — plain
-            language is fine.
-          </span>
-        </li>
-        <li className="flex gap-2.5">
-          <span className={lu.bullet} aria-hidden />
-          <span>
-            <span className="font-semibold text-[#31184a]">Refine the look together.</span>{" "}
-            No prices or product pitches in this chat — just design. When you love a direction, we
-            send a fixed-price proposal for your approval.
-          </span>
-        </li>
-      </ul>
-      <p className="mt-4 text-xs leading-relaxed text-[#6a4a8f]">
-        Your photos stay between you and Level Up — used only for your design. A real person
-        reviews every submission before you receive a quote.
-      </p>
+      </div>
 
-      <div className={`mt-6 ${lu.chatScroll}`}>
+      <div className={`${lu.chatScroll} flex-1 px-4 py-4 sm:px-5`}>
         {messages.map((message, index) => (
           <div
             key={`${message.role}-${index}`}
@@ -997,37 +966,23 @@ export default function ProjectPlannerAssistant({
         <div ref={scrollAnchorRef} />
       </div>
 
-      <form id="levelup-planner-form" className="mt-5 space-y-4" onSubmit={handleSubmit}>
+      <form id="levelup-planner-form" onSubmit={handleSubmit} className="border-t border-[#e8d9ff] bg-white/60 px-4 py-3 sm:px-5">
         {photoInviteActive ? (
-          <div className={lu.photoZone}>
-            <p className="text-sm text-[#4d2e70]">
-              <span className="font-semibold text-[#2f1748]">
-                {PLANNER_ASSISTANT_NAME} asked for photos.
-              </span>{" "}
-              Share pictures of your <strong className="text-[#4d2e70]">space</strong> and, if you already have materials or kits, photos of{" "}
-              <strong className="text-[#4d2e70]">those items</strong> too — upload from your gallery or use your camera (
-              up to {MAX_IMAGES} photos per send, {MAX_IMAGE_MB}MB each).
-            </p>
-            <p className="text-xs leading-relaxed text-[#6a4a8f]">
-              Choose photos, preview them below, then tap{" "}
-              <strong className="text-[#4d2e70]">Send photos</strong> here or{" "}
-              <strong className="text-[#4d2e70]">Send</strong> under your message — both finalize the upload.
-              Large gallery shots are resized automatically so they send reliably.
-            </p>
-            <div className="flex flex-wrap gap-2">
+          <div className="mb-3 rounded-2xl border border-dashed border-[#cbb8e8] bg-[#faf7ff] px-3 py-2.5">
+            <div className="flex flex-wrap items-center gap-2">
               <button
                 type="button"
                 onClick={() => galleryInputRef.current?.click()}
-                className={lu.btnGhost}
+                className="inline-flex items-center gap-1.5 rounded-full border border-[#6e3eb2] bg-white px-4 py-2 text-sm font-medium text-[#5b3292] transition hover:bg-[#f5efff]"
               >
-                Upload photo
+                <span aria-hidden>📷</span> Upload photo
               </button>
               <button
                 type="button"
                 onClick={() => cameraInputRef.current?.click()}
-                className={lu.btnGhost}
+                className="inline-flex items-center gap-1.5 rounded-full border border-[#6e3eb2] bg-white px-4 py-2 text-sm font-medium text-[#5b3292] transition hover:bg-[#f5efff]"
               >
-                Take photo
+                <span aria-hidden>📸</span> Take photo
               </button>
               <input
                 ref={galleryInputRef}
@@ -1045,10 +1000,13 @@ export default function ProjectPlannerAssistant({
                 className="hidden"
                 onChange={(event) => handleFilesChange(event.target.files)}
               />
+              <span className="text-xs text-[#6a4a8f]">
+                Up to {MAX_IMAGES} photos, {MAX_IMAGE_MB}MB each
+              </span>
             </div>
 
             {previews.length > 0 ? (
-              <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+              <div className="mt-2.5 grid grid-cols-4 gap-2">
                 {previews.map((preview, index) => (
                   <div
                     key={`${preview.file.name}-${index}`}
@@ -1057,63 +1015,56 @@ export default function ProjectPlannerAssistant({
                     <Image
                       src={preview.url}
                       alt={preview.file.name}
-                      width={320}
-                      height={160}
+                      width={160}
+                      height={120}
                       unoptimized
-                      className="h-24 w-full object-cover"
+                      className="h-16 w-full object-cover"
                     />
                     <button
                       type="button"
                       onClick={() => removeImage(index)}
-                      className="absolute right-1 top-1 rounded-full bg-black/60 px-2 py-1 text-xs text-white"
+                      className="absolute right-1 top-1 rounded-full bg-black/60 px-1.5 py-0.5 text-[10px] text-white"
+                      aria-label="Remove photo"
                     >
-                      Remove
+                      ✕
                     </button>
                   </div>
                 ))}
               </div>
             ) : null}
-
-            {previews.length > 0 ? (
-              <div className="flex flex-col gap-2 border-t border-[#e8d9ff] pt-3 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
-                <button
-                  type="submit"
-                  disabled={isLoading}
-                  className="inline-flex items-center justify-center rounded-full bg-[#6e3eb2] px-6 py-3 text-sm font-semibold text-white transition hover:bg-[#5b3292] disabled:cursor-not-allowed disabled:opacity-65"
-                >
-                  {isLoading ? "Sending…" : `Send ${previews.length} photo${previews.length === 1 ? "" : "s"}`}
-                </button>
-                <p className="text-xs text-[#6a4a8f] sm:max-w-[280px]">
-                  Same as the main <strong className="text-[#4d2e70]">Send</strong> button under your message — use whichever is easier on your device.
-                </p>
-              </div>
-            ) : null}
           </div>
         ) : null}
 
-        <label className="block">
-          <span className="text-sm font-semibold text-[#4a2381]">Your message</span>
+        <div className="flex items-end gap-2">
           <textarea
             value={draft}
             onChange={(event) => setDraft(event.target.value)}
-            placeholder="Reply here…"
-            rows={3}
-            className={`${lu.textarea} mt-2 resize-y`}
+            placeholder="Describe what you want to build…"
+            rows={2}
+            className={`${lu.textarea} flex-1 resize-none`}
           />
-        </label>
-
-        {error ? <p className={lu.alertError}>{error}</p> : null}
-
-        <div className="flex flex-wrap items-center gap-3">
           <button
             type="submit"
             disabled={isLoading}
-            className={`${lu.btnPrimary} disabled:opacity-65`}
+            className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-[#6e3eb2] text-white transition hover:bg-[#5b3292] disabled:cursor-not-allowed disabled:opacity-65"
+            aria-label="Send message"
           >
-            {isLoading ? "Sending…" : "Send"}
+            {isLoading ? (
+              <span className="text-sm">…</span>
+            ) : (
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+                <path d="M22 2L11 13" />
+                <path d="M22 2l-7 20-4-9-9-4 20-7z" />
+              </svg>
+            )}
           </button>
-          {welcome ? (
-            <>
+        </div>
+
+        {error ? <p className={`${lu.alertError} mt-2`}>{error}</p> : null}
+
+        {(welcome || onRequireCreateAccount) ? (
+          <div className="mt-2.5 flex flex-wrap items-center gap-2">
+            {welcome ? (
               <button
                 type="button"
                 disabled={saveBusy || submitDesignBusy || isLoading || !canSaveConversation}
@@ -1123,31 +1074,31 @@ export default function ProjectPlannerAssistant({
                     ? "Save full transcript to Saved Ideas"
                     : "Send a message first to enable saving"
                 }
-                className="inline-flex items-center justify-center rounded-full border-2 border-[#6e3eb2] bg-white px-6 py-3 text-sm font-semibold text-[#5b3292] transition hover:bg-[#f5efff] disabled:cursor-not-allowed disabled:border-[#cbb8e8] disabled:text-[#9b87b5]"
+                className="inline-flex items-center justify-center rounded-full border border-[#6e3eb2] bg-white px-4 py-2 text-xs font-semibold text-[#5b3292] transition hover:bg-[#f5efff] disabled:cursor-not-allowed disabled:opacity-50"
               >
                 {saveBusy ? "Saving…" : "Save design & conversation"}
               </button>
-            </>
-          ) : onRequireCreateAccount ? (
-            <button
-              type="button"
-              disabled={isLoading}
-              onClick={onRequireCreateAccount}
-              className="inline-flex items-center justify-center rounded-full border-2 border-[#6e3eb2] bg-white px-6 py-3 text-sm font-semibold text-[#5b3292] transition hover:bg-[#f5efff] disabled:opacity-65"
-            >
-              Save to portal — sign in
-            </button>
-          ) : null}
-          {onViewSavedIdeas ? (
-            <button
-              type="button"
-              onClick={onViewSavedIdeas}
-              className="inline-flex items-center justify-center rounded-full border border-[#dcc6fb] bg-white px-6 py-3 text-sm font-semibold text-[#5b3292] transition hover:bg-[#f3ebff]"
-            >
-              View saved ideas
-            </button>
-          ) : null}
-        </div>
+            ) : onRequireCreateAccount ? (
+              <button
+                type="button"
+                disabled={isLoading}
+                onClick={onRequireCreateAccount}
+                className="inline-flex items-center justify-center rounded-full border border-[#6e3eb2] bg-white px-4 py-2 text-xs font-semibold text-[#5b3292] transition hover:bg-[#f5efff] disabled:opacity-65"
+              >
+                Save to portal — sign in
+              </button>
+            ) : null}
+            {onViewSavedIdeas ? (
+              <button
+                type="button"
+                onClick={onViewSavedIdeas}
+                className="inline-flex items-center justify-center rounded-full border border-[#dcc6fb] bg-white px-4 py-2 text-xs font-semibold text-[#5b3292] transition hover:bg-[#f3ebff]"
+              >
+                View saved ideas
+              </button>
+            ) : null}
+          </div>
+        ) : null}
         {saveStatus ? (
           <p className="text-sm font-medium text-[#2f7a32]">{saveStatus}</p>
         ) : null}

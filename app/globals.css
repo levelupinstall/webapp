@@ -203,7 +203,7 @@ body {
 
   /* Planner chat */
   .lu-chat-scroll {
-    @apply max-h-[min(520px,70vh)] space-y-3 overflow-y-auto rounded-2xl border border-[#ecdefe] bg-gradient-to-b from-[#fcf9ff] to-[#f8f4ff] p-4 shadow-inner;
+    @apply min-h-[320px] max-h-[min(560px,68vh)] space-y-3 overflow-y-auto px-1 py-2;
   }
 
   .lu-chat-bubble-assistant {
