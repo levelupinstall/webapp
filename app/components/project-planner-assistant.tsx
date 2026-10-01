@@ -253,7 +253,13 @@ export default function ProjectPlannerAssistant({
   );
 
   useEffect(() => {
-    void restoreSketchSpacePhotosFromSession(sketchSpacePhotosRef);
+    // Do NOT restore photos from sessionStorage on mount. The conversation
+    // (React state) does not survive reloads, so restored photos would be
+    // stale — they'd leak into a fresh conversation and confuse the image
+    // generator. Photos only live for the current page session.
+    if (typeof sessionStorage !== "undefined") {
+      sessionStorage.removeItem(SKETCH_PHOTOS_SESSION_KEY);
+    }
   }, []);
 
   useEffect(() => {
