@@ -325,6 +325,12 @@ The homeowner sounds **happy with the design direction** or **ready to move forw
 ## Session hint (intake)
 Budget is still missing — combine **project type + budget** in your next single intake question (do not ask budget alone after a separate type question if you can merge them).`);
   }
+
+  if (params.hasBudgetContext) {
+    chunks.push(`
+## Session hint (budget already known — DO NOT ASK AGAIN)
+The homeowner has ALREADY discussed budget. Do NOT ask about budget, price range, spending, or "how much" in any form. Not directly, not indirectly, not in different words. Move on to design questions.`);
+  }
   const deferContactNudgeUntilAfterConcept = params.priorTurnHadConceptImage;
   if (deferContactNudgeUntilAfterConcept && !params.hasPhone) {
     chunks.push(`
