@@ -466,13 +466,27 @@ function buildConversationMemoryHint(messages: PlannerClientMessage[]): string {
     .filter(Boolean)
     .join("\n")
     .toLowerCase();
+  const priorAssistant = recent
+    .filter((m) => m.role === "assistant")
+    .map((m) => m.content.trim())
+    .filter(Boolean)
+    .join("\n")
+    .toLowerCase();
 
-  const hasBudgetContext =
+  const userMentionedBudget =
     /\$+\s*\d/.test(priorUser) ||
     /\b\d+\s*k\b/i.test(priorUser) ||
     priorUser.includes("budget") ||
     priorUser.includes("investment") ||
     priorUser.includes("spend");
+  // If the AI already asked about budget, treat it as "known" to prevent
+  // the backend from telling the AI to ask again in a loop.
+  const aiAlreadyAskedBudget =
+    priorAssistant.includes("budget") ||
+    priorAssistant.includes("how much") ||
+    priorAssistant.includes("spend") ||
+    priorAssistant.includes("price range");
+  const hasBudgetContext = userMentionedBudget || aiAlreadyAskedBudget;
   const hasPhone =
     /(?:\+?1[\s\-]?)?(?:\(?\d{3}\)?[\s\-]?)\d{3}[\s\-]?\d{4}/.test(priorUser);
   const hasCallWindow =
