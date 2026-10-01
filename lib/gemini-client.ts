@@ -1131,9 +1131,11 @@ export async function geminiGenerateConceptImage(params: {
     geometryRefinement: params.geometryRefinement,
   });
 
+  // Photo first, then the request — mirrors how the Gemini App works
+  // (upload photo, then type). The model edits the photo that precedes the text.
   const parts: ContentPart[] = [
-    { text: fullPrompt },
     ...(params.referenceImageParts ?? []),
+    { text: fullPrompt },
   ];
 
   const result = await geminiGenerateContent({
