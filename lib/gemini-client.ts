@@ -52,7 +52,7 @@ export function defaultGeminiTextModel(): string {
 export function defaultGeminiImageModel(): string {
   return (
     process.env.GEMINI_IMAGE_MODEL?.trim() ||
-    "gemini-2.5-flash-image"
+    "gemini-3.1-flash-image"
   );
 }
 
