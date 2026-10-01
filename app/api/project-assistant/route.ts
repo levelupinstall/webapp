@@ -123,7 +123,7 @@ function messageRequestsVisualChange(
   if (/\bwhat\s+(would|will)\s+it\s+look\s+like\b/i.test(t)) return true;
   // Add / remove / swap element requests.
   if (
-    /\b(add|remove|taking\s+out|take\s+out|another|extra|instead|rather|prefer|change\s+it|different\s+look)\b/i.test(
+    /\b(add|remove|eliminate|get\s+rid\s+of|taking\s+out|take\s+out|another|extra|instead|rather|prefer|change\s+it|different\s+look)\b/i.test(
       t,
     )
   ) {
