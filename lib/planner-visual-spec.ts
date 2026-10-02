@@ -765,6 +765,14 @@ export function extractStatedDimensionsFromTranscript(text: string): Pick<
     },
     {
       re: new RegExp(
+        `${MAY_APX}(\\d+(?:\\.\\d+)?)\\s*(?:ft|feet|foot)\\s+shelves?\\b(?!\\s*,\\s*deep)`,
+        "gi",
+      ),
+      toInches: fromFt,
+      clamp: DIM_SHELF_SPAN,
+    },
+    {
+      re: new RegExp(
         `shelves?\\s+(?:only|just|about|around|roughly|of|at)?\\s*${MAY_APX}(\\d+(?:\\.\\d+)?)\\s*(mm|cm|m)\\b`,
         "gi",
       ),
@@ -774,6 +782,30 @@ export function extractStatedDimensionsFromTranscript(text: string): Pick<
     {
       re: new RegExp(
         `shelves?\\s+(?:only|just|about|around|roughly|of|at)?\\s*${MAY_APX}(\\d+(?:\\.\\d+)?)\\s*(?:"|in(?:ches)?\\.?)\\b`,
+        "gi",
+      ),
+      toInches: (m) => valueToInches(nu(m, 1), "in"),
+      clamp: DIM_SHELF_SPAN,
+    },
+    {
+      re: new RegExp(
+        `shelves?\\s+(?:only|just|about|around|roughly|of|at)?\\s*${MAY_APX}(\\d+(?:\\.\\d+)?)\\s*(?:ft|feet|foot)\\b`,
+        "gi",
+      ),
+      toInches: fromFt,
+      clamp: DIM_SHELF_SPAN,
+    },
+    {
+      re: new RegExp(
+        `${MAY_APX}(\\d+(?:\\.\\d+)?)\\s*(?:ft|feet|foot)\\s+long\\b`,
+        "gi",
+      ),
+      toInches: fromFt,
+      clamp: DIM_SHELF_SPAN,
+    },
+    {
+      re: new RegExp(
+        `${MAY_APX}(\\d+(?:\\.\\d+)?)\\s*(?:"|in(?:ches)?\\.?)\\s+long\\b`,
         "gi",
       ),
       toInches: (m) => valueToInches(nu(m, 1), "in"),
@@ -1099,7 +1131,13 @@ export function buildImageRenderDirective(
     layoutLines.push(`Exactly ${spec.shelfCount} visible shelf board(s) — no more, no fewer.`);
   }
   if (spec.shelfBoardSpanAlongWallIn !== null) {
-    layoutLines.push(`Each shelf board ≈ ${spec.shelfBoardSpanAlongWallIn}" long along the wall.`);
+    const spanIn = spec.shelfBoardSpanAlongWallIn;
+    // Translate the inch measurement into a visual anchor the image model can
+    // actually picture: compare against a standard outlet faceplate (4.5" tall).
+    const outletHeights = Math.round((spanIn / 4.5) * 10) / 10;
+    layoutLines.push(
+      `Each shelf board ≈ ${spanIn}" long along the wall. SCALE: that is about ${outletHeights}× the height of a standard outlet faceplate (4.5" tall) — a SHORT shelf, roughly the length of a ruler, NOT a long wall-spanning board. Draw it visibly short relative to the wall and nearby furniture.`,
+    );
   }
   // Horizontal arrangement: user explicitly wants shelves side by side on the same
   // level (not stacked vertically). This overrides the default vertical-tier assumption.
