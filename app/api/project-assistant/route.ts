@@ -183,6 +183,20 @@ function messageRequestsVisualChange(
   ) {
     return true;
   }
+  // Directional repositioning ("move them up", "shift it left", "move down a bit").
+  // The user is adjusting placement — this needs a new visual.
+  if (
+    /\b(move|shift|slide|nudge)\b/i.test(t) &&
+    /\b(up|down|left|right|higher|lower|over)\b/i.test(t)
+  ) {
+    return true;
+  }
+  // Resize commands ("make them bigger", "make it smaller", "wider", "narrower").
+  if (
+    /\b(make|get)\b.*\b(bigger|smaller|wider|narrower|longer|shorter|taller)\b/i.test(t)
+  ) {
+    return true;
+  }
   return false;
 }
 
