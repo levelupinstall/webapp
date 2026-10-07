@@ -395,6 +395,14 @@ function HomeContent() {
                 <li className="flex gap-3">
                   <span className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-[#6e3eb2]" />
                   <span>
+                    <span className="font-semibold text-[#31184a]">Custom millwork &amp; built-ins —</span>{" "}
+                    Wall units, libraries, mudrooms, and window seats designed around your space and
+                    installed like furniture — scribed, level, and finished clean.
+                  </span>
+                </li>
+                <li className="flex gap-3">
+                  <span className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-[#6e3eb2]" />
+                  <span>
                     <span className="font-semibold text-[#31184a]">Pictures &amp; wall décor —</span>{" "}
                     Gallery walls, mirrors, and art hung level and secure on any wall type — plus
                     curtain rods, hooks, and house numbers.
@@ -434,15 +442,16 @@ function HomeContent() {
                 <li className="flex gap-3">
                   <span className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-[#6e3eb2]" />
                   <span>
-                    <span className="font-semibold text-[#31184a]">Doors —</span> Prehung interior door
-                    installs and slab replacement, with hardware and clearances set right.
+                    <span className="font-semibold text-[#31184a]">Accent walls —</span>{" "}
+                    Wood slat walls, board-and-batten, and panel moulding — texture and depth for a
+                    feature wall.
                   </span>
                 </li>
                 <li className="flex gap-3">
                   <span className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-[#6e3eb2]" />
                   <span>
-                    <span className="font-semibold text-[#31184a]">TV mounting —</span> Flat-panel TVs on
-                    tilt, full-motion, or fixed mounts — load-rated and set at the right height for the room.
+                    <span className="font-semibold text-[#31184a]">Doors —</span> Prehung interior door
+                    installs and slab replacement, with hardware and clearances set right.
                   </span>
                 </li>
               </ul>
