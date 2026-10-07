@@ -29,6 +29,12 @@ export type PriceBook = {
     shopRatePerHrCad: number;
     /** On-site install rate. INTERNAL — never shown to customers. */
     installRatePerHrCad: number;
+    /**
+     * Helper/second-person day rate (hired for heavy lifts, tall units).
+     * GTA Oct 2026: $22–35/hr cash typical; $30 mid-range pick.
+     * INTERNAL — never shown to customers.
+     */
+    helperRatePerHrCad: number;
     verify: string;
   };
   business: {
@@ -118,6 +124,12 @@ export const PRICE_BOOK: PriceBook = {
       unitCostCad: 14,
       verify: "VERIFY — GTA 2026 placeholder",
     },
+    scribeStock: {
+      description: "Scribe/filler stock allowance — 1×3 × 8 ft + cedar shims (ripped to fit on site)",
+      unit: "wall",
+      unitCostCad: 25,
+      verify: "VERIFY — GTA 2026 placeholder; scribe molding ~$1–2/LF, shim bundle ~$8–10 covers several jobs",
+    },
     screwsBox: {
       description: '#10 x 3" wood screws, box of 100',
       unit: "box",
@@ -182,6 +194,7 @@ export const PRICE_BOOK: PriceBook = {
   labor: {
     shopRatePerHrCad: 85,
     installRatePerHrCad: 95,
+    helperRatePerHrCad: 30,
     verify: "VERIFY — GTA 2026 placeholder rates; INTERNAL ONLY, never on customer paperwork",
   },
   business: {
@@ -229,8 +242,19 @@ export const LABOR_MODEL = {
   cncAssemblyHoursPerShelf: 0.5,
   /** CNC shop runs: drop off sheets + pick up finished parts, per wall. */
   cncRunHoursPerWall: 1.5,
-  /** On-site install hours per shelf (mount, level, caulk). */
-  installHoursPerShelf: 0.75,
+  /**
+   * Mount/level/fasten per unit: dry-fit, shim level + plumb, fasten to studs,
+   * caulk. Base shimming for normal walls (≤1/4" over 8 ft) is inside this —
+   * no separate shim line. Replaces the old flat installHoursPerShelf.
+   */
+  mountLevelFastenHoursPerUnit: 0.5,
+  /**
+   * Scribe + fit allowance per wall: scribe sides/fillers to out-of-plumb
+   * walls, shelf back edges to wavy walls (2 abutments × 0.5h). Trade rule:
+   * shim the box true FIRST, then scribe to the wall. Adjusted at the
+   * post-deposit site measure if walls are worse than typical.
+   */
+  scribeFitHoursPerWall: 1.0,
   /** Load-in: unload truck, carry tools + materials into the home, per visit. */
   loadInHoursPerWall: 0.5,
   /** Pack-up + clean-up: tools out, work area cleaned, per visit. */

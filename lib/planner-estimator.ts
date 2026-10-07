@@ -58,6 +58,13 @@ export type EstimateOptions = {
    * finishing process (painted ≠ stained ≠ clear ≠ prefinished).
    */
   finish?: string | null;
+  /**
+   * Crew size for the install: 1 (default, Tom solo) or 2 (Tom + hired helper).
+   * Use 2 when any unit is over ~100–150 lbs, 10 ft or longer, full-height
+   * (7 ft+) needing a holder while fastening, or has a stone/wood top.
+   * Helper bills at the helper rate on the same 4/8-hr day blocks.
+   */
+  crewSize?: 1 | 2;
 };
 
 export type WallEstimate = {
@@ -253,6 +260,19 @@ export function estimateWall(input: FabWallInput, opts: EstimateOptions = {}): W
       unitCostCad: pb.materials.screwsBox.unitCostCad,
       totalCad: screwCost,
     });
+
+    // Scribe/filler stock: 1 allowance per wall (ripped to fit on site).
+    const scribeCost = r2(pb.materials.scribeStock.unitCostCad);
+    lines.push({
+      section: "Materials",
+      description: pb.materials.scribeStock.description,
+      detail: `1 allowance × ${fmtMoney(pb.materials.scribeStock.unitCostCad)} — filler strips + shims for out-of-plumb walls`,
+      qty: 1,
+      unit: pb.materials.scribeStock.unit,
+      unitCostCad: pb.materials.scribeStock.unitCostCad,
+      totalCad: scribeCost,
+    });
+    math.push(`Scribe/filler stock: ${fmtMoney(scribeCost)} allowance per wall.`);
 
     // Finish materials per finish family (primer+paint for painted;
     // stain+sealer+topcoat for stained; sealer+topcoat for clear; oil for oil).
@@ -485,7 +505,8 @@ export function estimateWall(input: FabWallInput, opts: EstimateOptions = {}): W
   };
 
   const fabH = n * lm.fabHoursPerShelf;
-  const instH = n * lm.installHoursPerShelf;
+  const instH = n * lm.mountLevelFastenHoursPerUnit;
+  const scribeH = lm.scribeFitHoursPerWall;
   if (route === "cnc-outsource") {
     // Parts arrive cut/drilled/edgebanded/labelled — shop labor is assembly only.
     const asmH = n * lm.cncAssemblyHoursPerShelf;
@@ -520,8 +541,10 @@ export function estimateWall(input: FabWallInput, opts: EstimateOptions = {}): W
   if (calendarHoldDays > 0) {
     math.push(`Schedule: ${calendarHoldDays} calendar day${calendarHoldDays === 1 ? "" : "s"} of dry/cure holds — unpaid, but the job spans extra days.`);
   }
-  labor("Install — mount, level, caulk (on site)", instH, pb.labor.installRatePerHrCad,
-    `${n} units × ${lm.installHoursPerShelf}h`);
+  labor("Install — dry-fit, shim level/plumb, fasten, caulk (on site)", instH, pb.labor.installRatePerHrCad,
+    `${n} units × ${lm.mountLevelFastenHoursPerUnit}h (base shimming for normal walls included)`);
+  labor("Scribe + fit to walls (on site)", scribeH, pb.labor.installRatePerHrCad,
+    `${lm.scribeFitHoursPerWall}h allowance/wall — shim box true first, then scribe sides/fillers to out-of-plumb walls; adjust at site measure`);
   labor("Load-in tools + materials (on site)", lm.loadInHoursPerWall, pb.labor.installRatePerHrCad,
     `${lm.loadInHoursPerWall}h flat per visit`);
   labor("Pack-up + clean-up (on site)", lm.cleanupHoursPerWall, pb.labor.installRatePerHrCad,
@@ -537,10 +560,10 @@ export function estimateWall(input: FabWallInput, opts: EstimateOptions = {}): W
 
   // ---------- INSTALLER DAY MINIMUM ----------
   // On-site installers bill a 4-hour minimum, then 8-hour days: <4h bills 4,
-  // 4–8h bills 8, etc. Applies to the install-day block (install + load-in +
-  // clean-up + drive). Site measure is a separate visit; CNC runs are separate
-  // trips — neither is subject to the install-day minimum.
-  const installDayActual = r2(instH + lm.loadInHoursPerWall + lm.cleanupHoursPerWall + lm.driveHoursPerWall);
+  // 4–8h bills 8, etc. Applies to the install-day block (mount/level/fasten +
+  // scribe + load-in + clean-up + drive). Site measure is a separate visit;
+  // CNC runs are separate trips — neither is subject to the install-day minimum.
+  const installDayActual = r2(instH + scribeH + lm.loadInHoursPerWall + lm.cleanupHoursPerWall + lm.driveHoursPerWall);
   const installDayBilled = Math.ceil(installDayActual / 4) * 4;
   const minimumBump = r2(installDayBilled - installDayActual);
   if (minimumBump > 0) {
@@ -559,13 +582,33 @@ export function estimateWall(input: FabWallInput, opts: EstimateOptions = {}): W
     math.push(`Installer day: ${installDayActual}h actual = ${installDayBilled}h billed (no minimum bump).`);
   }
 
+  // ---------- SECOND PERSON (crew of 2) ----------
+  // Heavy lifts, 10 ft+ units, full-height pieces needing a holder while
+  // fastening: Tom hires a helper for the install day. Helper bills the same
+  // minimum-rounded day hours at the helper rate (GTA 4-hr minimum is standard
+  // for day labour too).
+  const crewSize = opts.crewSize ?? 1;
+  if (crewSize === 2) {
+    const helperCost = r2(installDayBilled * pb.labor.helperRatePerHrCad);
+    lines.push({
+      section: "Labor",
+      description: "Helper — second person for install day (lifting/holding)",
+      detail: `${installDayBilled}h (same billed day as installer) × ${fmtMoney(pb.labor.helperRatePerHrCad)}/h`,
+      qty: installDayBilled,
+      unit: "hr",
+      unitCostCad: pb.labor.helperRatePerHrCad,
+      totalCad: helperCost,
+    });
+    math.push(`2-person install: helper ${installDayBilled}h × ${fmtMoney(pb.labor.helperRatePerHrCad)}/h = ${fmtMoney(helperCost)}. Triggers: unit >~100–150 lbs, 10 ft+, full-height needing a holder, or stone/wood top.`);
+  }
+
   const laborTotalCad = r2(
     lines.filter((l) => l.section === "Labor").reduce((a, l) => a + l.totalCad, 0),
   );
   math.push(
     `Labor: ${fmtMoney(laborTotalCad)} ` +
       `(shop ${fmtMoney(pb.labor.shopRatePerHrCad)}/h on ${route === "cnc-outsource" ? "assembly" : "fab"}/${finishProcess.steps.map((s) => s.key).join("/")}/admin, ` +
-      `on-site ${fmtMoney(pb.labor.installRatePerHrCad)}/h on install/load-in/clean-up/measure/drive${route === "cnc-outsource" ? "/CNC runs" : ""}; ` +
+      `on-site ${fmtMoney(pb.labor.installRatePerHrCad)}/h on mount+scribe/load-in/clean-up/measure/drive${route === "cnc-outsource" ? "/CNC runs" : ""}${crewSize === 2 ? `; helper ${fmtMoney(pb.labor.helperRatePerHrCad)}/h` : ""}; ` +
       `includes paid dry/wait time between finish coats).`,
   );
 
