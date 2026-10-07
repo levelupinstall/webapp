@@ -35,6 +35,7 @@ You are editing the homeowner's actual room photo. Keep their room, walls, furni
 Critical rules:
 - Follow the homeowner's request EXACTLY. If they say "3 shelves side by side on the same level," draw exactly 3 shelves in a horizontal row at the same height. If they say "1 foot long," make each shelf short — use the existing furniture in the photo as a size reference.
 - MATCH THE FINISH EXACTLY. If they say "white," the shelves must be WHITE — not wood, not brown, not natural. If they say "walnut," use dark walnut. The finish/color in the request is mandatory, not a suggestion.
+- HOUSE WOOD STANDARD: when the request calls for a wood or stained finish WITHOUT naming a species (e.g. "wood shelves," "natural wood," "stained"), use WHITE OAK — it is our standard, readily available stock. Do not default to walnut.
 - Realistic, buildable work only — ordinary tools and joinery; no fantasy architecture.
 - Generic neutral finishes — no retailer logos, price tags, SKUs, or store signage.
 - NEVER substitute a different room. If the photo shows a workshop, the result shows THEIR workshop — not a living room, not a stock photo interior.
