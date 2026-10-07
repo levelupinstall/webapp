@@ -19,6 +19,7 @@ import {
   stripPlannerPhaseMarkers,
   type PlannerPhaseTag,
 } from "@/lib/planner-phase-utils";
+import { buildPlannerFloorPlan } from "@/lib/planner-floor-plan";
 import {
   deriveNorthStarLabelsFromUserText,
   evaluateSimplifiedIntakeReadiness,
@@ -1581,6 +1582,24 @@ The homeowner likes the design direction — pivot to booking. In one or two war
               caption: label,
             });
           }
+        }
+        // Floor plan: top-down view tying the walls together (how the L/U
+        // wraps). Generated in code — deterministic, not a model render.
+        try {
+          const floorPlan = await buildPlannerFloorPlan({
+            wallLabels: wallLabelsEffective.slice(0, multiWallCount),
+            spec: conceptRenderSpec ?? emptyPlannerVisualSpec(),
+            roomType: conceptRenderSpec?.designCategory ?? null,
+          });
+          if (floorPlan) {
+            responseImages.push({
+              mimeType: floorPlan.mimeType,
+              data: floorPlan.dataBase64,
+              caption: "Floor plan",
+            });
+          }
+        } catch (e) {
+          console.warn("[project-assistant] floor plan generation failed:", e);
         }
       } else {
         const firstPass = await runOneRender("");
