@@ -992,7 +992,8 @@ The homeowner likes the design direction — pivot to booking. In one or two war
             simplifiedIntakeReady,
             northStarReadyForPhotoPrompt,
             uploadedPhotoCount: imageFiles.length,
-            sessionPhotoCount: portalSpacePhotoParts.length,
+            sessionPhotoCount:
+              portalSpacePhotoParts.length + sketchReferenceFiles.length,
             wallLabelsPreReply,
             ...(roomPhotoHintsSystemBlock.trim()
               ? { roomPhotoHintsBlock: roomPhotoHintsSystemBlock }
@@ -1077,9 +1078,11 @@ The homeowner likes the design direction — pivot to booking. In one or two war
     const multiWallPhotoSource =
       latestImageParts.length >= 2
         ? latestImageParts
-        : portalSpacePhotoParts.length >= 2
-          ? portalSpacePhotoParts
-          : [];
+        : sketchReferenceParts.length >= 2
+          ? sketchReferenceParts
+          : portalSpacePhotoParts.length >= 2
+            ? portalSpacePhotoParts
+            : [];
     const multiWallCount = Math.min(
       wallLabelsEffective.length,
       multiWallPhotoSource.length,
