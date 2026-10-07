@@ -14,6 +14,7 @@ import {
 } from "@/lib/gemini-client";
 import {
   extractPlannerPhase,
+  extractWallLabels,
   stripMisleadingImageDeliveryClaims,
   stripPlannerPhaseMarkers,
   type PlannerPhaseTag,
@@ -285,6 +286,12 @@ function buildPlannerSystemInstruction(params: {
   simplifiedIntakeReady: boolean;
   /** Optional multimodal vision hints for this turn’s uploads — not measurements. */
   roomPhotoHintsBlock?: string;
+  /** Number of space photos the homeowner attached this turn. */
+  uploadedPhotoCount?: number;
+  /** Space photos already in the portal session (across turns). */
+  sessionPhotoCount?: number;
+  /** Wall labels already confirmed via [WALLS:…] markers (empty when unlabeled). */
+  wallLabelsPreReply?: string[];
 }): string {
   const chunks: string[] = [PLANNER_ASSISTANT_SYSTEM];
 
@@ -310,6 +317,27 @@ The platform **may** attach a concept sketch after this reply—either tied to t
     chunks.push(`
 ## Session hint (photo just uploaded)
 They attached **space photos**. Thank them briefly. Note visible obstructions only if relevant. Continue **simplified intake** (type+budget → style → all dimensions in one question) for anything still missing — do **not** run a long survey. Use \`[PHASE:recommend]\` until a concept sketch exists; then \`[PHASE:refine]\` when iterating.`);
+  }
+
+  const uploadedCount = params.uploadedPhotoCount ?? 0;
+  const labeledWalls = params.wallLabelsPreReply ?? [];
+  if (uploadedCount >= 2 && labeledWalls.length === 0) {
+    chunks.push(`
+## Multi-wall labeling (REQUIRED this turn)
+The homeowner uploaded **${uploadedCount} space photos** — likely different walls of the same room (kitchen, walk-in closet). Do **not** design yet. Instead, briefly describe each photo (1–2 lines, using the photo summaries above) and ask which wall each one shows — e.g. "Which photo is the back wall, and which is the left?". Keep it to one short question. Do **not** emit a [WALLS:…] marker until the homeowner confirms the labels.`);
+  } else if (labeledWalls.length >= 2) {
+    chunks.push(`
+## Multi-wall session (labeled walls)
+This room has **${labeledWalls.length} labeled walls**: ${labeledWalls.map((w, i) => `Photo ${i + 1} = ${w}`).join("; ")}. The platform renders one concept image per labeled wall. In your reply, summarize the design **per wall** (one short line each) so the whole-room plan is clear. Keep finishes, materials, and hardware **identical across all walls** unless the homeowner explicitly asked a wall to differ.`);
+  } else if (
+    uploadedCount === 0 &&
+    (params.sessionPhotoCount ?? 0) >= 2
+  ) {
+    // The homeowner uploaded multiple photos on an earlier turn but never
+    // labeled them — check whether this turn's message does.
+    chunks.push(`
+## Multi-wall labeling (check this turn)
+The homeowner previously uploaded multiple space photos without saying which wall each shows. If their latest message labels the walls (e.g. "first is the back wall, second is the left"), confirm the mapping back briefly and emit a single marker line on its own line: \`[WALLS: back wall | left wall]\` — one label per photo, in upload order, separated by " | ". This marker is stripped before display; it tells the platform to render one concept per wall. Do not emit it until the homeowner has actually labeled the walls.`);
   }
   if (!params.hasPhotoContextInSession && params.northStarReadyForPhotoPrompt) {
     chunks.push(`
@@ -932,6 +960,18 @@ The homeowner likes the design direction — pivot to booking. In one or two war
       : userAttachedPhotosThisTurn ||
         messageRequestsVisualChange(lastUserText, gatingIntent);
 
+    /**
+     * Multi-wall: wall labels already confirmed in the transcript (via
+     * `[WALLS: ...]` markers Alex emitted on earlier turns). Used to decide
+     * whether to ask for labeling and whether to block the render.
+     */
+    const wallLabelsPreReply = extractWallLabels(
+      messages
+        .filter((m) => m.role === "assistant")
+        .map((m) => m.content)
+        .join("\n"),
+    );
+
     try {
       if (isGeminiConfigured()) {
         const result = await geminiPlannerMultiTurn({
@@ -950,6 +990,9 @@ The homeowner likes the design direction — pivot to booking. In one or two war
             hasCallWindow: intakeHasCallWindow,
             simplifiedIntakeReady,
             northStarReadyForPhotoPrompt,
+            uploadedPhotoCount: imageFiles.length,
+            sessionPhotoCount: portalSpacePhotoParts.length,
+            wallLabelsPreReply,
             ...(roomPhotoHintsSystemBlock.trim()
               ? { roomPhotoHintsBlock: roomPhotoHintsSystemBlock }
               : {}),
@@ -1021,15 +1064,43 @@ The homeowner likes the design direction — pivot to booking. In one or two war
     } = extractPlannerPhase(replyForPhase);
     let phase = phaseFromModel;
 
+    /**
+     * Multi-wall: wall labels effective this turn = prior transcript labels,
+     * overridden by any [WALLS:…] marker Alex just emitted in this reply.
+     * Photo source: this turn's uploads first, else the portal session photos
+     * (chronological = upload order, so wall i ↔ photo i).
+     */
+    const wallLabelsThisTurn = extractWallLabels(replyForPhase);
+    const wallLabelsEffective =
+      wallLabelsThisTurn.length > 0 ? wallLabelsThisTurn : wallLabelsPreReply;
+    const multiWallPhotoSource =
+      latestImageParts.length >= 2
+        ? latestImageParts
+        : portalSpacePhotoParts.length >= 2
+          ? portalSpacePhotoParts
+          : [];
+    const multiWallCount = Math.min(
+      wallLabelsEffective.length,
+      multiWallPhotoSource.length,
+    );
+    // Multi-wall loop only for first renders (MVP) — refinements keep the
+    // existing single-render path.
+    const isMultiWallRender =
+      multiWallCount >= 2 &&
+      !hasAnyPriorRender;
+
     const allowConceptImage =
       isGeminiConfigured() &&
       plannerInlineImages.length === 0 &&
       !blockFirstRenderImage &&
       !pureEnthusiasmAfterSketch &&
       hasUserMessage &&
-      wantsVisualThisTurn;
+      wantsVisualThisTurn &&
+      // Multi-wall: don't render a confused single image from 2+ unlabeled
+      // photos — wait until the homeowner labels each wall.
+      !(userAttachedPhotosThisTurn && imageFiles.length >= 2 && wallLabelsPreReply.length < 2);
 
-    const responseImages: { mimeType: string; data: string }[] = [
+    const responseImages: { mimeType: string; data: string; caption?: string }[] = [
       ...plannerInlineImages,
     ];
 
@@ -1352,11 +1423,13 @@ The homeowner likes the design direction — pivot to booking. In one or two war
       /**
        * One full render pass (up to 4 attempts: the image model sometimes
        * returns text-only). extraGoalSuffix lets the accuracy-correction
-       * pass demand a fixed shelf count. Returns the images plus the
-       * failure detail for the reply / audit trail.
+       * pass demand a fixed shelf count. referencePartsOverride swaps the
+       * reference photos (multi-wall: one wall's photo only). Returns the
+       * images plus the failure detail for the reply / audit trail.
        */
       const runOneRender = async (
         extraGoalSuffix: string,
+        referencePartsOverride?: typeof conceptReferenceForRender,
       ): Promise<{
         images: Array<{ mimeType: string; dataBase64: string }>;
         failureDetail: string | null;
@@ -1413,7 +1486,7 @@ The homeowner likes the design direction — pivot to booking. In one or two war
           const visual = await geminiGenerateConceptImage({
             promptContext: basePrompt,
             userGoal: userGoalAug,
-            referenceImageParts: conceptReferenceForRender,
+            referenceImageParts: referencePartsOverride ?? conceptReferenceForRender,
             extractedVisualDirective: wantsHorizontalRowDirect
               ? undefined
               : extractedVisualDirective,
@@ -1470,14 +1543,55 @@ The homeowner likes the design direction — pivot to booking. In one or two war
         return { images: out, failureDetail: failure };
       };
 
-      const firstPass = await runOneRender("");
-      let renderedImages = firstPass.images;
-      const imageGenerationFailureDetail = firstPass.failureDetail;
+      const wallOrdinal = (i: number) =>
+        ["first", "second", "third", "fourth", "fifth", "sixth"][i] ?? `${i + 1}th`;
+
+      let imageGenerationFailureDetail: string | null = null;
+
+      if (isMultiWallRender) {
+        /**
+         * Multi-wall: one concept render per labeled wall, each anchored to
+         * that wall's photo only. The shared extractedVisualDirective (finish,
+         * style, counts) applies to every wall — the style lock that keeps the
+         * room cohesive.
+         */
+        console.info(
+          `[project-assistant] multi-wall render: ${multiWallCount} walls (${wallLabelsEffective.slice(0, multiWallCount).join(" | ")})`,
+        );
+        for (let w = 0; w < multiWallCount; w++) {
+          const label = wallLabelsEffective[w];
+          const wallSuffix =
+            `\n\nWALL ${w + 1} OF ${multiWallCount} — ${label.toUpperCase()}: ` +
+            `This concept render is ONLY for the ${label}. Use ONLY the attached room photo for this wall ` +
+            `(the ${wallOrdinal(w)} uploaded photo) as the spatial reference — ignore any other room layout. ` +
+            `Match the shared design brief exactly (same finishes, materials, hardware, colors, and style as the other walls) ` +
+            `so the whole room reads as one cohesive design. ` +
+            `Photorealistic render only — no text labels or annotations in the image.`;
+          const wallRefParts = schematicReferencePart
+            ? [schematicReferencePart, multiWallPhotoSource[w]]
+            : [multiWallPhotoSource[w]];
+          const wallResult = await runOneRender(wallSuffix, wallRefParts);
+          if (wallResult.images.length === 0 && wallResult.failureDetail) {
+            imageGenerationFailureDetail = wallResult.failureDetail;
+          }
+          for (const img of wallResult.images) {
+            responseImages.push({
+              mimeType: img.mimeType,
+              data: img.dataBase64,
+              caption: label,
+            });
+          }
+        }
+      } else {
+        const firstPass = await runOneRender("");
+        let renderedImages = firstPass.images;
+        imageGenerationFailureDetail = firstPass.failureDetail;
 
       /**
        * Accuracy check: the model hallucinates shelf counts, so verify with
        * vision and regenerate once with an explicit correction when wrong.
-       * A null/failed count never blocks delivery.
+       * A null/failed count never blocks delivery. Skipped in multi-wall mode
+       * (per-wall counts are enforced by the shared schematic instead).
        */
       const expectedShelfCount = conceptRenderSpec?.shelfCount ?? null;
       if (renderedImages.length > 0 && expectedShelfCount !== null) {
@@ -1501,6 +1615,7 @@ The homeowner likes the design direction — pivot to booking. In one or two war
       for (const img of renderedImages) {
         responseImages.push({ mimeType: img.mimeType, data: img.dataBase64 });
       }
+      } // end single-render path
 
       if (responseImages.length === 0) {
         cleanReply = stripMisleadingImageDeliveryClaims(cleanReply);

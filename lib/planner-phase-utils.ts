@@ -1,11 +1,26 @@
 /** Internal planner phase markers — stripped before any client-visible text. */
 
+/** Multi-wall marker: Alex labels uploaded photos, e.g. `[WALLS: back wall | left wall]`. */
+export function extractWallLabels(text: string): string[] {
+  const tagRegex = /\[WALLS:\s*([^\]]+)\]/gi;
+  const matches = [...text.matchAll(tagRegex)];
+  if (matches.length === 0) return [];
+  // Last marker wins (labels may be corrected over the conversation).
+  const raw = matches[matches.length - 1][1];
+  return raw
+    .split("|")
+    .map((s) => s.trim())
+    .filter((s) => s.length > 0 && s.length <= 60)
+    .slice(0, 6);
+}
+
 export type PlannerPhaseTag = "consultation" | "recommend" | "refine";
 
-/** Remove every `[PHASE:…]` marker (any casing/spacing, any suffix) from user-visible copy. */
+/** Remove every `[PHASE:…]` / `[WALLS:…]` marker (any casing/spacing, any suffix) from user-visible copy. */
 export function stripPlannerPhaseMarkers(text: string): string {
   const noPhotoPrompt = text.replace(/\[PHOTO_PROMPT\]/gi, "");
-  const noBracketTags = noPhotoPrompt.replace(/\[PHASE:\s*[^\]]+\]/gi, "");
+  const noWalls = noPhotoPrompt.replace(/\[WALLS:\s*[^\]]+\]/gi, "");
+  const noBracketTags = noWalls.replace(/\[PHASE:\s*[^\]]+\]/gi, "");
   const lines = noBracketTags.split(/\r?\n/).filter((line) => {
     const t = line.trim();
     if (!t) return true;

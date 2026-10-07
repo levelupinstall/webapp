@@ -24,7 +24,7 @@ import { lu } from "@/lib/level-up-ui";
 type ChatMessage = {
   role: "user" | "assistant";
   content: string;
-  images?: { mimeType: string; dataUrl: string }[];
+  images?: { mimeType: string; dataUrl: string; caption?: string }[];
   showSubmitDesignCta?: boolean;
   sketchNotUpdated?: boolean;
 };
@@ -34,7 +34,7 @@ type AssistantResponse = {
   phase: PlannerPhaseTag;
   showPhotoUploader?: boolean;
   showSubmitDesignCta?: boolean;
-  images?: { mimeType: string; data: string }[];
+  images?: { mimeType: string; data: string; caption?: string }[];
   /** Server tried to refine a sketch but returned no new image bytes. */
   sketchNotUpdated?: boolean;
   /** Present when PLANNER_DEBUG_DIAGNOSTICS or NODE_ENV=development on server. */
@@ -452,6 +452,7 @@ export default function ProjectPlannerAssistant({
       const assistantImages = data.images?.map((img) => ({
         mimeType: img.mimeType,
         dataUrl: `data:${img.mimeType};base64,${img.data}`,
+        ...(img.caption ? { caption: img.caption } : {}),
       }));
 
       const safeReply = stripPlannerPhaseMarkers(data.reply);
@@ -912,13 +913,19 @@ export default function ProjectPlannerAssistant({
                 </p>
                 <div className="grid gap-2 sm:grid-cols-2">
                   {message.images.map((img, i) => (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img
-                      key={`${index}-viz-${i}`}
-                      src={img.dataUrl}
-                      alt="Concept visualization — general look and feel only"
-                      className="max-h-56 w-full rounded-xl border border-[#e8d9ff] object-contain"
-                    />
+                    <div key={`${index}-viz-${i}`}>
+                      {img.caption ? (
+                        <p className="mb-1 text-xs font-semibold capitalize text-[#5b3292]">
+                          {img.caption}
+                        </p>
+                      ) : null}
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img
+                        src={img.dataUrl}
+                        alt={`Concept visualization${img.caption ? ` — ${img.caption}` : ""} — general look and feel only`}
+                        className="max-h-56 w-full rounded-xl border border-[#e8d9ff] object-contain"
+                      />
+                    </div>
                   ))}
                 </div>
               </div>

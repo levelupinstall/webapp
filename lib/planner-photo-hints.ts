@@ -8,6 +8,8 @@ export type PlannerRoomPhotoHints = {
   visibleNotes: string[];
   uncertainAreas: string[];
   suggestedMeasurementQuestions: string[];
+  /** One short per-photo summary, index-aligned with the analyzed photos (multi-wall labeling). */
+  photoSummaries: string[];
 };
 
 type InlineImagePart = {
@@ -42,14 +44,16 @@ function parseHintsJson(text: string): PlannerRoomPhotoHints | null {
   const visibleNotes = asStrArray(o.visibleNotes);
   const uncertainAreas = asStrArray(o.uncertainAreas);
   const suggestedMeasurementQuestions = asStrArray(o.suggestedMeasurementQuestions);
+  const photoSummaries = asStrArray(o.photoSummaries);
   if (
     visibleNotes.length === 0 &&
     uncertainAreas.length === 0 &&
-    suggestedMeasurementQuestions.length === 0
+    suggestedMeasurementQuestions.length === 0 &&
+    photoSummaries.length === 0
   ) {
     return null;
   }
-  return { visibleNotes, uncertainAreas, suggestedMeasurementQuestions };
+  return { visibleNotes, uncertainAreas, suggestedMeasurementQuestions, photoSummaries };
 }
 
 /**
@@ -74,6 +78,7 @@ Return **only** valid JSON (no markdown, no commentary) with exactly these keys:
 - "visibleNotes": string[] — short factual bullets (max 10) about what you **see**: wall zones, openings, ceiling line, obvious trim, large furniture, apparent wall color, cable clutter zones, **visible** outlets/switches/vents, door swings, etc. Only describe what is reasonably visible.
 - "uncertainAreas": string[] — max 8 bullets: what **cannot** be trusted from pixels alone (true wall width, ceiling height, shelf span, depth into room, outlet heights, etc.).
 - "suggestedMeasurementQuestions": string[] — max 6 **specific** questions the installer should ask next to get **tape-measured** numbers (always ask for **units**). Tie questions to what the photo suggests (e.g. "What is the clear wall width between the door casing and the corner?"). If shelving or built-ins are in scope, prefer **one compound question** that asks together for **span along the wall (width/length)**, **vertical height**, and **shelf projection (depth)** — not depth alone.
+- "photoSummaries": string[] — exactly one short summary per attached photo, in order (e.g. "Photo 1: kitchen back wall with window above the sink", "Photo 2: kitchen left wall with fridge"). Each under 15 words. This lets the coordinator tell the photos apart when asking which wall is which.
 
 Rules:
 - **Never** output numeric inch/cm/mm values for room dimensions — photos are not calibrated.
@@ -107,8 +112,12 @@ Rules:
 /** Injected into Alex system instruction (markdown, bounded). */
 export function formatPlannerPhotoHintsForSystemInstruction(h: PlannerRoomPhotoHints): string {
   const lines: string[] = [];
+  if (h.photoSummaries.length) {
+    lines.push("**Uploaded photos (in order)**");
+    h.photoSummaries.forEach((s, i) => lines.push(`- Photo ${i + 1}: ${s}`));
+  }
   if (h.visibleNotes.length) {
-    lines.push("**Visible in the latest upload(s)**");
+    lines.push("\n**Visible in the latest upload(s)**");
     for (const n of h.visibleNotes) lines.push(`- ${n}`);
   }
   if (h.uncertainAreas.length) {
