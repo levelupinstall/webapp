@@ -504,7 +504,9 @@ export function extractMillworkZonesFromTranscript(
     "hanging",
     (m) => toN(m[1]),
   );
-  pushAll(/\bhanging\s+(?:section|area|space)\b/gi, "hanging", () => null);
+  // NOTE: deliberately no generic "hanging space/section" pattern — vague
+  // mentions ("shelves and hanging space") are not a layout description;
+  // those fall through to the marked-assumed closet default.
   // Drawers: "3 drawers", "drawer bank".
   pushAll(
     new RegExp(`(${numWord})\\s+drawers?`, "gi"),
