@@ -134,21 +134,41 @@ export const PRICE_BOOK: PriceBook = {
     "All prices pre-tax. Ontario HST 13% added at invoice. Tom to confirm tax handling with accountant.",
 };
 
-/** Labor time model — target hours per unit of work. Tunable; INTERNAL ONLY. */
+/** Labor time model — target hours per unit of work. Tunable; INTERNAL ONLY.
+ *
+ * Finishing workflow (per Tom, Oct 7): cabinets/shelves are ASSEMBLED first,
+ * then knocked down into paintable parts, primed, left to dry (≥30 min —
+ * paid wait, the finisher is on the clock), topcoated twice, dried again,
+ * then reassembled. Dry/wait time is per BATCH (one wall's parts dry together),
+ * not per shelf — but it is still paid time unless the finisher does other
+ * billable work while waiting (then set the wait hours to 0).
+ */
 export const LABOR_MODEL = {
-  /** Fabrication hours per shelf (cut, assemble, cleats). */
-  fabHoursPerShelf: 0.75,
-  /** Sanding/finishing hours per shelf (prime + paint). */
-  finishHoursPerShelf: 0.5,
+  /** Fabrication hours per shelf/cabinet unit (cut, edgeband, assemble carcass). */
+  fabHoursPerShelf: 1.0,
+  /** Knock-down into paintable parts + reassembly after finishing, per unit. */
+  knockdownHoursPerShelf: 0.25,
+  /** Prime coat, per unit. */
+  primeHoursPerShelf: 0.25,
+  /** PAID WAIT — primer dry time before topcoat, per wall batch (Tom: ≥30 min). */
+  dryWaitHoursAfterPrimePerWall: 0.5,
+  /** Two topcoats with sanding between, per unit. */
+  paintHoursPerShelf: 0.5,
+  /** PAID WAIT — dry time after final coat before handling/reassembly, per wall batch. */
+  dryWaitHoursAfterPaintPerWall: 0.5,
   /** On-site install hours per shelf (mount, level, caulk). */
   installHoursPerShelf: 0.75,
+  /** Load-in: unload truck, carry tools + materials into the home, per visit. */
+  loadInHoursPerWall: 0.5,
+  /** Pack-up + clean-up: tools out, work area cleaned, per visit. */
+  cleanupHoursPerWall: 0.5,
   /** Site measure visit, per wall (post-deposit confirmation). */
   siteMeasureHoursPerWall: 1,
   /** Drawings/admin time, per wall. */
   adminHoursPerWall: 0.5,
   /** Round-trip drive time, per wall. */
   driveHoursPerWall: 1,
-  verify: "VERIFY — GTA 2026 placeholder target hours; INTERNAL ONLY, never on customer paperwork",
+  verify: "VERIFY — GTA 2026 placeholder target hours; finishing workflow per Tom Oct 7; INTERNAL ONLY, never on customer paperwork",
 } as const;
 
 /** Material usage model. Tunable. */
