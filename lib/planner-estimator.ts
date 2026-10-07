@@ -535,6 +535,30 @@ export function estimateWall(input: FabWallInput, opts: EstimateOptions = {}): W
   labor("Drive time", lm.driveHoursPerWall, pb.labor.installRatePerHrCad,
     `${lm.driveHoursPerWall}h round trip per wall`);
 
+  // ---------- INSTALLER DAY MINIMUM ----------
+  // On-site installers bill a 4-hour minimum, then 8-hour days: <4h bills 4,
+  // 4–8h bills 8, etc. Applies to the install-day block (install + load-in +
+  // clean-up + drive). Site measure is a separate visit; CNC runs are separate
+  // trips — neither is subject to the install-day minimum.
+  const installDayActual = r2(instH + lm.loadInHoursPerWall + lm.cleanupHoursPerWall + lm.driveHoursPerWall);
+  const installDayBilled = Math.ceil(installDayActual / 4) * 4;
+  const minimumBump = r2(installDayBilled - installDayActual);
+  if (minimumBump > 0) {
+    const bumpCost = r2(minimumBump * pb.labor.installRatePerHrCad);
+    lines.push({
+      section: "Labor",
+      description: "Installer day minimum — rounded to 4/8-hr day",
+      detail: `install-day work is ${installDayActual}h actual → billed ${installDayBilled}h (4-hr minimum / 8-hr day) = +${minimumBump}h × ${fmtMoney(pb.labor.installRatePerHrCad)}/h`,
+      qty: minimumBump,
+      unit: "hr",
+      unitCostCad: pb.labor.installRatePerHrCad,
+      totalCad: bumpCost,
+    });
+    math.push(`Installer day minimum: ${installDayActual}h actual → ${installDayBilled}h billed (+${fmtMoney(bumpCost)}).`);
+  } else {
+    math.push(`Installer day: ${installDayActual}h actual = ${installDayBilled}h billed (no minimum bump).`);
+  }
+
   const laborTotalCad = r2(
     lines.filter((l) => l.section === "Labor").reduce((a, l) => a + l.totalCad, 0),
   );
