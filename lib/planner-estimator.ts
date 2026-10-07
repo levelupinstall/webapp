@@ -599,7 +599,7 @@ export function estimateWall(input: FabWallInput, opts: EstimateOptions = {}): W
       unitCostCad: pb.labor.helperRatePerHrCad,
       totalCad: helperCost,
     });
-    math.push(`2-person install: helper ${installDayBilled}h × ${fmtMoney(pb.labor.helperRatePerHrCad)}/h = ${fmtMoney(helperCost)}. Triggers: unit >~100–150 lbs, 10 ft+, full-height needing a holder, or stone/wood top.`);
+    math.push(`2-person install: helper ${installDayBilled}h × ${fmtMoney(pb.labor.helperRatePerHrCad)}/h = ${fmtMoney(helperCost)}. Triggers: unit >~100–150 lbs, 10 ft+, full-height needing a holder, or stone/wood top. Helper must carry own WSIB clearance + liability insurance (Tom's requirement — no burden on Level Up).`);
   }
 
   const laborTotalCad = r2(
