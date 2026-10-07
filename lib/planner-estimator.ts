@@ -152,10 +152,12 @@ export function estimateWall(input: FabWallInput): WallEstimate {
       `Cleats: ${fmtIn(cleatNetSqIn)} sq in net → ${cleatSheets} sheet${cleatSheets === 1 ? "" : "s"} = ${fmtMoney(cleatCost)}.`,
     );
 
-    // Hidden rod brackets: max(2, round(length/24)) per shelf.
-    const rodsPerShelf = input.shelves.map((s) =>
-      Math.max(2, Math.round(s.lengthIn / 24)),
-    );
+    // Hidden rod brackets: industry table by shelf length (primary cantilever
+    // load path — cleat is alignment + back-edge support only).
+    // ≤36": 2 rods; 36–52": 3; 52–72": 4; >72": 5.
+    const rodsFor = (lenIn: number) =>
+      lenIn <= 36 ? 2 : lenIn <= 52 ? 3 : lenIn <= 72 ? 4 : 5;
+    const rodsPerShelf = input.shelves.map((s) => rodsFor(s.lengthIn));
     const rodCount = rodsPerShelf.reduce((a, b) => a + b, 0);
     const rodCost = r2(rodCount * pb.materials.rodBracket.unitCostCad);
     lines.push({
@@ -163,7 +165,7 @@ export function estimateWall(input: FabWallInput): WallEstimate {
       description: pb.materials.rodBracket.description,
       detail:
         input.shelves
-          .map((s, i) => `${s.tag}: max(2, round(${fmtIn(s.lengthIn)}/24)) = ${rodsPerShelf[i]}`)
+          .map((s, i) => `${s.tag} (${fmtIn(s.lengthIn)}in): ${rodsPerShelf[i]} rods per length table`)
           .join("; ") +
         ` → ${rodCount} × ${fmtMoney(pb.materials.rodBracket.unitCostCad)}`,
       qty: rodCount,
@@ -263,6 +265,19 @@ export function estimateWall(input: FabWallInput): WallEstimate {
     });
   }
 
+  // Delivery charge: flat per wall (supplier → shop).
+  const delCost = r2(pb.materials.deliveryFee.unitCostCad);
+  lines.push({
+    section: "Materials",
+    description: pb.materials.deliveryFee.description,
+    detail: `1 trip × ${fmtMoney(pb.materials.deliveryFee.unitCostCad)}`,
+    qty: 1,
+    unit: pb.materials.deliveryFee.unit,
+    unitCostCad: pb.materials.deliveryFee.unitCostCad,
+    totalCad: delCost,
+  });
+  math.push(`Delivery: ${fmtMoney(delCost)} flat per wall.`);
+
   const materialsTotalCad = r2(
     lines.filter((l) => l.section === "Materials").reduce((a, l) => a + l.totalCad, 0),
   );
@@ -320,6 +335,8 @@ export function estimateWall(input: FabWallInput): WallEstimate {
     `${lm.siteMeasureHoursPerWall}h flat per wall`);
   labor("Drawings/admin", lm.adminHoursPerWall, pb.labor.shopRatePerHrCad,
     `${lm.adminHoursPerWall}h flat per wall`);
+  labor("Material handling — receive/unload, load truck (shop)", lm.matHandlingHoursPerWall, pb.labor.shopRatePerHrCad,
+    `${lm.matHandlingHoursPerWall}h flat per wall`);
   labor("Drive time", lm.driveHoursPerWall, pb.labor.installRatePerHrCad,
     `${lm.driveHoursPerWall}h round trip per wall`);
 

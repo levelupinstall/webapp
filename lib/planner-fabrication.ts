@@ -344,9 +344,11 @@ export async function buildSectionSheet(params: {
   let legendY = wallBotY + 44;
   const legend: string[] = [
     `1 — SHELF BOARD ${fmtFrac(boardT)} * THK, PAINT-GRADE BIRCH PLY (TYP)`,
-    `2 — FRENCH CLEAT PAIR, 3/4" PLY 45° RIP × 3 1/2" WIDE * (TYP)`,
-    `3 — Ø${fmtFrac(rodDia)} × ${rodLen}" HIDDEN STEEL ROD BRACKET * (TYP)`,
+    `2 — FRENCH CLEAT PAIR, 3/4" PLY 45° RIP × 3 1/2" WIDE * (TYP) — ALIGNMENT + BACK-EDGE SUPPORT ONLY`,
+    `3 — Ø${fmtFrac(rodDia)} × ${rodLen}" HIDDEN STEEL ROD BRACKET * (TYP) — PRIMARY CANTILEVER LOAD PATH`,
     `4 — #10 × 3" WOOD SCREWS @ 16" O.C. INTO STUDS / BLOCKING AS REQ'D`,
+    `5 — RODS MUST HIT STUDS OR BLOCKING. DRYWALL ANCHORS ALONE ARE NOT STRUCTURAL.`,
+    `6 — DESIGN GUIDE ~50 LBS PER ROD INTO STUDS (VERIFY WITH HARDWARE MFR). BOOKS = HEAVY LOAD.`,
   ];
   svg.push(
     `<text x="${f1(legendX)}" y="${f1(legendY - 24)}" font-family="DejaVu Sans" font-size="13" font-weight="bold" fill="${INK}" letter-spacing="2">NOTES</text>`,
@@ -510,11 +512,12 @@ export async function buildCutListSheet(params: {
   svg.push(
     `<text x="${tx}" y="${schedY}" font-family="DejaVu Sans" font-size="16" font-weight="bold" fill="${INK}" letter-spacing="2">MOUNTING SCHEDULE</text>`,
   );
-  const rodQtyPerShelf = (lenIn: number) => Math.max(2, Math.round(lenIn / 24));
+  const rodQtyPerShelf = (lenIn: number) =>
+    lenIn <= 36 ? 2 : lenIn <= 52 ? 3 : lenIn <= 72 ? 4 : 5;
   const sched: string[] = [];
   for (const s of input.shelves) {
     sched.push(
-      `${s.tag}: ${rodQtyPerShelf(s.lengthIn)}× Ø1/2" × 12" hidden steel rod brackets + 1 pr french cleat, #10 × 3" screws @ 16" O.C. into studs.`,
+      `${s.tag}: ${rodQtyPerShelf(s.lengthIn)}× Ø1/2" × 12" hidden steel rod brackets (MUST hit studs/blocking) + 1 pr french cleat (alignment + back-edge support), #10 × 3" screws @ 16" O.C. into studs.`,
     );
   }
   sched.forEach((line, i) => {

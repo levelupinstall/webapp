@@ -76,6 +76,12 @@ export const PRICE_BOOK: PriceBook = {
       unitCostCad: 12,
       verify: "VERIFY — GTA 2026 placeholder; Tom: confirm your white oak bf price",
     },
+    deliveryFee: {
+      description: "Material delivery charge (supplier to shop), flat per project",
+      unit: "trip",
+      unitCostCad: 85,
+      verify: "VERIFY — GTA 2026 placeholder; Tom: confirm your supplier's delivery fee",
+    },
     rodBracket: {
       description: 'Hidden steel rod bracket, 1/2" x 12"',
       unit: "each",
@@ -168,6 +174,8 @@ export const LABOR_MODEL = {
   adminHoursPerWall: 0.5,
   /** Round-trip drive time, per wall. */
   driveHoursPerWall: 1,
+  /** Material handling at the shop: receive/unload sheet goods, stock, load finished pieces on the truck, per wall. */
+  matHandlingHoursPerWall: 0.5,
   verify: "VERIFY — GTA 2026 placeholder target hours; finishing workflow per Tom Oct 7; INTERNAL ONLY, never on customer paperwork",
 } as const;
 
