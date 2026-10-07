@@ -205,7 +205,10 @@ export function parseDimensionFieldToInches(value: unknown): number | null {
       if (inches !== null) return inches;
     }
     const glued = t.match(
-      /^(?:~|approx\.?|approximately|about|around|roughly)?\s*(\d+(?:\.\d+)?)(mm|cm|m)\s*$/i,
+      new RegExp(
+        `^(?:~|approx\\.?|approximately|about|around|roughly)?\\s*(\\d+(?:\\.\\d+)?)\\s*${METRIC_UNIT_SRC}\\s*$`,
+        "i",
+      ),
     );
     if (glued) {
       const inches = valueToInches(parseFloat(glued[1]), glued[2]);
@@ -429,6 +432,14 @@ function clampDim(n: number, lo: number, hi: number): number | null {
 const MAY_APX =
   "(?:~|approx\\.?|approximately|about|around|roughly|close\\s+to|near(?:ly)?|circa|something\\s+like|maybe|or\\s+so|give\\s+or\\s+take|more\\s+or\\s+less)\\s*";
 
+/**
+ * Metric unit alternation for transcript patterns. Capturing group (keeps group
+ * indices stable for fromUnit via m[2]). Longest-first so "meters" matches fully
+ * rather than just "m". valueToInches already handles the spelled-out forms.
+ */
+const METRIC_UNIT_SRC =
+  "(millimeters?|millimetres?|mm|centimeters?|centimetres?|cm|meters?|metres?|m)";
+
 function lastDimAcrossPatterns(
   hay: string,
   patterns: Array<{ re: RegExp; toInches: (m: RegExpExecArray) => number | null; clamp: readonly [number, number] }>,
@@ -473,7 +484,7 @@ export function extractStatedDimensionsFromTranscript(text: string): Pick<
   const width = lastDimAcrossPatterns(hay, [
     {
       re: new RegExp(
-        `${MAY_APX}(\\d+(?:\\.\\d+)?)(mm|cm|m)\\s*(?:wide|width|span|run|along|opening|long)\\b`,
+        `(?:${MAY_APX})?(\\d+(?:\\.\\d+)?)\\s*${METRIC_UNIT_SRC}\\s*(?:wide|width|span|run|along|opening|long)\\b`,
         "gi",
       ),
       toInches: fromUnit,
@@ -481,7 +492,7 @@ export function extractStatedDimensionsFromTranscript(text: string): Pick<
     },
     {
       re: new RegExp(
-        `(?:width|span|wall\\s+run|opening)\\s*(?:is|of|at|=|:)?\\s*${MAY_APX}(\\d+(?:\\.\\d+)?)\\s*(mm|cm|m)\\b`,
+        `(?:width|span|wall\\s+run|opening)\\s*(?:is|of|at|=|:)?\\s*(?:${MAY_APX})?(\\d+(?:\\.\\d+)?)\\s*${METRIC_UNIT_SRC}\\b`,
         "gi",
       ),
       toInches: fromUnit,
@@ -520,7 +531,7 @@ export function extractStatedDimensionsFromTranscript(text: string): Pick<
     },
     {
       re: new RegExp(
-        `${MAY_APX}(\\d+(?:\\.\\d+)?)\\s*(mm|cm|m)\\s+(?:long|length)\\s+(?:shelf|shelves|unit|run|built[\\s-]?in)`,
+        `(?:${MAY_APX})?(\\d+(?:\\.\\d+)?)\\s*${METRIC_UNIT_SRC}\\s+(?:long|length)\\s+(?:shelf|shelves|unit|run|built[\\s-]?in)`,
         "gi",
       ),
       toInches: fromUnit,
@@ -552,7 +563,7 @@ export function extractStatedDimensionsFromTranscript(text: string): Pick<
   const height = lastDimAcrossPatterns(hay, [
     {
       re: new RegExp(
-        `${MAY_APX}(\\d+(?:\\.\\d+)?)(mm|cm|m)\\s*(?:tall|high|height)\\b`,
+        `(?:${MAY_APX})?(\\d+(?:\\.\\d+)?)\\s*${METRIC_UNIT_SRC}\\s*(?:tall|high|height)\\b`,
         "gi",
       ),
       toInches: fromUnit,
@@ -560,7 +571,7 @@ export function extractStatedDimensionsFromTranscript(text: string): Pick<
     },
     {
       re: new RegExp(
-        `(?:height|tall)\\s*(?:is|of|at|=|:)?\\s*${MAY_APX}(\\d+(?:\\.\\d+)?)\\s*(mm|cm|m)\\b`,
+        `(?:height|tall)\\s*(?:is|of|at|=|:)?\\s*(?:${MAY_APX})?(\\d+(?:\\.\\d+)?)\\s*${METRIC_UNIT_SRC}\\b`,
         "gi",
       ),
       toInches: fromUnit,
@@ -613,7 +624,7 @@ export function extractStatedDimensionsFromTranscript(text: string): Pick<
   const depth = lastDimAcrossPatterns(hay, [
     {
       re: new RegExp(
-        `${MAY_APX}(\\d+(?:\\.\\d+)?)(mm|cm|m)\\s*(?:deep|depth)\\b`,
+        `(?:${MAY_APX})?(\\d+(?:\\.\\d+)?)\\s*${METRIC_UNIT_SRC}\\s*(?:deep|depth)\\b`,
         "gi",
       ),
       toInches: fromUnit,
@@ -621,7 +632,7 @@ export function extractStatedDimensionsFromTranscript(text: string): Pick<
     },
     {
       re: new RegExp(
-        `(?:depth|deep)\\s*(?:is|of|at|about|around|=|:)?\\s*${MAY_APX}(\\d+(?:\\.\\d+)?)\\s*(mm|cm|m)\\b`,
+        `(?:depth|deep)\\s*(?:is|of|at|about|around|=|:)?\\s*(?:${MAY_APX})?(\\d+(?:\\.\\d+)?)\\s*${METRIC_UNIT_SRC}\\b`,
         "gi",
       ),
       toInches: fromUnit,
@@ -658,7 +669,7 @@ export function extractStatedDimensionsFromTranscript(text: string): Pick<
     },
     {
       re: new RegExp(
-        `${MAY_APX}(\\d+(?:\\.\\d+)?)\\s*(mm|cm|m)\\s+(?:deep|depth)\\s+(?:shelf|shelves|shelving|unit)\\b`,
+        `(?:${MAY_APX})?(\\d+(?:\\.\\d+)?)\\s*${METRIC_UNIT_SRC}\\s+(?:deep|depth)\\s+(?:shelf|shelves|shelving|unit)\\b`,
         "gi",
       ),
       toInches: fromUnit,
@@ -669,7 +680,7 @@ export function extractStatedDimensionsFromTranscript(text: string): Pick<
   const shelfVerticalSpacingIn = lastDimAcrossPatterns(hay, [
     {
       re: new RegExp(
-        `${MAY_APX}(\\d+(?:\\.\\d+)?)(mm|cm|m)\\s+between\\s+(?:each\\s+)?(?:shelf|shelves|tier|tiers)\\b`,
+        `(?:${MAY_APX})?(\\d+(?:\\.\\d+)?)\\s*${METRIC_UNIT_SRC}\\s+between\\s+(?:each\\s+)?(?:shelf|shelves|tier|tiers)\\b`,
         "gi",
       ),
       toInches: fromUnit,
@@ -690,7 +701,7 @@ export function extractStatedDimensionsFromTranscript(text: string): Pick<
     },
     {
       re: new RegExp(
-        `between\\s+(?:each\\s+)?(?:shelf|shelves|tier|tiers)[^\\n\\d]{0,45}${MAY_APX}(\\d+(?:\\.\\d+)?)\\s*(mm|cm|m)\\b`,
+        `between\\s+(?:each\\s+)?(?:shelf|shelves|tier|tiers)[^\\n\\d]{0,45}(?:${MAY_APX})?(\\d+(?:\\.\\d+)?)\\s*${METRIC_UNIT_SRC}\\b`,
         "gi",
       ),
       toInches: fromUnit,
@@ -706,7 +717,7 @@ export function extractStatedDimensionsFromTranscript(text: string): Pick<
     },
     {
       re: new RegExp(
-        `${MAY_APX}(\\d+(?:\\.\\d+)?)\\s*(mm|cm|m)\\s+(?:gap|spacing)\\s+(?:between|for)\\s+(?:the\\s+)?(?:shelf|shelves|tiers?)`,
+        `(?:${MAY_APX})?(\\d+(?:\\.\\d+)?)\\s*${METRIC_UNIT_SRC}\\s+(?:gap|spacing)\\s+(?:between|for)\\s+(?:the\\s+)?(?:shelf|shelves|tiers?)`,
         "gi",
       ),
       toInches: fromUnit,
@@ -722,7 +733,7 @@ export function extractStatedDimensionsFromTranscript(text: string): Pick<
     },
     {
       re: new RegExp(
-        `shelf(?:ing)?\\s+spacing\\s*(?:is|of|at|=|:)?\\s*${MAY_APX}(\\d+(?:\\.\\d+)?)\\s*(mm|cm|m)\\b`,
+        `shelf(?:ing)?\\s+spacing\\s*(?:is|of|at|=|:)?\\s*(?:${MAY_APX})?(\\d+(?:\\.\\d+)?)\\s*${METRIC_UNIT_SRC}\\b`,
         "gi",
       ),
       toInches: fromUnit,
@@ -749,7 +760,7 @@ export function extractStatedDimensionsFromTranscript(text: string): Pick<
   const shelfBoardSpanAlongWallIn = lastDimAcrossPatterns(hay, [
     {
       re: new RegExp(
-        `${MAY_APX}(\\d+(?:\\.\\d+)?)(mm|cm|m)\\s+shelves?\\b(?!\\s*,\\s*deep)`,
+        `(?:${MAY_APX})?(\\d+(?:\\.\\d+)?)\\s*${METRIC_UNIT_SRC}\\s+shelves?\\b(?!\\s*,\\s*deep)`,
         "gi",
       ),
       toInches: fromUnit,
@@ -757,7 +768,7 @@ export function extractStatedDimensionsFromTranscript(text: string): Pick<
     },
     {
       re: new RegExp(
-        `${MAY_APX}(\\d+(?:\\.\\d+)?)\\s*(?:"|in(?:ches)?\\.?)\\s+shelves?\\b(?!\\s*,\\s*deep)`,
+        `(?:${MAY_APX})?(\\d+(?:\\.\\d+)?)\\s*(?:"|in(?:ches)?\\.?)\\s+shelves?\\b(?!\\s*,\\s*deep)`,
         "gi",
       ),
       toInches: (m) => valueToInches(nu(m, 1), "in"),
@@ -765,7 +776,7 @@ export function extractStatedDimensionsFromTranscript(text: string): Pick<
     },
     {
       re: new RegExp(
-        `${MAY_APX}(\\d+(?:\\.\\d+)?)\\s*(?:ft|feet|foot)\\s+shelves?\\b(?!\\s*,\\s*deep)`,
+        `(?:${MAY_APX})?(\\d+(?:\\.\\d+)?)\\s*(?:ft|feet|foot)\\s+shelves?\\b(?!\\s*,\\s*deep)`,
         "gi",
       ),
       toInches: fromFt,
@@ -773,7 +784,7 @@ export function extractStatedDimensionsFromTranscript(text: string): Pick<
     },
     {
       re: new RegExp(
-        `shelves?\\s+(?:only|just|about|around|roughly|of|at)?\\s*${MAY_APX}(\\d+(?:\\.\\d+)?)\\s*(mm|cm|m)\\b`,
+        `shelves?\\s+(?:only|just|about|around|roughly|of|at)?\\s*(?:${MAY_APX})?(\\d+(?:\\.\\d+)?)\\s*${METRIC_UNIT_SRC}\\b`,
         "gi",
       ),
       toInches: fromUnit,
@@ -781,7 +792,7 @@ export function extractStatedDimensionsFromTranscript(text: string): Pick<
     },
     {
       re: new RegExp(
-        `shelves?\\s+(?:only|just|about|around|roughly|of|at)?\\s*${MAY_APX}(\\d+(?:\\.\\d+)?)\\s*(?:"|in(?:ches)?\\.?)\\b`,
+        `shelves?\\s+(?:only|just|about|around|roughly|of|at)?\\s*(?:${MAY_APX})?(\\d+(?:\\.\\d+)?)\\s*(?:"|in(?:ches)?\\.?)\\b`,
         "gi",
       ),
       toInches: (m) => valueToInches(nu(m, 1), "in"),
@@ -789,23 +800,15 @@ export function extractStatedDimensionsFromTranscript(text: string): Pick<
     },
     {
       re: new RegExp(
-        `shelves?\\s+(?:only|just|about|around|roughly|of|at)?\\s*${MAY_APX}(\\d+(?:\\.\\d+)?)\\s*(?:ft|feet|foot)\\b`,
+        `shelves?[^.\\n]{0,40}?each\\s+(?:${MAY_APX})?(\\d+(?:\\.\\d+)?)\\s*${METRIC_UNIT_SRC}\\b`,
         "gi",
       ),
-      toInches: fromFt,
+      toInches: fromUnit,
       clamp: DIM_SHELF_SPAN,
     },
     {
       re: new RegExp(
-        `${MAY_APX}(\\d+(?:\\.\\d+)?)\\s*(?:ft|feet|foot)\\s+long\\b`,
-        "gi",
-      ),
-      toInches: fromFt,
-      clamp: DIM_SHELF_SPAN,
-    },
-    {
-      re: new RegExp(
-        `${MAY_APX}(\\d+(?:\\.\\d+)?)\\s*(?:"|in(?:ches)?\\.?)\\s+long\\b`,
+        `shelves?[^.\\n]{0,40}?each\\s+(?:${MAY_APX})?(\\d+(?:\\.\\d+)?)\\s*(?:"|in(?:ches)?\\.?)\\b`,
         "gi",
       ),
       toInches: (m) => valueToInches(nu(m, 1), "in"),
@@ -813,7 +816,47 @@ export function extractStatedDimensionsFromTranscript(text: string): Pick<
     },
     {
       re: new RegExp(
-        `(?:not\\s+as\\s+long|shorter|less\\s+long|narrower)[^.\\n]{0,55}${MAY_APX}(\\d+(?:\\.\\d+)?)\\s*(mm|cm|m)\\b`,
+        `shelves?[^.\\n]{0,40}?each\\s+(?:${MAY_APX})?(\\d+(?:\\.\\d+)?)\\s*(?:ft|feet|foot)\\b`,
+        "gi",
+      ),
+      toInches: fromFt,
+      clamp: DIM_SHELF_SPAN,
+    },
+    {
+      re: new RegExp(
+        `shelves?\\s+(?:only|just|about|around|roughly|of|at)?\\s*(?:${MAY_APX})?(\\d+(?:\\.\\d+)?)\\s*(?:ft|feet|foot)\\b`,
+        "gi",
+      ),
+      toInches: fromFt,
+      clamp: DIM_SHELF_SPAN,
+    },
+    {
+      re: new RegExp(
+        `(?:${MAY_APX})?(\\d+(?:\\.\\d+)?)\\s*(?:ft|feet|foot)\\s+long\\b`,
+        "gi",
+      ),
+      toInches: fromFt,
+      clamp: DIM_SHELF_SPAN,
+    },
+    {
+      re: new RegExp(
+        `(?:${MAY_APX})?(\\d+(?:\\.\\d+)?)\\s*(?:"|in(?:ches)?\\.?)\\s+long\\b`,
+        "gi",
+      ),
+      toInches: (m) => valueToInches(nu(m, 1), "in"),
+      clamp: DIM_SHELF_SPAN,
+    },
+    {
+      re: new RegExp(
+        `(?:${MAY_APX})?(\\d+(?:\\.\\d+)?)\\s*${METRIC_UNIT_SRC}\\s+long\\b`,
+        "gi",
+      ),
+      toInches: fromUnit,
+      clamp: DIM_SHELF_SPAN,
+    },
+    {
+      re: new RegExp(
+        `(?:not\\s+as\\s+long|shorter|less\\s+long|narrower)[^.\\n]{0,55}(?:${MAY_APX})?(\\d+(?:\\.\\d+)?)\\s*${METRIC_UNIT_SRC}\\b`,
         "gi",
       ),
       toInches: fromUnit,
@@ -1125,6 +1168,20 @@ export function buildImageRenderDirective(
   if (dimParts.length > 0) {
     layoutLines.push(`Envelope: ${dimParts.join(" × ")}.`);
   }
+  // Translate inch measurements into a visual anchor the image model can actually
+  // picture: compare against a standard outlet faceplate (4.5" tall).
+  const scaleAnchor = (inches: number): string => {
+    const outletHeights = Math.round((inches / 4.5) * 10) / 10;
+    const sizeWord = inches <= 18 ? "SHORT" : inches <= 48 ? "medium" : "long";
+    return `TRUE SCALE: ${inches}" is about ${outletHeights}× the height of a standard outlet faceplate (4.5" tall) — a ${sizeWord} length, roughly ${inches <= 18 ? "the length of a ruler" : "as stated"}. Render it at true relative scale against the wall and nearby furniture, NOT oversized.`;
+  };
+  if (spec.shelfBoardSpanAlongWallIn === null && spec.width !== null) {
+    // A stated shelf length often lands in the envelope width (e.g. "1 foot long"
+    // shelf); anchor it so the model draws it at true scale.
+    layoutLines.push(
+      `Each shelf board ≈ ${spec.width}" long along the wall. ${scaleAnchor(spec.width)}`,
+    );
+  }
   if (spec.style) layoutLines.push(`Style: ${spec.style}.`);
   if (spec.designCategory) layoutLines.push(`Category: ${spec.designCategory}.`);
   if (spec.shelfCount !== null) {
@@ -1132,11 +1189,8 @@ export function buildImageRenderDirective(
   }
   if (spec.shelfBoardSpanAlongWallIn !== null) {
     const spanIn = spec.shelfBoardSpanAlongWallIn;
-    // Translate the inch measurement into a visual anchor the image model can
-    // actually picture: compare against a standard outlet faceplate (4.5" tall).
-    const outletHeights = Math.round((spanIn / 4.5) * 10) / 10;
     layoutLines.push(
-      `Each shelf board ≈ ${spanIn}" long along the wall. SCALE: that is about ${outletHeights}× the height of a standard outlet faceplate (4.5" tall) — a SHORT shelf, roughly the length of a ruler, NOT a long wall-spanning board. Draw it visibly short relative to the wall and nearby furniture.`,
+      `Each shelf board ≈ ${spanIn}" long along the wall. ${scaleAnchor(spanIn)}`,
     );
   }
   // Horizontal arrangement: user explicitly wants shelves side by side on the same
