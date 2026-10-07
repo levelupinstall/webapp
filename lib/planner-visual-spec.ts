@@ -1168,12 +1168,35 @@ export function buildImageRenderDirective(
   if (dimParts.length > 0) {
     layoutLines.push(`Envelope: ${dimParts.join(" × ")}.`);
   }
-  // Translate inch measurements into a visual anchor the image model can actually
-  // picture: compare against a standard outlet faceplate (4.5" tall).
+  // Translate inch measurements into RELATIVE proportions: image models follow
+  // "one-tenth of the wall width" far better than absolute inches or
+  // outlet-faceplate multiples. Assume ~120" of visible wall as the reference.
   const scaleAnchor = (inches: number): string => {
-    const outletHeights = Math.round((inches / 4.5) * 10) / 10;
-    const sizeWord = inches <= 18 ? "SHORT" : inches <= 48 ? "medium" : "long";
-    return `TRUE SCALE: ${inches}" is about ${outletHeights}× the height of a standard outlet faceplate (4.5" tall) — a ${sizeWord} length, roughly ${inches <= 18 ? "the length of a ruler" : "as stated"}. Render it at true relative scale against the wall and nearby furniture, NOT oversized.`;
+    const frac = inches / 120;
+    const fracWord =
+      frac <= 0.12
+        ? "about one-tenth of"
+        : frac <= 0.2
+          ? "about one-sixth of"
+          : frac <= 0.3
+            ? "about one-quarter of"
+            : frac <= 0.45
+              ? "about one-third of"
+              : frac <= 0.6
+                ? "about half of"
+                : "most of";
+    const sizeWord =
+      inches <= 18 ? "SHORT" : inches <= 36 ? "medium-length" : "long";
+    const shortCue =
+      inches <= 18
+        ? " Clearly short — roughly ruler-length / forearm-length. It must look SMALL against the wall."
+        : "";
+    return (
+      `TRUE SCALE — CRITICAL: this is a ${sizeWord} shelf (${inches}" long). ` +
+      `It must span ${fracWord} the visible wall width.${shortCue} ` +
+      `Do NOT draw it wall-spanning or near wall-spanning. ` +
+      `Photorealistic render only — no text labels, numbers, arrows, or dimension annotations drawn anywhere in the image.`
+    );
   };
   if (spec.shelfBoardSpanAlongWallIn === null && spec.width !== null) {
     // A stated shelf length often lands in the envelope width (e.g. "1 foot long"
