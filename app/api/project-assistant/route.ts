@@ -1683,8 +1683,17 @@ The homeowner likes the design direction — pivot to booking. In one or two war
        * vision and regenerate once with an explicit correction when wrong.
        * A null/failed count never blocks delivery. Skipped in multi-wall mode
        * (per-wall counts are enforced by the shared schematic instead).
+       *
+       * ALSO skipped on refinement-delta turns: the spec's shelfCount is the
+       * PRE-edit count, so "correcting" toward it destroys the requested
+       * delta (seen Oct 7: "add one more shelf" on the closet produced an
+       * empty closet with a single shelf). The refinement prompt already
+       * states the requested change; a stale-spec correction can only harm.
        */
-      const expectedShelfCount = conceptRenderSpec?.shelfCount ?? null;
+      const expectedShelfCount =
+        conceptImageVisualMode === "refinement-delta"
+          ? null
+          : (conceptRenderSpec?.shelfCount ?? null);
       if (renderedImages.length > 0 && expectedShelfCount !== null) {
         const first = renderedImages[0];
         const observed = await geminiCountShelvesInImage({
