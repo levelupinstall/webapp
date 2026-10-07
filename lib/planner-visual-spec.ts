@@ -31,6 +31,34 @@ export type PlannerVisualSpec = {
    * Use when the homeowner asks for shorter shelves, e.g. "24 inch shelves", "not as long".
    */
   shelfBoardSpanAlongWallIn: number | null;
+  /**
+   * Millwork zones along the wall for category-aware elevations (closets,
+   * built-ins). Each zone is a horizontal band of the wall with a function:
+   * shelf tower, hanging section, shoe cubbies, drawers. Null = unknown
+   * (the elevation renderer falls back to a marked-assumed default layout
+   * for closet-labeled designs).
+   */
+  zones: MillworkZone[] | null;
+};
+
+/**
+ * One functional band of a millwork elevation, positioned along the wall.
+ * x0/x1 are fractions of the wall width (0..1), left to right.
+ */
+export type MillworkZone = {
+  kind: "shelf-tower" | "hanging" | "shoe-cubbies" | "drawers" | "open-shelves";
+  x0: number;
+  x1: number;
+  /** shelf-tower / open-shelves: number of shelf boards. */
+  shelves?: number;
+  /** hanging: number of rods (1 = single/long hang, 2 = double hang). */
+  rods?: number;
+  /** shoe-cubbies: rows of cubbies. */
+  rows?: number;
+  /** drawers: number of drawer fronts. */
+  drawers?: number;
+  /** True when the zone was assumed by a fallback, not stated in chat. */
+  assumed?: boolean;
 };
 
 export function emptyPlannerVisualSpec(): PlannerVisualSpec {
@@ -49,6 +77,7 @@ export function emptyPlannerVisualSpec(): PlannerVisualSpec {
     closetRodCount: null,
     shelfVerticalSpacingIn: null,
     shelfBoardSpanAlongWallIn: null,
+    zones: null,
   };
 }
 
@@ -413,6 +442,124 @@ export function extractFixtureCountsFromTranscript(text: string): Pick<
     )?.value ?? null;
 
   return { shelfCount, drawerCount, closetRodCount };
+}
+
+/**
+ * Harvest millwork zone layout from the design conversation.
+ * Detects mentions like "shelf tower on the left", "double hang on the
+ * right", "shoe cubbies along the bottom", "three drawers" and lays them
+ * out left-to-right. Returns null when the chat doesn't describe a layout
+ * (the elevation renderer falls back to a marked-assumed closet default).
+ */
+export function extractMillworkZonesFromTranscript(
+  text: string,
+): MillworkZone[] | null {
+  const t = text.toLowerCase();
+  const numWord = "\\d+|one|two|three|four|five|six|seven|eight|nine|ten";
+  const toN = (s: string | undefined): number | null => {
+    if (!s) return null;
+    const sl = s.toLowerCase();
+    if (/^\d+$/.test(sl)) {
+      const n = parseInt(sl, 10);
+      return n >= 0 && n <= 99 ? n : null;
+    }
+    const w = WORD_NUMBER_SMALL[sl];
+    return w !== undefined ? w : null;
+  };
+  type Raw = {
+    kind: MillworkZone["kind"];
+    at: number;
+    side: -1 | 0 | 1;
+    n: number | null;
+  };
+  const raws: Raw[] = [];
+  const sideOf = (idx: number, len: number): -1 | 0 | 1 => {
+    const ctx = t.slice(Math.max(0, idx - 50), idx + len + 50);
+    if (/\bleft\b/.test(ctx)) return -1;
+    if (/\bright\b/.test(ctx)) return 1;
+    return 0;
+  };
+  const pushAll = (
+    re: RegExp,
+    kind: MillworkZone["kind"],
+    nOf: (m: RegExpMatchArray) => number | null,
+  ) => {
+    for (const m of t.matchAll(re)) {
+      if (m.index === undefined) continue;
+      raws.push({ kind, at: m.index, side: sideOf(m.index, m[0].length), n: nOf(m) });
+    }
+  };
+
+  // Shelf towers: "5 shelves on the left", "tower of shelves", "shelf tower".
+  pushAll(
+    new RegExp(`(${numWord})\\s+shelves?(?:\\s+on\\s+the\\s+(?:left|right))?`, "gi"),
+    "shelf-tower",
+    (m) => toN(m[1]),
+  );
+  pushAll(/\b(?:shelf\s+)?towers?\b/gi, "shelf-tower", () => null);
+  // Hanging: "double hang", "2 rods", "hanging section".
+  pushAll(/\bdouble[-\s]?hang\b/gi, "hanging", () => 2);
+  pushAll(
+    new RegExp(`(${numWord})\\s+(?:hanging\\s+)?rods?`, "gi"),
+    "hanging",
+    (m) => toN(m[1]),
+  );
+  pushAll(/\bhanging\s+(?:section|area|space)\b/gi, "hanging", () => null);
+  // Drawers: "3 drawers", "drawer bank".
+  pushAll(
+    new RegExp(`(${numWord})\\s+drawers?`, "gi"),
+    "drawers",
+    (m) => toN(m[1]),
+  );
+  pushAll(/\bdrawer\s+bank\b/gi, "drawers", () => null);
+  // Shoe cubbies: usually a bottom band.
+  pushAll(
+    /\bshoe\s+(?:cubb(?:y|ies)|shel(?:f|ves)|storage|rack|organizer)\b/gi,
+    "shoe-cubbies",
+    () => null,
+  );
+
+  if (raws.length === 0) return null;
+
+  // Dedupe: keep the last mention per kind+side.
+  const seen = new Map<string, Raw>();
+  for (const r of raws) seen.set(`${r.kind}|${r.side}`, r);
+  const uniq = [...seen.values()].sort((a, b) => a.at - b.at);
+
+  // Lay out left → right: explicit left first, then unpositioned (in mention
+  // order), then explicit right. Shoe cubbies span the full width as a
+  // bottom band instead of taking a side slot.
+  const shoe = uniq.filter((r) => r.kind === "shoe-cubbies");
+  const rest = uniq.filter((r) => r.kind !== "shoe-cubbies");
+  const left = rest.filter((r) => r.side === -1);
+  const mid = rest.filter((r) => r.side === 0);
+  const right = rest.filter((r) => r.side === 1);
+  const ordered = [...left, ...mid, ...right];
+  if (ordered.length === 0 && shoe.length === 0) return null;
+
+  const defaultW: Record<MillworkZone["kind"], number> = {
+    "shelf-tower": 0.35,
+    hanging: 0.5,
+    drawers: 0.35,
+    "shoe-cubbies": 1,
+    "open-shelves": 0.5,
+  };
+  const totalW = ordered.reduce((a, r) => a + defaultW[r.kind], 0) || 1;
+  const zones: MillworkZone[] = [];
+  let x = 0;
+  for (const r of ordered) {
+    const w = defaultW[r.kind] / totalW;
+    const zone: MillworkZone = { kind: r.kind, x0: x, x1: Math.min(1, x + w) };
+    if (r.kind === "shelf-tower" || r.kind === "open-shelves") zone.shelves = r.n ?? 4;
+    if (r.kind === "hanging") zone.rods = r.n ?? 2;
+    if (r.kind === "drawers") zone.drawers = r.n ?? 3;
+    zones.push(zone);
+    x += w;
+  }
+  for (const r of shoe) {
+    zones.push({ kind: "shoe-cubbies", x0: 0, x1: 1, rows: 2 });
+  }
+  return zones.length > 0 ? zones : null;
 }
 
 const DIM_W = [12, 360] as const;
@@ -1003,11 +1150,13 @@ export function mergePlannerFixtureCounts(
   transcript: string,
 ): PlannerVisualSpec {
   const ex = extractFixtureCountsFromTranscript(transcript);
+  const zones = spec.zones ?? extractMillworkZonesFromTranscript(transcript);
   const withCounts: PlannerVisualSpec = {
     ...spec,
     shelfCount: spec.shelfCount ?? ex.shelfCount,
     drawerCount: spec.drawerCount ?? ex.drawerCount,
     closetRodCount: spec.closetRodCount ?? ex.closetRodCount,
+    zones,
   };
   return mergePlannerStatedDimensionsFromTranscript(withCounts, transcript);
 }
@@ -1097,6 +1246,7 @@ export function normalizeVisualSpec(raw: Record<string, unknown>): PlannerVisual
     closetRodCount: parseCountField(raw.closetRodCount),
     shelfVerticalSpacingIn: parseInchesFieldClamped(raw.shelfVerticalSpacingIn, 4, 60),
     shelfBoardSpanAlongWallIn: parseInchesFieldClamped(raw.shelfBoardSpanAlongWallIn, 8, 120),
+    zones: null,
   };
 }
 

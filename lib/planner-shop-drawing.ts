@@ -10,7 +10,7 @@
  * shopDrawingDims (expected vs actual verification after deposit).
  */
 
-import type { PlannerVisualSpec } from "@/lib/planner-visual-spec";
+import type { PlannerVisualSpec, MillworkZone } from "@/lib/planner-visual-spec";
 import { ensurePlannerFonts, svgFontStyle } from "./planner-svg-font";
 
 export type ShopDrawingDimension = {
@@ -102,9 +102,11 @@ export async function buildShopDrawingElevation(params: {
   const heightKnown = spec.height !== null;
 
   // Sheet layout: drawing area + tag column + title block column.
+  // Zones add a second dimension chain up top — give it headroom.
+  const hasZones = !!(spec.zones && spec.zones.length > 0) || /closet|wardrobe/i.test(spec.designCategory ?? "");
   const titleW = 380;
   const tagColW = 140;
-  const mTop = 150;
+  const mTop = hasZones ? 200 : 150;
   const mLeft = 150;
   const mRight = titleW + 60 + tagColW;
   const mBottom = 130;
@@ -138,19 +140,187 @@ export async function buildShopDrawingElevation(params: {
     `<text x="${f1(wx0 - 8)}" y="${f1(wy1 + 22)}" font-family="DejaVu Sans" font-size="13" fill="${DIM}" text-anchor="end">F.F.</text>`,
   );
 
-  // ---- Millwork: shelves ----
-  // If the spec has no shelf count but the design is shelf-like, assume 2 and
-  // mark every shelf dim assumed (*) — an empty drawing helps nobody, and the
-  // * convention plus "PRELIMINARY" banner keep it honest.
+  // ---- Millwork ----
+  // Zone-aware rendering: closets and built-ins draw their functional zones
+  // (shelf towers, hanging sections with rods, shoe cubbies, drawers).
+  // Non-zoned shelf designs use the legacy centered-shelf layout.
+  const isCloset = /closet|wardrobe/i.test(spec.designCategory ?? "");
+  let zones: MillworkZone[] | null = spec.zones && spec.zones.length > 0 ? spec.zones : null;
+  let zonesAssumed = false;
+  if (!zones && isCloset) {
+    // Fallback: a representative closet layout so the sheet shows the
+    // actual design instead of an empty box. Every dim is marked assumed.
+    const towerShelves =
+      spec.shelfCount && spec.shelfCount > 0 ? Math.min(Math.round(spec.shelfCount), 8) : 5;
+    const rods =
+      spec.closetRodCount && spec.closetRodCount > 0 ? Math.round(spec.closetRodCount) : 2;
+    zones = [
+      { kind: "shelf-tower", x0: 0, x1: 0.38, shelves: towerShelves, assumed: true },
+      { kind: "hanging", x0: 0.38, x1: 1, rods, assumed: true },
+      { kind: "shoe-cubbies", x0: 0, x1: 1, rows: 2, assumed: true },
+    ];
+    zonesAssumed = true;
+  }
+
+  type Part = { tag: string; hIn: number; y: number; cx: number };
+  const parts: Part[] = [];
+  // Shelf tag counter (bottom-up across all zones); rods/drws have own series.
+  let shN = 0;
+  let rdN = 0;
+  let drN = 0;
+
+  const shelfThickPx = Math.max(9, 1.5 * pxPerIn);
+  const drawShelf = (x0: number, lenPx: number, y: number, tag: string, hIn: number) => {
+    svg.push(
+      `<rect x="${f1(x0)}" y="${f1(y - shelfThickPx / 2)}" width="${f1(lenPx)}" height="${f1(shelfThickPx)}" fill="${MILL_FILL}" stroke="${MILL_EDGE}" stroke-width="2.5"/>`,
+    );
+    parts.push({ tag, hIn, y, cx: x0 + lenPx / 2 });
+    dimensions.push({ name: `${tag} height A.F.F.`, expectedIn: r1(hIn), known: !zonesAssumed });
+  };
+  const drawRod = (x0: number, lenPx: number, y: number, hIn: number) => {
+    rdN += 1;
+    const tag = `RD-${rdN}`;
+    // Rod: double line (pipe) + hanger ticks every ~14 px.
+    svg.push(
+      `<line x1="${f1(x0)}" y1="${f1(y - 2.5)}" x2="${f1(x0 + lenPx)}" y2="${f1(y - 2.5)}" stroke="${MILL_EDGE}" stroke-width="2"/>`,
+      `<line x1="${f1(x0)}" y1="${f1(y + 2.5)}" x2="${f1(x0 + lenPx)}" y2="${f1(y + 2.5)}" stroke="${MILL_EDGE}" stroke-width="2"/>`,
+    );
+    for (let hx = x0 + 10; hx < x0 + lenPx - 6; hx += 14) {
+      svg.push(
+        `<line x1="${f1(hx)}" y1="${f1(y + 2.5)}" x2="${f1(hx)}" y2="${f1(y + 16)}" stroke="${DIM}" stroke-width="1.5"/>`,
+      );
+    }
+    parts.push({ tag, hIn, y, cx: x0 + lenPx / 2 });
+    dimensions.push({ name: `${tag} height A.F.F.`, expectedIn: r1(hIn), known: !zonesAssumed });
+  };
+
+  // Legacy shelf path (non-closet, no zones) — unchanged behavior.
   const shelfLike = /shelves?|shelving|bookcase/i.test(spec.designCategory ?? "");
-  const shelfCountAssumed = (spec.shelfCount ?? 0) <= 0 && shelfLike;
-  const shelfCount = spec.shelfCount && spec.shelfCount > 0 ? spec.shelfCount : shelfLike ? 2 : 0;
+  const shelfCountAssumed = !zones && (spec.shelfCount ?? 0) <= 0 && shelfLike;
+  const shelfCount = spec.shelfCount && spec.shelfCount > 0 ? spec.shelfCount : shelfLike && !zones ? 2 : 0;
   const spanIn = spec.shelfBoardSpanAlongWallIn ?? Math.min(wallWIn * 0.55, 48);
   const spacingIn = spec.shelfVerticalSpacingIn ?? null;
   type Shelf = { x: number; y: number; lenPx: number; hIn: number; lenIn: number; tag: string };
   const shelves: Shelf[] = [];
 
-  if (shelfCount > 0 && shelfCount <= 12) {
+  if (zones) {
+    // Shoe cubbies render as a bottom band; other zones sit above it.
+    const shoeZone = zones.find((z) => z.kind === "shoe-cubbies");
+    const shoeHIn = 22;
+    const shoeTopY = shoeZone ? wy1 - shoeHIn * pxPerIn : wy1;
+    const contentTopY = wy0 + 24;
+
+    if (shoeZone) {
+      const rows = shoeZone.rows ?? 2;
+      const zx0 = wx0 + shoeZone.x0 * wallPxW;
+      const zx1 = wx0 + shoeZone.x1 * wallPxW;
+      const bandH = wy1 - shoeTopY;
+      const rowH = bandH / rows;
+      const colW = Math.min(16 * pxPerIn, (zx1 - zx0) / 4);
+      const nCols = Math.max(2, Math.floor((zx1 - zx0) / colW));
+      const cw = (zx1 - zx0) / nCols;
+      svg.push(
+        `<rect x="${f1(zx0)}" y="${f1(shoeTopY)}" width="${f1(zx1 - zx0)}" height="${f1(bandH)}" fill="${MILL_FILL}" stroke="${MILL_EDGE}" stroke-width="2.5"/>`,
+      );
+      for (let c = 1; c < nCols; c++) {
+        const cx = zx0 + c * cw;
+        svg.push(`<line x1="${f1(cx)}" y1="${f1(shoeTopY)}" x2="${f1(cx)}" y2="${f1(wy1)}" stroke="${MILL_EDGE}" stroke-width="1.5"/>`);
+      }
+      for (let r = 1; r < rows; r++) {
+        const ry = shoeTopY + r * rowH;
+        svg.push(`<line x1="${f1(zx0)}" y1="${f1(ry)}" x2="${f1(zx1)}" y2="${f1(ry)}" stroke="${MILL_EDGE}" stroke-width="1.5"/>`);
+      }
+      const cbx = (zx0 + zx1) / 2;
+      const cby = (shoeTopY + wy1) / 2;
+      svg.push(
+        `<circle cx="${f1(cbx)}" cy="${f1(cby)}" r="20" fill="${TAG_FILL}" stroke="${INK}" stroke-width="2"/>`,
+        `<text x="${f1(cbx)}" y="${f1(cby + 5)}" font-family="DejaVu Sans Mono" font-size="14" font-weight="bold" fill="${INK}" text-anchor="middle">CB-1</text>`,
+      );
+      dimensions.push({ name: "Shoe cubby bank height", expectedIn: shoeHIn, known: !zonesAssumed });
+    }
+
+    // Vertical dividers between side-by-side zones.
+    const dividers = new Set<number>();
+    for (const z of zones) {
+      if (z.kind === "shoe-cubbies") continue;
+      dividers.add(z.x0);
+      dividers.add(z.x1);
+    }
+    for (const dx of dividers) {
+      if (dx <= 0.001 || dx >= 0.999) continue;
+      const px = wx0 + dx * wallPxW;
+      svg.push(
+        `<line x1="${f1(px)}" y1="${f1(wy0)}" x2="${f1(px)}" y2="${f1(shoeTopY)}" stroke="${MILL_EDGE}" stroke-width="2.5"/>`,
+      );
+    }
+
+    for (const z of zones) {
+      if (z.kind === "shoe-cubbies") continue;
+      const zx0 = wx0 + z.x0 * wallPxW + 4;
+      const zx1 = wx0 + z.x1 * wallPxW - 4;
+      const zw = zx1 - zx0;
+      if (zw < 20) continue;
+      if (z.kind === "shelf-tower" || z.kind === "open-shelves") {
+        const n = Math.max(1, Math.min(10, Math.round(z.shelves ?? 4)));
+        for (let i = 0; i < n; i++) {
+          // Bottom-up: first shelf lowest.
+          const hIn = 24 + (i * (78 - 24)) / Math.max(1, n - 1);
+          const y = wy1 - hIn * pxPerIn;
+          if (y < contentTopY || y > shoeTopY - 6) continue;
+          shN += 1;
+          drawShelf(zx0, zw, y, `SH-${shN}`, hIn);
+          dimensions.push({ name: `SH-${shN} length`, expectedIn: r1(zw / pxPerIn), known: !zonesAssumed });
+        }
+      } else if (z.kind === "hanging") {
+        const nRods = Math.max(1, Math.min(3, Math.round(z.rods ?? 2)));
+        const rodHeights = nRods === 1 ? [66] : nRods === 2 ? [64, 32] : [80, 52, 30];
+        for (const hIn of rodHeights.slice(0, nRods)) {
+          const y = wy1 - hIn * pxPerIn;
+          if (y < contentTopY || y > shoeTopY - 10) continue;
+          drawRod(zx0, zw, y, hIn);
+        }
+        // Top shelf above the rods.
+        const topY = wy1 - 80 * pxPerIn;
+        if (topY > contentTopY && nRods <= 2) {
+          shN += 1;
+          drawShelf(zx0, zw, topY, `SH-${shN}`, 80);
+        }
+      } else if (z.kind === "drawers") {
+        const nD = Math.max(1, Math.min(6, Math.round(z.drawers ?? 3)));
+        const drH = 9 * pxPerIn;
+        let y = shoeTopY - 6;
+        for (let i = 0; i < nD; i++) {
+          const yTop = y - drH;
+          if (yTop < contentTopY) break;
+          drN += 1;
+          const tag = `DR-${drN}`;
+          svg.push(
+            `<rect x="${f1(zx0)}" y="${f1(yTop)}" width="${f1(zw)}" height="${f1(drH)}" fill="${MILL_FILL}" stroke="${MILL_EDGE}" stroke-width="2.5"/>`,
+            `<line x1="${f1(zx0 + zw / 2 - 14)}" y1="${f1(yTop + drH / 2)}" x2="${f1(zx0 + zw / 2 + 14)}" y2="${f1(yTop + drH / 2)}" stroke="${MILL_EDGE}" stroke-width="3"/>`,
+          );
+          const hIn = (wy1 - (yTop + drH / 2)) / pxPerIn;
+          parts.push({ tag, hIn, y: yTop + drH / 2, cx: zx0 + zw / 2 });
+          dimensions.push({ name: `${tag} center A.F.F.`, expectedIn: r1(hIn), known: !zonesAssumed });
+          y = yTop - 4;
+        }
+      }
+    }
+    // Part tags with leaders in the tag column (collision-avoided:
+    // nudged down when two parts are close vertically).
+    const tagParts = parts.slice().sort((a, b) => a.y - b.y);
+    let lastTagY = -100;
+    for (const p of tagParts) {
+      const tx = wx1 + tagColW / 2;
+      let ty = p.y;
+      if (ty < lastTagY + 44) ty = lastTagY + 44;
+      lastTagY = ty;
+      svg.push(
+        `<line x1="${f1(p.cx)}" y1="${f1(p.y)}" x2="${f1(tx - 34)}" y2="${f1(ty)}" stroke="${DIM}" stroke-width="1.25"/>`,
+        `<circle cx="${f1(tx)}" cy="${f1(ty)}" r="20" fill="${TAG_FILL}" stroke="${INK}" stroke-width="2"/>`,
+        `<text x="${f1(tx)}" y="${f1(ty + 5)}" font-family="DejaVu Sans Mono" font-size="14" font-weight="bold" fill="${INK}" text-anchor="middle">${p.tag}</text>`,
+      );
+    }
+  } else if (shelfCount > 0 && shelfCount <= 12) {
     const n = Math.round(shelfCount);
     const lenIn = Math.min(spanIn, wallWIn);
     const lenPx = lenIn * pxPerIn;
@@ -211,9 +381,12 @@ export async function buildShopDrawingElevation(params: {
   }
   // Fabrication standards from the section/cut-list sheets — Tom confirms
   // these on site (confirm-only, any positive value passes).
-  if (shelves.length > 0) {
+  if (shelves.length > 0 || parts.some((p) => p.tag.startsWith("SH-"))) {
     dimensions.push({ name: "Shelf board thickness", expectedIn: 1.5, known: false });
     dimensions.push({ name: "French cleat stock", expectedIn: 0.75, known: false });
+  }
+  if (parts.some((p) => p.tag.startsWith("RD-"))) {
+    dimensions.push({ name: "Closet rod", expectedIn: 1.25, known: false });
   }
 
   // ---- Dimension chains ----
@@ -228,7 +401,39 @@ export async function buildShopDrawingElevation(params: {
     tickH(wx1, topY),
     dimLabel((wx0 + wx1) / 2, topY - 10, fmtFractional(wallWIn) + (widthKnown ? "" : " *"), 17, true),
   );
-  if (shelves.length > 0) {
+  if (zones) {
+    // Zone widths along the top chain.
+    const sorted = zones
+      .filter((z) => z.kind !== "shoe-cubbies")
+      .slice()
+      .sort((a, b) => a.x0 - b.x0);
+    const zpts = [wx0];
+    const zvals: number[] = [];
+    for (const z of sorted) {
+      zvals.push((z.x1 - z.x0) * wallWIn);
+      const px = wx0 + z.x1 * wallPxW;
+      if (px < wx1 - 4) zpts.push(px);
+    }
+    zpts.push(wx1);
+    if (zpts.length > 2 || zvals.length > 1) {
+      zpts.push(wx1);
+      svg.push(
+        `<line x1="${f1(wx0)}" y1="${f1(chainY)}" x2="${f1(wx1)}" y2="${f1(chainY)}" stroke="${DIM}" stroke-width="1.25"/>`,
+      );
+      zpts.forEach((px) => {
+        svg.push(
+          `<line x1="${f1(px)}" y1="${f1(topY - 6)}" x2="${f1(px)}" y2="${f1(chainY + 8)}" stroke="${DIM}" stroke-width="1"/>`,
+          tickH(px, chainY),
+        );
+      });
+      for (let i = 0; i < zvals.length; i++) {
+        const cx = (zpts[i] + zpts[i + 1]) / 2;
+        const v = zvals[i];
+        if (v >= 1) svg.push(dimLabel(cx, chainY - 9, fmtFractional(v) + (zonesAssumed ? " *" : ""), 13, false));
+      }
+      dimensions.push({ name: "Zone widths per plan", expectedIn: r1(wallWIn), known: !zonesAssumed });
+    }
+  } else if (shelves.length > 0) {
     const s0 = shelves[0];
     const gapL = (s0.x - wx0) / pxPerIn;
     const gapR = (wx1 - (s0.x + s0.lenPx)) / pxPerIn;
@@ -264,19 +469,42 @@ export async function buildShopDrawingElevation(params: {
     tickV(leftX, wy1),
     dimLabelV(leftX - 12, (wy0 + wy1) / 2, fmtFractional(wallHIn) + (heightKnown ? "" : " *"), 17, true),
   );
-  // Per-shelf heights as a running chain on the outer column (bottom-up).
-  const sortedShelves = shelves.slice().sort((a, b) => b.y - a.y);
-  if (sortedShelves.length > 0) {
+  // Per-part heights as a running chain on the outer column (bottom-up).
+  // Zones: shelves + rods + drawer centers. Legacy: shelves.
+  const chainParts = zones
+    ? (() => {
+        // Zone drawings have many parts — the left chain shows only the
+        // critical datums (rod heights, tower top/bottom shelves). Every
+        // part height is still in the dimensions checklist.
+        const all = parts.slice().sort((a, b) => b.y - a.y);
+        const shTags = all.filter((p) => p.tag.startsWith("SH-"));
+        const keep = new Set<string>();
+        for (const p of all) {
+          if (p.tag.startsWith("RD-") || p.tag.startsWith("DR-")) keep.add(p.tag);
+        }
+        if (shTags.length > 0) {
+          keep.add(shTags[0].tag);
+          keep.add(shTags[shTags.length - 1].tag);
+        }
+        return all.filter((p) => keep.has(p.tag));
+      })()
+    : shelves.slice().sort((a, b) => b.y - a.y).map((s) => ({ tag: s.tag, hIn: s.hIn, y: s.y, cx: s.x }));
+  const chainAssumed = zones ? zonesAssumed : shelfCountAssumed;
+  if (chainParts.length > 0) {
     svg.push(
-      `<line x1="${f1(leftChainX)}" y1="${f1(sortedShelves[0].y)}" x2="${f1(leftChainX)}" y2="${f1(wy1)}" stroke="${DIM}" stroke-width="1.25"/>`,
+      `<line x1="${f1(leftChainX)}" y1="${f1(chainParts[0].y)}" x2="${f1(leftChainX)}" y2="${f1(wy1)}" stroke="${DIM}" stroke-width="1.25"/>`,
     );
-    for (const s of sortedShelves) tickV(leftChainX, s.y);
+    for (const s of chainParts) tickV(leftChainX, s.y);
     tickV(leftChainX, wy1);
-    sortedShelves.forEach((s, i) => {
-      const belowY = i === 0 ? wy1 : sortedShelves[i - 1].y;
+    chainParts.forEach((s, i) => {
+      const belowY = i === 0 ? wy1 : chainParts[i - 1].y;
+      // Stagger labels alternately left/right of the chain — zone drawings
+      // have many parts and rotated labels would otherwise collide.
+      const stagger = zones && i % 2 === 1;
+      const lx = stagger ? leftChainX + 14 : leftChainX - 12;
       svg.push(
-        `<line x1="${f1(s.x - 4)}" y1="${f1(s.y)}" x2="${f1(leftChainX - 8)}" y2="${f1(s.y)}" stroke="${DIM}" stroke-width="1" stroke-dasharray="5 4"/>`,
-        dimLabelV(leftChainX - 12, (s.y + belowY) / 2, fmtFractional(s.hIn) + (shelfCountAssumed ? " *" : ""), 12, false),
+        `<line x1="${f1(s.cx - 4)}" y1="${f1(s.y)}" x2="${f1(leftChainX - 8)}" y2="${f1(s.y)}" stroke="${DIM}" stroke-width="1" stroke-dasharray="5 4"/>`,
+        dimLabelV(lx, (s.y + belowY) / 2, `${s.tag} ` + fmtFractional(s.hIn) + (chainAssumed ? " *" : ""), 10, false),
       );
     });
   }

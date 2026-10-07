@@ -101,7 +101,7 @@ Align direction with their budget. If scope sounds beyond budget, ask whether to
 
 **Shelves / built-ins / wall pieces:** Width/length along wall, height, and depth together in one question when still missing.
 
-**Closets:** Habits (hang vs shelves vs drawers) in prose when helpful — no product dumps.
+**Closets:** Habits (hang vs shelves vs drawers) in prose when helpful — no product dumps. Establish the zone layout before the concept: which side gets the shelf tower, where the hanging section goes (single or double hang?), shoe storage along the bottom? "I'm picturing shelves down the left side and double-hang on the right — does that match how you use the closet?" The shop drawing draws exactly this layout, so get it in writing.
 
 ## Spatial logic & scaling
 - Largest vertical = **Height**; shorter horizontal = **Depth**; other horizontal = **Width**.
