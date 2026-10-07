@@ -14,6 +14,68 @@ export function extractWallLabels(text: string): string[] {
     .slice(0, 6);
 }
 
+const ORDINAL_INDEX: Record<string, number> = {
+  first: 0,
+  second: 1,
+  third: 2,
+  fourth: 3,
+  fifth: 4,
+  sixth: 5,
+  "1st": 0,
+  "2nd": 1,
+  "3rd": 2,
+  "4th": 3,
+  "5th": 4,
+  "6th": 5,
+};
+
+/**
+ * Deterministic wall-label extraction from the homeowner's own message.
+ * Handles "first photo is the kitchen wall, second photo is the bedroom wall"
+ * and "photo 1 = kitchen, photo 2 = bedroom". Requires an explicit "is"/"="
+ * separator per clause, so "first, I want shelves" is not misread as a label.
+ * Returns labels in photo-upload order; empty unless ≥2 walls found.
+ */
+export function extractWallLabelsFromUserText(text: string): string[] {
+  if (!text || !text.trim()) return [];
+  const clauses = text
+    .split(/[,.;!?\n]+|\band\b/gi)
+    .map((s) => s.trim())
+    .filter((s) => s.length > 0);
+  const found: Array<{ index: number; label: string }> = [];
+  for (const clause of clauses) {
+    let index: number | null = null;
+    const ordM = clause.match(
+      /\b(first|second|third|fourth|fifth|sixth|1st|2nd|3rd|4th|5th|6th)\b/i,
+    );
+    if (ordM) {
+      index = ORDINAL_INDEX[ordM[1].toLowerCase()];
+    } else {
+      const pnM = clause.match(/\bphoto\s*([1-6])\b/i);
+      if (pnM) index = parseInt(pnM[1], 10) - 1;
+    }
+    if (index === null || index === undefined || index < 0 || index > 5) continue;
+    const sepM = clause.match(/(?:\bis\b|=)\s*(.+)$/i);
+    if (!sepM) continue;
+    const label = sepM[1].trim().replace(/^the\s+/i, "").trim();
+    if (label.length === 0 || label.length > 60) continue;
+    // Guard: label shouldn't itself contain another ordinal reference.
+    if (/\b(first|second|third|photo\s*[1-6])\b/i.test(label)) continue;
+    found.push({ index, label });
+  }
+  if (found.length < 2) return [];
+  found.sort((a, b) => a.index - b.index);
+  const seen = new Set<number>();
+  const deduped: string[] = [];
+  for (const f of found) {
+    if (!seen.has(f.index)) {
+      seen.add(f.index);
+      deduped.push(f.label);
+    }
+  }
+  return deduped.length >= 2 ? deduped : [];
+}
+
 export type PlannerPhaseTag = "consultation" | "recommend" | "refine";
 
 /** Remove every `[PHASE:…]` / `[WALLS:…]` marker (any casing/spacing, any suffix) from user-visible copy. */

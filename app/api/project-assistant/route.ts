@@ -15,6 +15,7 @@ import {
 import {
   extractPlannerPhase,
   extractWallLabels,
+  extractWallLabelsFromUserText,
   stripMisleadingImageDeliveryClaims,
   stripPlannerPhaseMarkers,
   type PlannerPhaseTag,
@@ -293,6 +294,8 @@ function buildPlannerSystemInstruction(params: {
   sessionPhotoCount?: number;
   /** Wall labels already confirmed via [WALLS:…] markers (empty when unlabeled). */
   wallLabelsPreReply?: string[];
+  /** True when the homeowner's latest message labels the walls itself. */
+  userLabeledWallsThisTurn?: boolean;
 }): string {
   const chunks: string[] = [PLANNER_ASSISTANT_SYSTEM];
 
@@ -330,6 +333,10 @@ The homeowner uploaded **${uploadedCount} space photos** — likely different wa
     chunks.push(`
 ## Multi-wall session (labeled walls)
 This room has **${labeledWalls.length} labeled walls**: ${labeledWalls.map((w, i) => `Photo ${i + 1} = ${w}`).join("; ")}. The platform renders one concept image per labeled wall. In your reply, summarize the design **per wall** (one short line each) so the whole-room plan is clear. Keep finishes, materials, and hardware **identical across all walls** unless the homeowner explicitly asked a wall to differ.`);
+  } else if (params.userLabeledWallsThisTurn) {
+    chunks.push(`
+## Multi-wall labels just confirmed
+The homeowner just told you which photo shows which wall. Acknowledge briefly (one line confirming the mapping) and let the platform render one concept per wall — do **not** ask more intake questions (style, budget, dimensions) before the renders. After the renders, summarize the design per wall in one short line each.`);
   } else if (
     uploadedCount === 0 &&
     (params.sessionPhotoCount ?? 0) >= 2
@@ -972,6 +979,9 @@ The homeowner likes the design direction — pivot to booking. In one or two war
         .map((m) => m.content)
         .join("\n"),
     );
+    /** True when the homeowner's latest message itself labels the walls. */
+    const userLabeledWallsThisTurn =
+      extractWallLabelsFromUserText(lastUserText).length >= 2;
 
     try {
       if (isGeminiConfigured()) {
@@ -995,6 +1005,7 @@ The homeowner likes the design direction — pivot to booking. In one or two war
             sessionPhotoCount:
               portalSpacePhotoParts.length + sketchReferenceFiles.length,
             wallLabelsPreReply,
+            userLabeledWallsThisTurn,
             ...(roomPhotoHintsSystemBlock.trim()
               ? { roomPhotoHintsBlock: roomPhotoHintsSystemBlock }
               : {}),
@@ -1067,14 +1078,24 @@ The homeowner likes the design direction — pivot to booking. In one or two war
     let phase = phaseFromModel;
 
     /**
-     * Multi-wall: wall labels effective this turn = prior transcript labels,
-     * overridden by any [WALLS:…] marker Alex just emitted in this reply.
-     * Photo source: this turn's uploads first, else the portal session photos
-     * (chronological = upload order, so wall i ↔ photo i).
+     * Multi-wall: wall labels effective this turn. Priority:
+     * 1. [WALLS:…] marker Alex just emitted (confirmed mapping),
+     * 2. deterministic parse of the homeowner's own labeling message
+     *    ("first photo is the kitchen wall…") — doesn't depend on the
+     *    model cooperating,
+     * 3. labels from earlier turns.
+     * Photo source: this turn's uploads first, else re-sent sketch refs
+     * (guests), else the portal session photos (chronological = upload
+     * order, so wall i ↔ photo i).
      */
     const wallLabelsThisTurn = extractWallLabels(replyForPhase);
+    const wallLabelsFromUser = extractWallLabelsFromUserText(lastUserText);
     const wallLabelsEffective =
-      wallLabelsThisTurn.length > 0 ? wallLabelsThisTurn : wallLabelsPreReply;
+      wallLabelsThisTurn.length >= 2
+        ? wallLabelsThisTurn
+        : wallLabelsFromUser.length >= 2
+          ? wallLabelsFromUser
+          : wallLabelsPreReply;
     const multiWallPhotoSource =
       latestImageParts.length >= 2
         ? latestImageParts
