@@ -59,6 +59,10 @@ export type WallEstimate = {
   subcontractTotalCad: number;
   subcontractWithMarkupCad: number;
   laborTotalCad: number;
+  /** Tom's hands-on time: shop hours (assembly/finishing at the shop rate). */
+  shopHoursTotal: number;
+  /** Tom's hands-on time: site hours (install/measure/drive/CNC runs). */
+  siteHoursTotal: number;
   /** Sheets of 4x8 that go to the CNC shop (0 on in-shop route). */
   sheetsForCnc: number;
   /** Spare sheets bought for CNC recuts (0 on in-shop route). */
@@ -397,6 +401,8 @@ export function estimateWall(input: FabWallInput, opts: EstimateOptions = {}): W
   }
 
   // ---------- LABOR (INTERNAL — target hours × rates; never customer-facing) ----------
+  let shopHoursTotal = 0;
+  let siteHoursTotal = 0;
   const labor = (
     description: string,
     hours: number,
@@ -413,6 +419,8 @@ export function estimateWall(input: FabWallInput, opts: EstimateOptions = {}): W
       unitCostCad: rate,
       totalCad: total,
     });
+    if (rate === pb.labor.shopRatePerHrCad) shopHoursTotal = r2(shopHoursTotal + hours);
+    else siteHoursTotal = r2(siteHoursTotal + hours);
     return total;
   };
 
@@ -497,6 +505,8 @@ export function estimateWall(input: FabWallInput, opts: EstimateOptions = {}): W
     subcontractTotalCad,
     subcontractWithMarkupCad,
     laborTotalCad,
+    shopHoursTotal,
+    siteHoursTotal,
     sheetsForCnc: wallSheetsForCnc,
     cncSpareSheets: wallCncSpareSheets,
     subtotalCad,
