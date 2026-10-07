@@ -21,7 +21,7 @@ import {
   type PlannerPhaseTag,
 } from "@/lib/planner-phase-utils";
 import { buildPlannerFloorPlan } from "@/lib/planner-floor-plan";
-import { buildPlannerElevation } from "@/lib/planner-elevation";
+import { buildShopDrawingElevation } from "@/lib/planner-shop-drawing";
 import {
   deriveNorthStarLabelsFromUserText,
   evaluateSimplifiedIntakeReadiness,
@@ -1643,10 +1643,11 @@ The homeowner likes the design direction — pivot to booking. In one or two war
         try {
           for (let w = 0; w < multiWallCount; w++) {
             const label = wallLabelsEffective[w];
-            const elevation = await buildPlannerElevation({
+            const elevation = await buildShopDrawingElevation({
               wallLabel: label,
               spec: conceptRenderSpec ?? emptyPlannerVisualSpec(),
-              roomType: conceptRenderSpec?.designCategory ?? null,
+              sheetNo: w + 1,
+              sheetCount: multiWallCount,
             });
             if (elevation) {
               responseImages.push({
