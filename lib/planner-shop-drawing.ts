@@ -85,6 +85,11 @@ export async function buildShopDrawingElevation(params: {
    * dimension checklist exactly (used by the fabrication PDF).
    */
   shelfHeightsIn?: number[];
+  /**
+   * Stamp the sheet as verified against the site measure (used by the
+   * fabrication PDF). Defaults to the preliminary stamp.
+   */
+  verified?: boolean;
 }): Promise<ShopDrawingResult | null> {
   const spec = params.spec;
   const label = (params.wallLabel || "wall").trim();
@@ -121,7 +126,7 @@ export async function buildShopDrawingElevation(params: {
     `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}">`,
     `<rect x="0" y="0" width="${W}" height="${H}" fill="#ffffff"/>`,
     `<text x="${mLeft}" y="44" font-family="sans-serif" font-size="26" font-weight="bold" fill="${INK}" letter-spacing="2">ELEVATION — ${esc(label).toUpperCase()}</text>`,
-    `<text x="${mLeft}" y="68" font-family="sans-serif" font-size="13" fill="${DIM}" letter-spacing="1">SHOP DRAWING — PRELIMINARY · VERIFY ALL DIMENSIONS ON SITE BEFORE FABRICATION</text>`,
+    `<text x="${mLeft}" y="68" font-family="sans-serif" font-size="13" fill="${DIM}" letter-spacing="1">${params.verified ? "SHOP DRAWING — VERIFIED AGAINST SITE MEASURE" : "SHOP DRAWING — PRELIMINARY · VERIFY ALL DIMENSIONS ON SITE BEFORE FABRICATION"}</text>`,
   );
 
   // Wall outline + floor.
@@ -195,6 +200,12 @@ export async function buildShopDrawingElevation(params: {
   }
   if (spec.depth !== null) {
     dimensions.push({ name: "Millwork depth", expectedIn: r1(spec.depth), known: true });
+  }
+  // Fabrication standards from the section/cut-list sheets — Tom confirms
+  // these on site (confirm-only, any positive value passes).
+  if (shelves.length > 0) {
+    dimensions.push({ name: "Shelf board thickness", expectedIn: 1.5, known: false });
+    dimensions.push({ name: "French cleat stock", expectedIn: 0.75, known: false });
   }
 
   // ---- Dimension chains ----

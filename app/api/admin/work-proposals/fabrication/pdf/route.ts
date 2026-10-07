@@ -25,12 +25,13 @@ function esc(s: string): string {
 function coverSvg(opts: {
   project: string;
   date: string;
-  walls: Array<{ label: string; sheets: string[] }>;
+  status: string;
+  walls: Array<{ label: string; sheets: string[]; verified: boolean }>;
 }): string {
   const rows = opts.walls
     .map(
       (w, i) =>
-        `<text x="150" y="${300 + i * 64}" font-family="sans-serif" font-size="17" font-weight="bold" fill="#1a1a1a">${esc(w.label.toUpperCase())}</text>` +
+        `<text x="150" y="${300 + i * 64}" font-family="sans-serif" font-size="17" font-weight="bold" fill="#1a1a1a">${esc(w.label.toUpperCase())} ${w.verified ? "✓" : ""}</text>` +
         `<text x="150" y="${326 + i * 64}" font-family="sans-serif" font-size="13" fill="#444444">${w.sheets
           .map((s, j) => `Sheet ${i * 3 + j + 2} — ${esc(s)}`)
           .join("   ·   ")}</text>`,
@@ -41,7 +42,8 @@ function coverSvg(opts: {
 <text x="150" y="140" font-family="sans-serif" font-size="22" font-weight="bold" fill="#1a1a1a" letter-spacing="4">LEVEL UP INSTALL</text>
 <text x="150" y="210" font-family="sans-serif" font-size="44" font-weight="bold" fill="#1a1a1a" letter-spacing="2">FABRICATION PACKAGE</text>
 <text x="150" y="248" font-family="sans-serif" font-size="18" fill="#444444">${esc(opts.project)} — ${esc(opts.date)}</text>
-<line x1="150" y1="272" x2="1450" y2="272" stroke="#1a1a1a" stroke-width="2"/>
+<text x="150" y="276" font-family="sans-serif" font-size="14" font-weight="bold" fill="#1a1a1a" letter-spacing="1">${esc(opts.status)}</text>
+<line x1="150" y1="296" x2="1450" y2="296" stroke="#1a1a1a" stroke-width="2"/>
 ${rows}
 <text x="150" y="${340 + opts.walls.length * 64}" font-family="sans-serif" font-size="13" fill="#1a1a1a">CONTENTS — ${opts.walls.length * 3 + 1} SHEETS TOTAL (INCLUDING THIS COVER)</text>
 <text x="150" y="${PAGE_H - 160}" font-family="sans-serif" font-size="12.5" fill="#1a1a1a">1. ALL JOB-SITE DIMENSIONS TO BE VERIFIED ON SITE BEFORE FABRICATION.</text>
@@ -110,11 +112,13 @@ export async function GET(request: Request) {
 
   const today = new Date().toISOString().slice(0, 10);
   const sheetCount = wallLabels.length * 3;
+  const actuals = proposal.siteMeasure?.actuals;
+  const verifiedAt = proposal.siteMeasure?.verifiedAt;
 
   // Generate all sheets (3 per wall) in parallel.
   const perWall = await Promise.all(
     wallLabels.map(async (wallLabel) => {
-      const input = fabInputFromDims(dims, wallLabel);
+      const input = fabInputFromDims(dims, wallLabel, actuals, verifiedAt);
       const spec = specFromFab(input);
       const heights = input.shelves
         .slice()
@@ -130,6 +134,7 @@ export async function GET(request: Request) {
           sheetNo: baseNo + 1,
           sheetCount: sheetCount + 1, // +1 for cover
           shelfHeightsIn: heights,
+          verified: input.verified,
         }),
         buildSectionSheet({
           input,
@@ -153,17 +158,22 @@ export async function GET(request: Request) {
       for (const s of [section, cutlist]) {
         if (s) mySheets.push({ png: Buffer.from(s.dataBase64, "base64"), caption: s.caption });
       }
-      return { wallLabel, sheets: mySheets };
+      return { wallLabel, sheets: mySheets, verified: input.verified };
     }),
   );
 
+  const allVerified = perWall.length > 0 && perWall.every((w) => w.verified);
   const coverPng = await svgToPngBuffer(
     coverSvg({
       project: proposal.title,
       date: today,
+      status: allVerified
+        ? `VERIFIED AGAINST SITE MEASURE ${verifiedAt?.slice(0, 10) ?? ""}`.trim()
+        : "PRELIMINARY — VERIFY ALL DIMENSIONS ON SITE BEFORE FABRICATION",
       walls: perWall.map((w) => ({
         label: w.wallLabel,
         sheets: ["Elevation", "Section", "Cut list"],
+        verified: w.verified,
       })),
     }),
   );

@@ -506,7 +506,7 @@ function FabricationSection(props: {
 }) {
   const { portalUserId, proposal } = props;
   const [sheets, setSheets] = useState<
-    Array<{ wallLabel: string; kind: string; caption: string; mimeType: string; dataBase64: string }>
+    Array<{ wallLabel: string; kind: string; caption: string; mimeType: string; dataBase64: string; verified: boolean }>
   >([]);
   const [busy, setBusy] = useState(false);
   const [flash, setFlash] = useState<{ type: "ok" | "err"; message: string } | null>(null);
@@ -560,10 +560,26 @@ function FabricationSection(props: {
         The PDF package is what you send to fabricators and installers. Anything marked *
         or TYP is shop standard — confirm on site.
       </p>
+      {sheets.length > 0 ? (
+        <p className="text-xs">
+          {sheets.every((s) => s.verified) ? (
+            <span className="font-medium text-emerald-300">Verified against site measure — safe to send to fabricators/installers.</span>
+          ) : (
+            <span className="font-medium text-amber-300">Preliminary — site measure not complete. Verify on site before sending to fabricators.</span>
+          )}
+        </p>
+      ) : null}
       {sheets.map((s, i) => (
         <figure key={`${s.wallLabel}-${s.kind}-${i}`} className="rounded-lg border border-zinc-800 bg-zinc-950/60 p-3">
           <figcaption className="mb-2 flex items-center justify-between gap-2 text-xs text-zinc-300">
-            <span className="font-medium">{s.caption}</span>
+            <span className="font-medium">
+              {s.caption}{" "}
+              {s.verified ? (
+                <span className="ml-1 rounded-full border border-emerald-900/50 bg-emerald-950/60 px-2 py-0.5 text-[10px] text-emerald-300">Verified</span>
+              ) : (
+                <span className="ml-1 rounded-full border border-amber-900/50 bg-amber-950/60 px-2 py-0.5 text-[10px] text-amber-300">Preliminary</span>
+              )}
+            </span>
             <a
               href={`data:${s.mimeType};base64,${s.dataBase64}`}
               download={`${proposal.id}-${s.wallLabel}-${s.kind}.png`}

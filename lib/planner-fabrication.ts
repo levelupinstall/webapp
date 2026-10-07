@@ -23,6 +23,9 @@ export type FabWallInput = {
   shelves: FabShelf[];
   depthIn: number | null;
   finish: string | null;
+  /** True when every checklist dim for this wall has a site-measured actual. */
+  verified: boolean;
+  verifiedAt?: string;
 };
 
 export type FabSheet = {
@@ -157,19 +160,35 @@ async function toPng(svg: string[]): Promise<string | null> {
 export function fabInputFromDims(
   dims: ShopDrawingDimension[],
   wallLabel: string,
+  actuals?: Record<string, number>,
+  verifiedAt?: string,
 ): FabWallInput {
   const forWall = dims.filter((d) => d.wallLabel === wallLabel);
-  const find = (name: string) => forWall.find((d) => d.name === name)?.expectedIn ?? null;
+  const actualOf = (name: string): number | null => {
+    const d = forWall.find((x) => x.name === name);
+    if (!d) return null;
+    const a = actuals?.[d.id];
+    // A site-measured actual overrides the drawing; otherwise use the drawing.
+    return typeof a === "number" && Number.isFinite(a) && a > 0 ? a : d.expectedIn;
+  };
+  const find = (name: string) => actualOf(name);
   const shelves: FabShelf[] = [];
   const heightRe = /^Shelf (\d+) height A\.F\.F\.$/;
   for (const d of forWall) {
     const m = d.name.match(heightRe);
     if (!m) continue;
     const n = m[1];
-    const len = forWall.find((x) => x.name === `Shelf ${n} length (SH-${n})`)?.expectedIn ?? null;
-    if (len !== null) shelves.push({ tag: `SH-${n}`, lengthIn: len, heightIn: d.expectedIn });
+    const len = actualOf(`Shelf ${n} length (SH-${n})`);
+    const h = actualOf(d.name);
+    if (len !== null && h !== null) shelves.push({ tag: `SH-${n}`, lengthIn: len, heightIn: h });
   }
   shelves.sort((a, b) => a.heightIn - b.heightIn);
+  const verified =
+    forWall.length > 0 &&
+    forWall.every((d) => {
+      const a = actuals?.[d.id];
+      return typeof a === "number" && Number.isFinite(a) && a > 0;
+    });
   return {
     wallLabel,
     widthIn: find("Wall width"),
@@ -177,6 +196,8 @@ export function fabInputFromDims(
     shelves,
     depthIn: find("Millwork depth"),
     finish: null,
+    verified,
+    ...(verifiedAt ? { verifiedAt } : {}),
   };
 }
 
@@ -205,7 +226,9 @@ export async function buildSectionSheet(params: {
   sheetHeader(
     svg,
     `SECTION — ${label}`,
-    "FABRICATION SECTION — INTERNAL · VERIFY ALL DIMENSIONS ON SITE BEFORE FABRICATION",
+    input.verified
+      ? `FABRICATION SECTION — VERIFIED AGAINST SITE MEASURE${input.verifiedAt ? ` ${input.verifiedAt.slice(0, 10)}` : ""}`
+      : "FABRICATION SECTION — PRELIMINARY · VERIFY ALL DIMENSIONS ON SITE BEFORE FABRICATION",
   );
 
   const mTop = 150;
@@ -396,7 +419,9 @@ export async function buildCutListSheet(params: {
   sheetHeader(
     svg,
     `CUT LIST — ${label}`,
-    "PART SCHEDULE + MOUNTING SCHEDULE — INTERNAL · VERIFY ALL DIMENSIONS ON SITE BEFORE FABRICATION",
+    input.verified
+      ? `PART SCHEDULE + MOUNTING SCHEDULE — VERIFIED AGAINST SITE MEASURE${input.verifiedAt ? ` ${input.verifiedAt.slice(0, 10)}` : ""}`
+      : "PART SCHEDULE + MOUNTING SCHEDULE — PRELIMINARY · VERIFY ALL DIMENSIONS ON SITE BEFORE FABRICATION",
   );
 
   // Part schedule table.

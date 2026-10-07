@@ -44,11 +44,14 @@ export async function GET(request: Request) {
     caption: string;
     mimeType: string;
     dataBase64: string;
+    verified: boolean;
   }> = [];
   let sheetNo = 0;
   const sheetCount = wallLabels.length * 2;
+  const actuals = proposal.siteMeasure?.actuals;
+  const verifiedAt = proposal.siteMeasure?.verifiedAt;
   for (const wallLabel of wallLabels) {
-    const input = fabInputFromDims(dims, wallLabel);
+    const input = fabInputFromDims(dims, wallLabel, actuals, verifiedAt);
     if (input.shelves.length === 0) continue;
     const section = await buildSectionSheet({
       input,
@@ -57,7 +60,7 @@ export async function GET(request: Request) {
       sheetCount,
     });
     if (section) {
-      sheets.push({ wallLabel, kind: section.kind, caption: section.caption, mimeType: section.mimeType, dataBase64: section.dataBase64 });
+      sheets.push({ wallLabel, kind: section.kind, caption: section.caption, mimeType: section.mimeType, dataBase64: section.dataBase64, verified: input.verified });
     }
     const cutlist = await buildCutListSheet({
       input,
@@ -66,7 +69,7 @@ export async function GET(request: Request) {
       sheetCount,
     });
     if (cutlist) {
-      sheets.push({ wallLabel, kind: cutlist.kind, caption: cutlist.caption, mimeType: cutlist.mimeType, dataBase64: cutlist.dataBase64 });
+      sheets.push({ wallLabel, kind: cutlist.kind, caption: cutlist.caption, mimeType: cutlist.mimeType, dataBase64: cutlist.dataBase64, verified: input.verified });
     }
   }
 
