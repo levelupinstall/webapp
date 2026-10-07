@@ -11,6 +11,7 @@
  */
 
 import type { PlannerVisualSpec } from "@/lib/planner-visual-spec";
+import { svgFontStyle } from "./planner-svg-font";
 
 export type ShopDrawingDimension = {
   name: string;
@@ -124,16 +125,17 @@ export async function buildShopDrawingElevation(params: {
   const svg: string[] = [];
   svg.push(
     `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}">`,
+    svgFontStyle(),
     `<rect x="0" y="0" width="${W}" height="${H}" fill="#ffffff"/>`,
-    `<text x="${mLeft}" y="44" font-family="sans-serif" font-size="26" font-weight="bold" fill="${INK}" letter-spacing="2">ELEVATION — ${esc(label).toUpperCase()}</text>`,
-    `<text x="${mLeft}" y="68" font-family="sans-serif" font-size="13" fill="${DIM}" letter-spacing="1">${params.verified ? "SHOP DRAWING — VERIFIED AGAINST SITE MEASURE" : "SHOP DRAWING — PRELIMINARY · VERIFY ALL DIMENSIONS ON SITE BEFORE FABRICATION"}</text>`,
+    `<text x="${mLeft}" y="44" font-family="DejaVu Sans" font-size="26" font-weight="bold" fill="${INK}" letter-spacing="2">ELEVATION — ${esc(label).toUpperCase()}</text>`,
+    `<text x="${mLeft}" y="68" font-family="DejaVu Sans" font-size="13" fill="${DIM}" letter-spacing="1">${params.verified ? "SHOP DRAWING — VERIFIED AGAINST SITE MEASURE" : "SHOP DRAWING — PRELIMINARY · VERIFY ALL DIMENSIONS ON SITE BEFORE FABRICATION"}</text>`,
   );
 
   // Wall outline + floor.
   svg.push(
     `<rect x="${f1(wx0)}" y="${f1(wy0)}" width="${f1(wallPxW)}" height="${f1(wallPxH)}" fill="#ffffff" stroke="${INK}" stroke-width="3"/>`,
     `<line x1="${f1(wx0 - 40)}" y1="${f1(wy1)}" x2="${f1(wx1 + 40)}" y2="${f1(wy1)}" stroke="${INK}" stroke-width="4"/>`,
-    `<text x="${f1(wx0 - 8)}" y="${f1(wy1 + 22)}" font-family="sans-serif" font-size="13" fill="${DIM}" text-anchor="end">F.F.</text>`,
+    `<text x="${f1(wx0 - 8)}" y="${f1(wy1 + 22)}" font-family="DejaVu Sans" font-size="13" fill="${DIM}" text-anchor="end">F.F.</text>`,
   );
 
   // ---- Millwork: shelves ----
@@ -188,14 +190,14 @@ export async function buildShopDrawingElevation(params: {
       svg.push(
         `<line x1="${f1(s.x + s.lenPx)}" y1="${f1(s.y)}" x2="${f1(tx - 34)}" y2="${f1(ty)}" stroke="${DIM}" stroke-width="1.25"/>`,
         `<circle cx="${f1(tx)}" cy="${f1(ty)}" r="20" fill="${TAG_FILL}" stroke="${INK}" stroke-width="2"/>`,
-        `<text x="${f1(tx)}" y="${f1(ty + 5)}" font-family="monospace" font-size="14" font-weight="bold" fill="${INK}" text-anchor="middle">${s.tag}</text>`,
+        `<text x="${f1(tx)}" y="${f1(ty + 5)}" font-family="DejaVu Sans Mono" font-size="14" font-weight="bold" fill="${INK}" text-anchor="middle">${s.tag}</text>`,
       );
     });
   } else {
     const bandH = Math.min(wallPxH * 0.3, 130);
     svg.push(
       `<rect x="${f1(wx0 + wallPxW * 0.08)}" y="${f1(wy1 - bandH - wallPxH * 0.12)}" width="${f1(wallPxW * 0.84)}" height="${f1(bandH)}" fill="${MILL_FILL}" stroke="${MILL_EDGE}" stroke-width="2" stroke-dasharray="10 6"/>`,
-      `<text x="${f1(wx0 + wallPxW / 2)}" y="${f1(wy1 - bandH / 2 + 5)}" font-family="sans-serif" font-size="15" fill="${INK}" text-anchor="middle">MILLWORK — PER APPROVED DESIGN</text>`,
+      `<text x="${f1(wx0 + wallPxW / 2)}" y="${f1(wy1 - bandH / 2 + 5)}" font-family="DejaVu Sans" font-size="15" fill="${INK}" text-anchor="middle">MILLWORK — PER APPROVED DESIGN</text>`,
     );
   }
   if (spec.depth !== null) {
@@ -291,14 +293,14 @@ export async function buildShopDrawingElevation(params: {
   ];
   svg.push(`<rect x="${tbX}" y="${tbY}" width="${tbW}" height="${rowH * rows.length + 64}" fill="#ffffff" stroke="${INK}" stroke-width="2.5"/>`);
   svg.push(
-    `<text x="${tbX + 14}" y="${tbY + 40}" font-family="sans-serif" font-size="20" font-weight="bold" fill="${INK}" letter-spacing="3">LEVEL UP INSTALL</text>`,
+    `<text x="${tbX + 14}" y="${tbY + 40}" font-family="DejaVu Sans" font-size="20" font-weight="bold" fill="${INK}" letter-spacing="3">LEVEL UP INSTALL</text>`,
   );
   rows.forEach(([k, v], i) => {
     const ry = tbY + 64 + i * rowH;
     svg.push(
       `<line x1="${tbX}" y1="${ry}" x2="${tbX + tbW}" y2="${ry}" stroke="${INK}" stroke-width="1"/>`,
-      `<text x="${tbX + 12}" y="${ry + 18}" font-family="sans-serif" font-size="11" fill="${DIM}" letter-spacing="1">${k}</text>`,
-      `<text x="${tbX + 12}" y="${ry + 36}" font-family="sans-serif" font-size="13" font-weight="bold" fill="${INK}">${v}</text>`,
+      `<text x="${tbX + 12}" y="${ry + 18}" font-family="DejaVu Sans" font-size="11" fill="${DIM}" letter-spacing="1">${k}</text>`,
+      `<text x="${tbX + 12}" y="${ry + 36}" font-family="DejaVu Sans" font-size="13" font-weight="bold" fill="${INK}">${v}</text>`,
     );
   });
 
@@ -312,7 +314,7 @@ export async function buildShopDrawingElevation(params: {
   ];
   notes.forEach((n, i) => {
     svg.push(
-      `<text x="${mLeft}" y="${notesY + i * 20}" font-family="sans-serif" font-size="12.5" fill="${INK}">${esc(n)}</text>`,
+      `<text x="${mLeft}" y="${notesY + i * 20}" font-family="DejaVu Sans" font-size="12.5" fill="${INK}">${esc(n)}</text>`,
     );
   });
 
@@ -341,8 +343,8 @@ function f1(n: number): string {
   return n.toFixed(1);
 }
 function dimLabel(x: number, y: number, text: string, size: number, bold: boolean): string {
-  return `<text x="${f1(x)}" y="${f1(y)}" font-family="monospace" font-size="${size}" ${bold ? 'font-weight="bold"' : ""} fill="${INK}" text-anchor="middle">${esc(text)}</text>`;
+  return `<text x="${f1(x)}" y="${f1(y)}" font-family="DejaVu Sans Mono" font-size="${size}" ${bold ? 'font-weight="bold"' : ""} fill="${INK}" text-anchor="middle">${esc(text)}</text>`;
 }
 function dimLabelV(x: number, y: number, text: string, size: number, bold: boolean): string {
-  return `<text x="${f1(x)}" y="${f1(y)}" font-family="monospace" font-size="${size}" ${bold ? 'font-weight="bold"' : ""} fill="${INK}" text-anchor="middle" transform="rotate(-90 ${f1(x)} ${f1(y)})">${esc(text)}</text>`;
+  return `<text x="${f1(x)}" y="${f1(y)}" font-family="DejaVu Sans Mono" font-size="${size}" ${bold ? 'font-weight="bold"' : ""} fill="${INK}" text-anchor="middle" transform="rotate(-90 ${f1(x)} ${f1(y)})">${esc(text)}</text>`;
 }

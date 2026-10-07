@@ -15,6 +15,7 @@
  */
 
 import type { PlannerVisualSpec } from "@/lib/planner-visual-spec";
+import { svgFontStyle } from "./planner-svg-font";
 
 export type FloorPlanResult = {
   mimeType: "image/png";
@@ -144,13 +145,14 @@ export async function buildPlannerFloorPlan(params: {
   const svg: string[] = [];
   svg.push(
     `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}">`,
+    svgFontStyle(),
     `<rect x="0" y="0" width="${W}" height="${H}" fill="#faf8ff"/>`,
   );
 
   // Title.
   const roomTitle = params.roomType ? ` — ${params.roomType}` : "";
   svg.push(
-    `<text x="${W / 2}" y="38" font-family="sans-serif" font-size="26" font-weight="bold" fill="#31184a" text-anchor="middle">FLOOR PLAN${esc(roomTitle).toUpperCase()}</text>`,
+    `<text x="${W / 2}" y="38" font-family="DejaVu Sans" font-size="26" font-weight="bold" fill="#31184a" text-anchor="middle">FLOOR PLAN${esc(roomTitle).toUpperCase()}</text>`,
   );
 
   // Interior fill.
@@ -172,25 +174,25 @@ export async function buildPlannerFloorPlan(params: {
       svg.push(
         `<line x1="${x0}" y1="${y0}" x2="${x1}" y2="${y0}" stroke="${wallColor}" stroke-width="${wallThick}" stroke-linecap="square"/>`,
         `<rect x="${x0 + wallThick}" y="${y0 + wallThick}" width="${roomW - wallThick * 2}" height="${bandPx}" fill="${bandFill}" fill-opacity="0.55" stroke="${bandStroke}" stroke-width="2"/>`,
-        `<text x="${(x0 + x1) / 2}" y="${y0 - 14}" font-family="sans-serif" font-size="19" font-weight="bold" fill="${wallColor}" text-anchor="middle" style="text-transform:capitalize">${safe}</text>`,
+        `<text x="${(x0 + x1) / 2}" y="${y0 - 14}" font-family="DejaVu Sans" font-size="19" font-weight="bold" fill="${wallColor}" text-anchor="middle" style="text-transform:capitalize">${safe}</text>`,
       );
     } else if (pos === "bottom") {
       svg.push(
         `<line x1="${x0}" y1="${y1}" x2="${x1}" y2="${y1}" stroke="${wallColor}" stroke-width="${wallThick}" stroke-linecap="square"/>`,
         `<rect x="${x0 + wallThick}" y="${y1 - wallThick - bandPx}" width="${roomW - wallThick * 2}" height="${bandPx}" fill="${bandFill}" fill-opacity="0.55" stroke="${bandStroke}" stroke-width="2"/>`,
-        `<text x="${(x0 + x1) / 2}" y="${y1 + 34}" font-family="sans-serif" font-size="19" font-weight="bold" fill="${wallColor}" text-anchor="middle" style="text-transform:capitalize">${safe}</text>`,
+        `<text x="${(x0 + x1) / 2}" y="${y1 + 34}" font-family="DejaVu Sans" font-size="19" font-weight="bold" fill="${wallColor}" text-anchor="middle" style="text-transform:capitalize">${safe}</text>`,
       );
     } else if (pos === "left") {
       svg.push(
         `<line x1="${x0}" y1="${y0}" x2="${x0}" y2="${y1}" stroke="${wallColor}" stroke-width="${wallThick}" stroke-linecap="square"/>`,
         `<rect x="${x0 + wallThick}" y="${y0 + wallThick}" width="${bandPx}" height="${roomH - wallThick * 2}" fill="${bandFill}" fill-opacity="0.55" stroke="${bandStroke}" stroke-width="2"/>`,
-        `<text x="${x0 - 18}" y="${(y0 + y1) / 2}" font-family="sans-serif" font-size="19" font-weight="bold" fill="${wallColor}" text-anchor="middle" transform="rotate(-90 ${x0 - 18} ${(y0 + y1) / 2})" style="text-transform:capitalize">${safe}</text>`,
+        `<text x="${x0 - 18}" y="${(y0 + y1) / 2}" font-family="DejaVu Sans" font-size="19" font-weight="bold" fill="${wallColor}" text-anchor="middle" transform="rotate(-90 ${x0 - 18} ${(y0 + y1) / 2})" style="text-transform:capitalize">${safe}</text>`,
       );
     } else {
       svg.push(
         `<line x1="${x1}" y1="${y0}" x2="${x1}" y2="${y1}" stroke="${wallColor}" stroke-width="${wallThick}" stroke-linecap="square"/>`,
         `<rect x="${x1 - wallThick - bandPx}" y="${y0 + wallThick}" width="${bandPx}" height="${roomH - wallThick * 2}" fill="${bandFill}" fill-opacity="0.55" stroke="${bandStroke}" stroke-width="2"/>`,
-        `<text x="${x1 + 18}" y="${(y0 + y1) / 2}" font-family="sans-serif" font-size="19" font-weight="bold" fill="${wallColor}" text-anchor="middle" transform="rotate(90 ${x1 + 18} ${(y0 + y1) / 2})" style="text-transform:capitalize">${safe}</text>`,
+        `<text x="${x1 + 18}" y="${(y0 + y1) / 2}" font-family="DejaVu Sans" font-size="19" font-weight="bold" fill="${wallColor}" text-anchor="middle" transform="rotate(90 ${x1 + 18} ${(y0 + y1) / 2})" style="text-transform:capitalize">${safe}</text>`,
       );
     }
   };
@@ -209,14 +211,14 @@ export async function buildPlannerFloorPlan(params: {
     `<line x1="${x0}" y1="${topDimY}" x2="${x1}" y2="${topDimY}" stroke="${dimC}" stroke-width="1.5"/>`,
     tick(x0 - 5, topDimY + 5, x0 + 5, topDimY - 5),
     tick(x1 - 5, topDimY + 5, x1 + 5, topDimY - 5),
-    `<text x="${(x0 + x1) / 2}" y="${topDimY - 10}" font-family="monospace" font-size="16" font-weight="bold" fill="#31184a" text-anchor="middle">~${assumedWIn}" ?</text>`,
+    `<text x="${(x0 + x1) / 2}" y="${topDimY - 10}" font-family="DejaVu Sans Mono" font-size="16" font-weight="bold" fill="#31184a" text-anchor="middle">~${assumedWIn}" ?</text>`,
   );
   const leftDimX = x0 - 64;
   svg.push(
     `<line x1="${leftDimX}" y1="${y0}" x2="${leftDimX}" y2="${y1}" stroke="${dimC}" stroke-width="1.5"/>`,
     tick(leftDimX - 5, y0 + 5, leftDimX + 5, y0 - 5),
     tick(leftDimX - 5, y1 + 5, leftDimX + 5, y1 - 5),
-    `<text x="${leftDimX - 12}" y="${(y0 + y1) / 2}" font-family="monospace" font-size="16" font-weight="bold" fill="#31184a" text-anchor="middle" transform="rotate(-90 ${leftDimX - 12} ${(y0 + y1) / 2})">~${assumedHIn}" ?</text>`,
+    `<text x="${leftDimX - 12}" y="${(y0 + y1) / 2}" font-family="DejaVu Sans Mono" font-size="16" font-weight="bold" fill="#31184a" text-anchor="middle" transform="rotate(-90 ${leftDimX - 12} ${(y0 + y1) / 2})">~${assumedHIn}" ?</text>`,
   );
 
   // Corner dots at wall junctions.
@@ -233,8 +235,8 @@ export async function buildPlannerFloorPlan(params: {
   const legY = y1 + 58;
   svg.push(
     `<rect x="${x0}" y="${legY - 14}" width="26" height="16" fill="${bandFill}" fill-opacity="0.55" stroke="${bandStroke}" stroke-width="2"/>`,
-    `<text x="${x0 + 34}" y="${legY}" font-family="sans-serif" font-size="15" fill="#31184a">${esc(mwLabel)} · ${depthIn}" deep</text>`,
-    `<text x="${x1}" y="${legY}" font-family="sans-serif" font-size="15" fill="#6a4a8f" text-anchor="end">Assumed ${esc(shape)} · not to scale · verify on site</text>`,
+    `<text x="${x0 + 34}" y="${legY}" font-family="DejaVu Sans" font-size="15" fill="#31184a">${esc(mwLabel)} · ${depthIn}" deep</text>`,
+    `<text x="${x1}" y="${legY}" font-family="DejaVu Sans" font-size="15" fill="#6a4a8f" text-anchor="end">Assumed ${esc(shape)} · not to scale · verify on site</text>`,
   );
 
   svg.push(`</svg>`);

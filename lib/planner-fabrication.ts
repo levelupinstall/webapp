@@ -13,6 +13,7 @@
  */
 
 import type { ShopDrawingDimension } from "@/lib/client-portal-store";
+import { svgFontStyle } from "./planner-svg-font";
 
 export type FabShelf = { tag: string; lengthIn: number; heightIn: number };
 
@@ -104,14 +105,14 @@ function titleBlock(svg: string[], opts: {
   ];
   svg.push(
     `<rect x="${tbX}" y="${tbY}" width="${titleW}" height="${rowH * rows.length + 64}" fill="#ffffff" stroke="${INK}" stroke-width="2.5"/>`,
-    `<text x="${tbX + 14}" y="${tbY + 40}" font-family="sans-serif" font-size="20" font-weight="bold" fill="${INK}" letter-spacing="3">LEVEL UP INSTALL</text>`,
+    `<text x="${tbX + 14}" y="${tbY + 40}" font-family="DejaVu Sans" font-size="20" font-weight="bold" fill="${INK}" letter-spacing="3">LEVEL UP INSTALL</text>`,
   );
   rows.forEach(([k, v], i) => {
     const ry = tbY + 64 + i * rowH;
     svg.push(
       `<line x1="${tbX}" y1="${ry}" x2="${tbX + titleW}" y2="${ry}" stroke="${INK}" stroke-width="1"/>`,
-      `<text x="${tbX + 12}" y="${ry + 18}" font-family="sans-serif" font-size="11" fill="${DIMC}" letter-spacing="1">${k}</text>`,
-      `<text x="${tbX + 12}" y="${ry + 36}" font-family="sans-serif" font-size="13" font-weight="bold" fill="${INK}">${v}</text>`,
+      `<text x="${tbX + 12}" y="${ry + 18}" font-family="DejaVu Sans" font-size="11" fill="${DIMC}" letter-spacing="1">${k}</text>`,
+      `<text x="${tbX + 12}" y="${ry + 36}" font-family="DejaVu Sans" font-size="13" font-weight="bold" fill="${INK}">${v}</text>`,
     );
   });
 }
@@ -119,9 +120,10 @@ function titleBlock(svg: string[], opts: {
 function sheetHeader(svg: string[], title: string, subtitle: string): void {
   svg.push(
     `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}">`,
+    svgFontStyle(),
     `<rect x="0" y="0" width="${W}" height="${H}" fill="#ffffff"/>`,
-    `<text x="150" y="44" font-family="sans-serif" font-size="26" font-weight="bold" fill="${INK}" letter-spacing="2">${esc(title)}</text>`,
-    `<text x="150" y="68" font-family="sans-serif" font-size="13" fill="${DIMC}" letter-spacing="1">${esc(subtitle)}</text>`,
+    `<text x="150" y="44" font-family="DejaVu Sans" font-size="26" font-weight="bold" fill="${INK}" letter-spacing="2">${esc(title)}</text>`,
+    `<text x="150" y="68" font-family="DejaVu Sans" font-size="13" fill="${DIMC}" letter-spacing="1">${esc(subtitle)}</text>`,
   );
 }
 
@@ -136,7 +138,7 @@ function generalNotes(svg: string[], extra: string[]): void {
   const y0 = H - 96;
   [...STD_NOTES, ...extra].forEach((n, i) => {
     svg.push(
-      `<text x="150" y="${y0 + i * 20}" font-family="sans-serif" font-size="12.5" fill="${INK}">${esc(n)}</text>`,
+      `<text x="150" y="${y0 + i * 20}" font-family="DejaVu Sans" font-size="12.5" fill="${INK}">${esc(n)}</text>`,
     );
   });
 }
@@ -242,10 +244,10 @@ export async function buildSectionSheet(params: {
   const ls = drawH / (maxH + 10);
   const locTop = fy - (maxH + 6) * ls;
   svg.push(
-    `<text x="${f1(locX + locW / 2)}" y="${f1(mTop - 24)}" font-family="sans-serif" font-size="14" font-weight="bold" fill="${INK}" text-anchor="middle" letter-spacing="2">LOCATION</text>`,
+    `<text x="${f1(locX + locW / 2)}" y="${f1(mTop - 24)}" font-family="DejaVu Sans" font-size="14" font-weight="bold" fill="${INK}" text-anchor="middle" letter-spacing="2">LOCATION</text>`,
     `<rect x="${f1(locX)}" y="${f1(locTop)}" width="${f1(locW)}" height="${f1(fy - locTop)}" fill="#ffffff" stroke="${INK}" stroke-width="2"/>`,
     `<line x1="${f1(locX - 40)}" y1="${f1(fy)}" x2="${f1(locX + locW + 40)}" y2="${f1(fy)}" stroke="${INK}" stroke-width="3.5"/>`,
-    `<text x="${f1(locX - 46)}" y="${f1(fy + 22)}" font-family="sans-serif" font-size="12" fill="${DIMC}" text-anchor="end">F.F.</text>`,
+    `<text x="${f1(locX - 46)}" y="${f1(fy + 22)}" font-family="DejaVu Sans" font-size="12" fill="${DIMC}" text-anchor="end">F.F.</text>`,
   );
   const asc = input.shelves.slice().sort((a, b) => a.heightIn - b.heightIn);
   const chainX = locX - 56;
@@ -259,12 +261,12 @@ export async function buildSectionSheet(params: {
     svg.push(
       `<line x1="${f1(locX)}" y1="${f1(y)}" x2="${f1(locX + locW)}" y2="${f1(y)}" stroke="${INK}" stroke-width="3"/>`,
       `<line x1="${f1(locX - 6)}" y1="${f1(y)}" x2="${f1(chainX + 8)}" y2="${f1(y)}" stroke="${DIMC}" stroke-width="1" stroke-dasharray="5 4"/>`,
-      `<text x="${f1(chainX - 14)}" y="${f1(y + 4)}" font-family="monospace" font-size="13" font-weight="bold" fill="${INK}" text-anchor="middle" transform="rotate(-90 ${f1(chainX - 14)} ${f1(y + 4)})">${fmtFrac(s.heightIn)} AFF</text>`,
-      `<text x="${f1(locX + locW + 12)}" y="${f1(y + 5)}" font-family="monospace" font-size="12" font-weight="bold" fill="${INK}">${esc(s.tag)}</text>`,
+      `<text x="${f1(chainX - 14)}" y="${f1(y + 4)}" font-family="DejaVu Sans Mono" font-size="13" font-weight="bold" fill="${INK}" text-anchor="middle" transform="rotate(-90 ${f1(chainX - 14)} ${f1(y + 4)})">${fmtFrac(s.heightIn)} AFF</text>`,
+      `<text x="${f1(locX + locW + 12)}" y="${f1(y + 5)}" font-family="DejaVu Sans Mono" font-size="12" font-weight="bold" fill="${INK}">${esc(s.tag)}</text>`,
     );
   }
   svg.push(
-    `<text x="${f1(locX + locW / 2)}" y="${f1(fy + 52)}" font-family="sans-serif" font-size="12" fill="${DIMC}" text-anchor="middle">N.T.S.</text>`,
+    `<text x="${f1(locX + locW / 2)}" y="${f1(fy + 52)}" font-family="DejaVu Sans" font-size="12" fill="${DIMC}" text-anchor="middle">N.T.S.</text>`,
   );
 
   // ---------- TYPICAL SECTION (center, large) ----------
@@ -281,7 +283,7 @@ export async function buildSectionSheet(params: {
   const wallBotY = secTopY + thickPx + 150;
 
   svg.push(
-    `<text x="${f1((secX0 + secRight) / 2)}" y="${f1(mTop - 24)}" font-family="sans-serif" font-size="14" font-weight="bold" fill="${INK}" text-anchor="middle" letter-spacing="2">TYPICAL SECTION THROUGH SHELF</text>`,
+    `<text x="${f1((secX0 + secRight) / 2)}" y="${f1(mTop - 24)}" font-family="DejaVu Sans" font-size="14" font-weight="bold" fill="${INK}" text-anchor="middle" letter-spacing="2">TYPICAL SECTION THROUGH SHELF</text>`,
   );
   // wall band, hatched
   svg.push(
@@ -293,7 +295,7 @@ export async function buildSectionSheet(params: {
     );
   }
   svg.push(
-    `<text x="${f1(secX0 + wallBandPx / 2)}" y="${f1(wallTopY - 12)}" font-family="sans-serif" font-size="12" fill="${DIMC}" text-anchor="middle">WALL</text>`,
+    `<text x="${f1(secX0 + wallBandPx / 2)}" y="${f1(wallTopY - 12)}" font-family="DejaVu Sans" font-size="12" fill="${DIMC}" text-anchor="middle">WALL</text>`,
   );
   // board
   svg.push(
@@ -328,7 +330,7 @@ export async function buildSectionSheet(params: {
   for (const [bx, by, n] of bubbles) {
     svg.push(
       `<circle cx="${f1(bx)}" cy="${f1(by)}" r="15" fill="#ffffff" stroke="${INK}" stroke-width="2"/>`,
-      `<text x="${f1(bx)}" y="${f1(by + 5.5)}" font-family="sans-serif" font-size="15" font-weight="bold" fill="${INK}" text-anchor="middle">${n}</text>`,
+      `<text x="${f1(bx)}" y="${f1(by + 5.5)}" font-family="DejaVu Sans" font-size="15" font-weight="bold" fill="${INK}" text-anchor="middle">${n}</text>`,
     );
   }
   const legendX = secX0;
@@ -340,11 +342,11 @@ export async function buildSectionSheet(params: {
     `4 — #10 × 3" WOOD SCREWS @ 16" O.C. INTO STUDS / BLOCKING AS REQ'D`,
   ];
   svg.push(
-    `<text x="${f1(legendX)}" y="${f1(legendY - 24)}" font-family="sans-serif" font-size="13" font-weight="bold" fill="${INK}" letter-spacing="2">NOTES</text>`,
+    `<text x="${f1(legendX)}" y="${f1(legendY - 24)}" font-family="DejaVu Sans" font-size="13" font-weight="bold" fill="${INK}" letter-spacing="2">NOTES</text>`,
   );
   for (const line of legend) {
     svg.push(
-      `<text x="${f1(legendX)}" y="${f1(legendY)}" font-family="monospace" font-size="12.5" fill="${INK}">${esc(line)}</text>`,
+      `<text x="${f1(legendX)}" y="${f1(legendY)}" font-family="DejaVu Sans Mono" font-size="12.5" fill="${INK}">${esc(line)}</text>`,
     );
     legendY += 24;
   }
@@ -358,7 +360,7 @@ export async function buildSectionSheet(params: {
     `<line x1="${f1(shelfX0)}" y1="${f1(depY)}" x2="${f1(shelfX0 + boardPx)}" y2="${f1(depY)}" stroke="${DIMC}" stroke-width="1.5"/>`,
     tickH(shelfX0, depY),
     tickH(shelfX0 + boardPx, depY),
-    `<text x="${f1(shelfX0 + boardPx / 2)}" y="${f1(depY - 10)}" font-family="monospace" font-size="16" font-weight="bold" fill="${INK}" text-anchor="middle">${fmtFrac(depthIn)}${depthKnown ? "" : " *"}</text>`,
+    `<text x="${f1(shelfX0 + boardPx / 2)}" y="${f1(depY - 10)}" font-family="DejaVu Sans Mono" font-size="16" font-weight="bold" fill="${INK}" text-anchor="middle">${fmtFrac(depthIn)}${depthKnown ? "" : " *"}</text>`,
   );
   // Thickness (right of board front).
   const thX = shelfX0 + boardPx + 30;
@@ -366,7 +368,7 @@ export async function buildSectionSheet(params: {
     `<line x1="${f1(thX)}" y1="${f1(secTopY)}" x2="${f1(thX)}" y2="${f1(secTopY + thickPx)}" stroke="${DIMC}" stroke-width="1.5"/>`,
     tickV(thX, secTopY),
     tickV(thX, secTopY + thickPx),
-    `<text x="${f1(thX + 18)}" y="${f1(secTopY + thickPx / 2 + 5)}" font-family="monospace" font-size="14" fill="${INK}">${fmtFrac(boardT)} *</text>`,
+    `<text x="${f1(thX + 18)}" y="${f1(secTopY + thickPx / 2 + 5)}" font-family="DejaVu Sans Mono" font-size="14" fill="${INK}">${fmtFrac(boardT)} *</text>`,
   );
   // Rod length (above rod).
   const rodDimY = rodY - 26;
@@ -374,7 +376,7 @@ export async function buildSectionSheet(params: {
     `<line x1="${f1(shelfX0)}" y1="${f1(rodDimY)}" x2="${f1(shelfX0 + rodLenPx)}" y2="${f1(rodDimY)}" stroke="${DIMC}" stroke-width="1.25"/>`,
     tickH(shelfX0, rodDimY),
     tickH(shelfX0 + rodLenPx, rodDimY),
-    `<text x="${f1(shelfX0 + rodLenPx / 2)}" y="${f1(rodDimY - 8)}" font-family="monospace" font-size="12" fill="${INK}" text-anchor="middle">${rodLen}" *</text>`,
+    `<text x="${f1(shelfX0 + rodLenPx / 2)}" y="${f1(rodDimY - 8)}" font-family="DejaVu Sans Mono" font-size="12" fill="${INK}" text-anchor="middle">${rodLen}" *</text>`,
   );
 
   titleBlock(svg, {
@@ -479,7 +481,7 @@ export async function buildCutListSheet(params: {
   svg.push(`<rect x="${tx}" y="${ty}" width="${tw}" height="${headerH}" fill="${INK}"/>`);
   cols.forEach(([name], i) => {
     svg.push(
-      `<text x="${f1(colX[i] + 10)}" y="${ty + 26}" font-family="sans-serif" font-size="13" font-weight="bold" fill="#ffffff" letter-spacing="1">${esc(name)}</text>`,
+      `<text x="${f1(colX[i] + 10)}" y="${ty + 26}" font-family="DejaVu Sans" font-size="13" font-weight="bold" fill="#ffffff" letter-spacing="1">${esc(name)}</text>`,
     );
   });
   rows.forEach((row, r) => {
@@ -499,7 +501,7 @@ export async function buildCutListSheet(params: {
   // Fastener / mounting schedule below the table.
   const schedY = ty + tableH + 60;
   svg.push(
-    `<text x="${tx}" y="${schedY}" font-family="sans-serif" font-size="16" font-weight="bold" fill="${INK}" letter-spacing="2">MOUNTING SCHEDULE</text>`,
+    `<text x="${tx}" y="${schedY}" font-family="DejaVu Sans" font-size="16" font-weight="bold" fill="${INK}" letter-spacing="2">MOUNTING SCHEDULE</text>`,
   );
   const rodQtyPerShelf = (lenIn: number) => Math.max(2, Math.round(lenIn / 24));
   const sched: string[] = [];
@@ -510,7 +512,7 @@ export async function buildCutListSheet(params: {
   }
   sched.forEach((line, i) => {
     svg.push(
-      `<text x="${tx}" y="${schedY + 30 + i * 24}" font-family="monospace" font-size="12.5" fill="${INK}">${esc(line)}</text>`,
+      `<text x="${tx}" y="${schedY + 30 + i * 24}" font-family="DejaVu Sans Mono" font-size="12.5" fill="${INK}">${esc(line)}</text>`,
     );
   });
 
