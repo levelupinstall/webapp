@@ -266,6 +266,11 @@ function ProposalEditor(props: {
         onRefresh={onRefresh}
       />
 
+      <FabricationSection
+        portalUserId={portalUserId}
+        proposal={proposal}
+      />
+
       <div className="border-t border-zinc-800 pt-4 space-y-2">
         <h5 className="text-[11px] font-semibold uppercase text-zinc-500">
           AI assistant (edits proposal)
@@ -486,6 +491,86 @@ function SiteMeasureSection(props: {
         </>
       ) : null}
 
+      {flash ? (
+        <p className={`text-xs ${flash.type === "ok" ? "text-emerald-400" : "text-rose-400"}`}>
+          {flash.message}
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
+function FabricationSection(props: {
+  portalUserId: string;
+  proposal: WorkProposalRow;
+}) {
+  const { portalUserId, proposal } = props;
+  const [sheets, setSheets] = useState<
+    Array<{ wallLabel: string; kind: string; caption: string; mimeType: string; dataBase64: string }>
+  >([]);
+  const [busy, setBusy] = useState(false);
+  const [flash, setFlash] = useState<{ type: "ok" | "err"; message: string } | null>(null);
+
+  const generate = async () => {
+    setBusy(true);
+    setFlash(null);
+    try {
+      const res = await fetch(
+        `/api/admin/work-proposals/fabrication?portalUserId=${encodeURIComponent(portalUserId)}&proposalId=${encodeURIComponent(proposal.id)}`,
+      );
+      const data = (await res.json()) as {
+        sheets?: typeof sheets;
+        error?: string;
+      };
+      if (!res.ok) throw new Error(data.error ?? "Generation failed.");
+      setSheets(data.sheets ?? []);
+      setFlash({ type: "ok", message: `${data.sheets?.length ?? 0} fabrication sheets generated.` });
+    } catch (e) {
+      setFlash({ type: "err", message: e instanceof Error ? e.message : "Could not generate. Try again." });
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="border-t border-zinc-800 pt-4 space-y-3">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <h5 className="text-[11px] font-semibold uppercase text-zinc-500">
+          Fabrication package <span className="text-zinc-600 normal-case">(internal — never shown to customers)</span>
+        </h5>
+        <button
+          type="button"
+          disabled={busy || (proposal.shopDrawingDims ?? []).length === 0}
+          onClick={() => void generate()}
+          className="rounded-lg bg-violet-700 px-4 py-2 text-xs font-medium text-white hover:bg-violet-600 disabled:opacity-50"
+        >
+          {busy ? "Generating…" : sheets.length ? "Regenerate sheets" : "Generate fabrication sheets"}
+        </button>
+      </div>
+      <p className="text-xs text-zinc-500">
+        Section + cut list per wall, generated from the shop-drawing dimensions. Build from these —
+        anything marked * or TYP is shop standard; confirm on site.
+      </p>
+      {sheets.map((s, i) => (
+        <figure key={`${s.wallLabel}-${s.kind}-${i}`} className="rounded-lg border border-zinc-800 bg-zinc-950/60 p-3">
+          <figcaption className="mb-2 flex items-center justify-between gap-2 text-xs text-zinc-300">
+            <span className="font-medium">{s.caption}</span>
+            <a
+              href={`data:${s.mimeType};base64,${s.dataBase64}`}
+              download={`${proposal.id}-${s.wallLabel}-${s.kind}.png`}
+              className="rounded-md bg-zinc-800 px-3 py-1.5 text-[11px] font-medium text-white hover:bg-zinc-700"
+            >
+              Download PNG
+            </a>
+          </figcaption>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src={`data:${s.mimeType};base64,${s.dataBase64}`}
+            alt={s.caption}
+            className="w-full rounded-md bg-white"
+          />
+        </figure>
+      ))}
       {flash ? (
         <p className={`text-xs ${flash.type === "ok" ? "text-emerald-400" : "text-rose-400"}`}>
           {flash.message}
