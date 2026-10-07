@@ -15,7 +15,7 @@
  */
 
 import type { PlannerVisualSpec } from "@/lib/planner-visual-spec";
-import { svgFontStyle } from "./planner-svg-font";
+import { ensurePlannerFonts, svgFontStyle } from "./planner-svg-font";
 
 export type FloorPlanResult = {
   mimeType: "image/png";
@@ -243,6 +243,7 @@ export async function buildPlannerFloorPlan(params: {
 
   let png: Buffer;
   try {
+    ensurePlannerFonts();
     const mod = (await import("sharp")) as unknown as
       | { default: SharpLike }
       | SharpLike;

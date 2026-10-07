@@ -13,7 +13,7 @@
  */
 
 import type { ShopDrawingDimension } from "@/lib/client-portal-store";
-import { svgFontStyle } from "./planner-svg-font";
+import { ensurePlannerFonts, svgFontStyle } from "./planner-svg-font";
 
 export type FabShelf = { tag: string; lengthIn: number; heightIn: number };
 
@@ -145,6 +145,7 @@ function generalNotes(svg: string[], extra: string[]): void {
 
 async function toPng(svg: string[]): Promise<string | null> {
   try {
+    ensurePlannerFonts();
     const mod = (await import("sharp")) as unknown as
       | { default: SharpLike }
       | SharpLike;

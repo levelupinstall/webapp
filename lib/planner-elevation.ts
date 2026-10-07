@@ -13,6 +13,7 @@
  */
 
 import type { PlannerVisualSpec } from "@/lib/planner-visual-spec";
+import { ensurePlannerFonts } from "./planner-svg-font";
 
 export type ElevationResult = {
   mimeType: "image/png";
@@ -249,6 +250,7 @@ export async function buildPlannerElevation(params: {
 
   let png: Buffer;
   try {
+    ensurePlannerFonts();
     const mod = (await import("sharp")) as unknown as
       | { default: SharpLike }
       | SharpLike;

@@ -14,7 +14,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 FONTS = ["DejaVuSans", "DejaVuSans-Bold", "DejaVuSansMono"]
-UNICODES = "U+0020-007E,U+00A0-00FF,U+2013-2014,U+2018-2019,U+201C-201D,U+2022,U+2190-2193"
+UNICODES = "U+0020-007E,U+00A0-00FF,U+2013-2014,U+2018-2019,U+201C-201D,U+2022,U+2032-2033,U+2190-2193"
 
 
 def main() -> None:
