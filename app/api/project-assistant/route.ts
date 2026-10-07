@@ -143,9 +143,15 @@ function messageRequestsVisualChange(
     return true;
   }
   // Finish / color-only changes the geometry detector classifies as non-geometry.
+  // Catches "should be white", "I want the shelves to be white",
+  // "going with white shelves", "paint it blue", etc.
   if (
-    /\b(color|colour|paint|stain|finish|white|black|walnut|oak|natural)\b/i.test(t) &&
-    /\b(change|make|try|darker|lighter)\b/i.test(t)
+    /\b(color|colour|paint|stain|finish|white|black|walnut|oak|natural|blue|grey|gray|green|red|navy|beige|cream)\b/i.test(
+      t,
+    ) &&
+    /\b(should\s+be|needs?\s+to\s+be|supposed\s+to\s+be|want\b|going\s+with|let'?s\s+(?:do|go\b)|change|make|try|paint\s+it|darker|lighter)\b/i.test(
+      t,
+    )
   ) {
     return true;
   }
