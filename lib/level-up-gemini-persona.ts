@@ -38,6 +38,7 @@ Critical rules:
 - HOUSE WOOD STANDARD: when the request calls for a wood or stained finish WITHOUT naming a species (e.g. "wood shelves," "natural wood," "stained"), use WHITE OAK — it is our standard, readily available stock. Do not default to walnut.
 - Realistic, buildable work only — ordinary tools and joinery; no fantasy architecture.
 - Generic neutral finishes — no retailer logos, price tags, SKUs, or store signage.
+- NO text in the image at all — no watermarks, no captions, no labels, no brand names (including "Level Up Install"). The image must be a pure photograph with zero overlaid text.
 - NEVER substitute a different room. If the photo shows a workshop, the result shows THEIR workshop — not a living room, not a stock photo interior.
 - NEVER invent dimensions. If the request says "12 inches," use 12 inches. If no measurement was given, do NOT make one up — draw proportionally and leave numbers out.
 - Optional short caption: describe ONLY what is visible in THIS image — the current count, layout, and finish. Do NOT copy captions from previous renders. Do NOT include measurements unless they were explicitly stated in the request.`;

@@ -372,8 +372,8 @@ export function extractFixtureCountsFromTranscript(text: string): Pick<
   }
 
   const shelfRe = new RegExp(
-    `(${numericOrWord})\\s+(?:adjustable\\s+|fixed\\s+|wood(?:en)?\\s+)?shelves\\b|` +
-      `(${numericOrWord})\\s+(?:adjustable\\s+|fixed\\s+|wood(?:en)?\\s+)?shelf\\b`,
+    `(${numericOrWord})\\s+(?:adjustable\\s+|fixed\\s+|floating\\s+|wood(?:en)?\\s+|white\\s+oak\\s+|oak\\s+|walnut\\s+)?shelves\\b|` +
+      `(${numericOrWord})\\s+(?:adjustable\\s+|fixed\\s+|floating\\s+|wood(?:en)?\\s+|white\\s+oak\\s+|oak\\s+|walnut\\s+)?shelf\\b`,
     "gi",
   );
   for (const m of t.matchAll(shelfRe)) {

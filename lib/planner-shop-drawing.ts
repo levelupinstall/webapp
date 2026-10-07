@@ -139,7 +139,12 @@ export async function buildShopDrawingElevation(params: {
   );
 
   // ---- Millwork: shelves ----
-  const shelfCount = spec.shelfCount ?? 0;
+  // If the spec has no shelf count but the design is shelf-like, assume 2 and
+  // mark every shelf dim assumed (*) — an empty drawing helps nobody, and the
+  // * convention plus "PRELIMINARY" banner keep it honest.
+  const shelfLike = /shelves?|shelving|bookcase/i.test(spec.designCategory ?? "");
+  const shelfCountAssumed = (spec.shelfCount ?? 0) <= 0 && shelfLike;
+  const shelfCount = spec.shelfCount && spec.shelfCount > 0 ? spec.shelfCount : shelfLike ? 2 : 0;
   const spanIn = spec.shelfBoardSpanAlongWallIn ?? Math.min(wallWIn * 0.55, 48);
   const spacingIn = spec.shelfVerticalSpacingIn ?? null;
   type Shelf = { x: number; y: number; lenPx: number; hIn: number; lenIn: number; tag: string };
@@ -159,7 +164,8 @@ export async function buildShopDrawingElevation(params: {
     } else {
       const zTop = wallHIn * 0.25;
       const zBot = wallHIn * 0.7;
-      ysIn = Array.from({ length: n }, (_, i) => zBot - (i * (zBot - zTop)) / (n - 1));
+      // Bottom-up: SH-1 is the lowest shelf.
+      ysIn = Array.from({ length: n }, (_, i) => zTop + (i * (zBot - zTop)) / (n - 1));
     }
     const thickPx = Math.max(9, 1.5 * pxPerIn);
     let si = 0;
@@ -180,8 +186,8 @@ export async function buildShopDrawingElevation(params: {
         `<line x1="${f1(shelfX + lenPx - 6)}" y1="${f1(y - thickPx / 2 + 3)}" x2="${f1(shelfX + lenPx - 6)}" y2="${f1(y + thickPx / 2 - 3)}" stroke="${MILL_EDGE}" stroke-width="1"/>`,
       );
       shelves.push({ x: shelfX, y, lenPx, hIn, lenIn, tag });
-      dimensions.push({ name: `Shelf ${si} height A.F.F.`, expectedIn: r1(hIn), known: true });
-      dimensions.push({ name: `Shelf ${si} length (${tag})`, expectedIn: r1(lenIn), known: true });
+      dimensions.push({ name: `Shelf ${si} height A.F.F.`, expectedIn: r1(hIn), known: !shelfCountAssumed });
+      dimensions.push({ name: `Shelf ${si} length (${tag})`, expectedIn: r1(lenIn), known: !shelfCountAssumed });
     }
     // Part tags with leaders in the dedicated tag column (right of wall, left of title block).
     shelves.forEach((s) => {
@@ -270,7 +276,7 @@ export async function buildShopDrawingElevation(params: {
       const belowY = i === 0 ? wy1 : sortedShelves[i - 1].y;
       svg.push(
         `<line x1="${f1(s.x - 4)}" y1="${f1(s.y)}" x2="${f1(leftChainX - 8)}" y2="${f1(s.y)}" stroke="${DIM}" stroke-width="1" stroke-dasharray="5 4"/>`,
-        dimLabelV(leftChainX - 12, (s.y + belowY) / 2, fmtFractional(s.hIn), 12, false),
+        dimLabelV(leftChainX - 12, (s.y + belowY) / 2, fmtFractional(s.hIn) + (shelfCountAssumed ? " *" : ""), 12, false),
       );
     });
   }

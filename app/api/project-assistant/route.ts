@@ -1437,15 +1437,24 @@ The homeowner likes the design direction — pivot to booking. In one or two war
       if (conceptImageVisualMode === "refinement-delta") {
         extractedVisualDirective =
           `${extractedVisualDirective}\n\nSURGICAL EDIT (this is an edit of the prior concept render, NOT a new composition):\n` +
-          "- Start from the LAST reference image (the prior concept render) and change ONLY what the homeowner asked to change.\n" +
+          "- The attached image IS the prior concept render — edit it directly and change ONLY what the homeowner asked to change.\n" +
           "- Keep identical: the room, walls, flooring, ceiling, lighting, camera angle, colors, materials, finishes, and every element the request did not mention.\n" +
           '- Do not restyle, recolor, recompose, or "improve" the scene. Do not add or remove furniture, decor, or fixtures beyond the request.\n' +
           "- The only allowed visible difference is the requested change itself (the geometry TARGET above still applies to that change).";
       }
 
-      const conceptReferencePartsForRender = schematicReferencePart
-        ? [schematicReferencePart, ...combinedConceptReferenceParts]
-        : [...combinedConceptReferenceParts];
+      // Refinement with a baseline: send ONLY the prior concept to the image
+      // model. The space photos stay in the text context (harvest/vision) but
+      // must not be image inputs — the model otherwise edits the raw room
+      // photo instead of the concept (seen: closet revision reverted to the
+      // original messy photo).
+      const isRefinementWithBaseline =
+        conceptImageVisualMode === "refinement-delta" && refinementWithBaseline;
+      const conceptReferencePartsForRender = isRefinementWithBaseline
+        ? [...refinementBaseParts]
+        : schematicReferencePart
+          ? [schematicReferencePart, ...combinedConceptReferenceParts]
+          : [...combinedConceptReferenceParts];
       const conceptReferenceForRender =
         conceptReferencePartsForRender.length > 0
           ? conceptReferencePartsForRender
@@ -1696,6 +1705,33 @@ The homeowner likes the design direction — pivot to booking. In one or two war
 
       for (const img of renderedImages) {
         responseImages.push({ mimeType: img.mimeType, data: img.dataBase64 });
+      }
+      // Single-wall: also emit a dimensioned shop-drawing elevation so every
+      // design (not just multi-wall) gets a drawing for customer approval.
+      try {
+        const singleLabel =
+          wallLabelsEffective[0] ||
+          (conceptRenderSpec?.designCategory ?? "").trim() ||
+          "Wall";
+        const elevation = await buildShopDrawingElevation({
+          wallLabel: singleLabel,
+          spec: conceptRenderSpec ?? emptyPlannerVisualSpec(),
+          sheetNo: 1,
+          sheetCount: 1,
+        });
+        if (elevation) {
+          responseImages.push({
+            mimeType: elevation.mimeType,
+            data: elevation.dataBase64,
+            caption: `Shop drawing — ${singleLabel}`,
+            dimensions: elevation.dimensions.map((d) => ({
+              ...d,
+              wallLabel: singleLabel,
+            })),
+          });
+        }
+      } catch (e) {
+        console.warn("[project-assistant] single-wall elevation failed:", e);
       }
       } // end single-render path
 
