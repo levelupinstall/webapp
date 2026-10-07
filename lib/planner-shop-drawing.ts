@@ -79,6 +79,12 @@ export async function buildShopDrawingElevation(params: {
   projectName?: string;
   sheetNo?: number;
   sheetCount?: number;
+  /**
+   * Explicit A.F.F. shelf heights (inches, bottom-up). When provided, overrides
+   * the spec-derived positioning so regenerated drawings match the stored
+   * dimension checklist exactly (used by the fabrication PDF).
+   */
+  shelfHeightsIn?: number[];
 }): Promise<ShopDrawingResult | null> {
   const spec = params.spec;
   const label = (params.wallLabel || "wall").trim();
@@ -150,7 +156,12 @@ export async function buildShopDrawingElevation(params: {
     }
     const thickPx = Math.max(9, 1.5 * pxPerIn);
     let si = 0;
-    for (const hIn of ysIn) {
+    const explicitHeights = (params.shelfHeightsIn ?? []).filter(
+      (h) => Number.isFinite(h) && h > 0,
+    );
+    const heightsIn =
+      explicitHeights.length === ysIn.length ? explicitHeights : ysIn;
+    for (const hIn of heightsIn) {
       const y = wy1 - hIn * pxPerIn;
       if (y < wy0 + 8 || y > wy1 - 8) continue;
       si += 1;

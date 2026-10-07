@@ -538,18 +538,27 @@ function FabricationSection(props: {
         <h5 className="text-[11px] font-semibold uppercase text-zinc-500">
           Fabrication package <span className="text-zinc-600 normal-case">(internal — never shown to customers)</span>
         </h5>
-        <button
-          type="button"
-          disabled={busy || (proposal.shopDrawingDims ?? []).length === 0}
-          onClick={() => void generate()}
-          className="rounded-lg bg-violet-700 px-4 py-2 text-xs font-medium text-white hover:bg-violet-600 disabled:opacity-50"
-        >
-          {busy ? "Generating…" : sheets.length ? "Regenerate sheets" : "Generate fabrication sheets"}
-        </button>
+        <div className="flex items-center gap-2">
+          <a
+            href={`/api/admin/work-proposals/fabrication/pdf?portalUserId=${encodeURIComponent(portalUserId)}&proposalId=${encodeURIComponent(proposal.id)}`}
+            className={`rounded-lg px-4 py-2 text-xs font-medium text-white ${(proposal.shopDrawingDims ?? []).length === 0 ? "pointer-events-none bg-zinc-700 opacity-50" : "bg-emerald-700 hover:bg-emerald-600"}`}
+          >
+            Download PDF package
+          </a>
+          <button
+            type="button"
+            disabled={busy || (proposal.shopDrawingDims ?? []).length === 0}
+            onClick={() => void generate()}
+            className="rounded-lg bg-violet-700 px-4 py-2 text-xs font-medium text-white hover:bg-violet-600 disabled:opacity-50"
+          >
+            {busy ? "Generating…" : sheets.length ? "Regenerate sheets" : "Preview sheets"}
+          </button>
+        </div>
       </div>
       <p className="text-xs text-zinc-500">
-        Section + cut list per wall, generated from the shop-drawing dimensions. Build from these —
-        anything marked * or TYP is shop standard; confirm on site.
+        Elevation + section + cut list per wall, generated from the shop-drawing dimensions.
+        The PDF package is what you send to fabricators and installers. Anything marked *
+        or TYP is shop standard — confirm on site.
       </p>
       {sheets.map((s, i) => (
         <figure key={`${s.wallLabel}-${s.kind}-${i}`} className="rounded-lg border border-zinc-800 bg-zinc-950/60 p-3">
