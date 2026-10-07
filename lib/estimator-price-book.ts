@@ -34,10 +34,31 @@ export type PriceBook = {
   business: {
     /** Markup applied to material cost (fraction, e.g. 0.2 = 20%). */
     materialMarkup: number;
-    /** Overhead + contingency applied to (materials + labor) subtotal. */
+    /** Markup applied to subcontracted trade work (CNC cutting), fraction. */
+    subcontractMarkup: number;
+    /** Overhead + contingency applied to (materials + subcontract + labor) subtotal. */
     overheadContingency: number;
     /** Customer price is rounded to the nearest this many dollars. */
     priceRoundingCad: number;
+    verify: string;
+  };
+  /**
+   * CNC outsource route — trade shop cuts, drills, edgebands, labels;
+   * Level Up assembles + finishes + installs. Rates from Kali Custom
+   * Cabinetry (Scarborough) published trade price list, Oct 2026.
+   * INTERNAL — never customer-facing.
+   */
+  cnc: {
+    /** Per 4x8 sheet: cut to size, drilled, edgebanded (tape supplied by shop), labelled. */
+    perSheetCad: number;
+    /** Programming fee per job — paid up front, non-refundable. */
+    programmingPerJobCad: number;
+    /** Skid, wrap, strapping per job. */
+    skidPerJobCad: number;
+    /** Minimum billable sheets per CNC job. */
+    minimumBillableSheets: number;
+    /** Shop must supply this many spare sheets per N sheets (recuts/defects). */
+    spareSheetsPerN: number;
     verify: string;
   };
   /** Ontario HST — shown as a note on estimates; prices are pre-tax. */
@@ -132,9 +153,19 @@ export const PRICE_BOOK: PriceBook = {
   },
   business: {
     materialMarkup: 0.2,
+    subcontractMarkup: 0.2,
     overheadContingency: 0.1,
     priceRoundingCad: 25,
     verify: "VERIFY — Tom's starting policy; adjust as the business learns real costs",
+  },
+  cnc: {
+    perSheetCad: 150,
+    programmingPerJobCad: 250,
+    skidPerJobCad: 100,
+    minimumBillableSheets: 6,
+    spareSheetsPerN: 15,
+    verify:
+      "VERIFY — from Kali Custom Cabinetry (Scarborough) published trade price list, Oct 2026; Tom: confirm with the CNC shop you actually use",
   },
   taxNote:
     "All prices pre-tax. Ontario HST 13% added at invoice. Tom to confirm tax handling with accountant.",
@@ -152,6 +183,14 @@ export const PRICE_BOOK: PriceBook = {
 export const LABOR_MODEL = {
   /** Fabrication hours per shelf/cabinet unit (cut, edgeband, assemble carcass). */
   fabHoursPerShelf: 1.0,
+  /**
+   * Assembly-only hours per unit on the CNC-outsource route — parts arrive
+   * cut, drilled, edgebanded and labelled, so the shop only assembles.
+   * Tom's note Oct 7: shop labor goes down on this route.
+   */
+  cncAssemblyHoursPerShelf: 0.5,
+  /** CNC shop runs: drop off sheets + pick up finished parts, per wall. */
+  cncRunHoursPerWall: 1.5,
   /** Knock-down into paintable parts + reassembly after finishing, per unit. */
   knockdownHoursPerShelf: 0.25,
   /** Prime coat, per unit. */

@@ -25,7 +25,7 @@ import {
 } from "@/lib/estimator-price-book";
 
 export type EstimateLine = {
-  section: "Materials" | "Labor";
+  section: "Materials" | "Labor" | "Subcontract";
   /** Plain description, e.g. "Birch plywood 4x8 sheets". */
   description: string;
   /** The math, e.g. "3 shelves × 96in × 10in × 2 layers = 5,760 sq in … → 2 sheets". */
@@ -36,15 +36,34 @@ export type EstimateLine = {
   totalCad: number;
 };
 
+export type FabricationRoute = "in-shop" | "cnc-outsource";
+
+export type EstimateOptions = {
+  /**
+   * "in-shop" (default): Level Up cuts, edgebands, drills, assembles.
+   * "cnc-outsource": trade CNC shop cuts/drills/edgebands/labels;
+   * Level Up assembles, finishes, installs. Shop fab labor drops to
+   * assembly-only; CNC job costs appear under Subcontract.
+   */
+  fabricationRoute?: FabricationRoute;
+};
+
 export type WallEstimate = {
   wallLabel: string;
+  fabricationRoute: FabricationRoute;
   /** Assumed depth when the input had none (flagged, never silent). */
   depthAssumed: boolean;
   lines: EstimateLine[];
   materialsTotalCad: number;
   materialsWithMarkupCad: number;
+  subcontractTotalCad: number;
+  subcontractWithMarkupCad: number;
   laborTotalCad: number;
-  /** materialsWithMarkup + laborTotal */
+  /** Sheets of 4x8 that go to the CNC shop (0 on in-shop route). */
+  sheetsForCnc: number;
+  /** Spare sheets bought for CNC recuts (0 on in-shop route). */
+  cncSpareSheets: number;
+  /** materialsWithMarkup + subcontractWithMarkup + laborTotal */
   subtotalCad: number;
   contingencyCad: number;
   /** Internal cost basis: subtotal + contingency. */
@@ -78,9 +97,10 @@ const fmtMoney = (n: number) =>
  * Deterministic material + labor takeoff for one wall.
  * All money in CAD, rounded to cents internally.
  */
-export function estimateWall(input: FabWallInput): WallEstimate {
+export function estimateWall(input: FabWallInput, opts: EstimateOptions = {}): WallEstimate {
   const lines: EstimateLine[] = [];
   const math: string[] = [];
+  const route: FabricationRoute = opts.fabricationRoute ?? "in-shop";
   const n = input.shelves.length;
   const depthIn = input.depthIn ?? 10;
   const depthAssumed = input.depthIn == null;
@@ -90,12 +110,19 @@ export function estimateWall(input: FabWallInput): WallEstimate {
       (n > 0
         ? ` (${input.shelves.map((s) => `${s.tag} ${fmtIn(s.lengthIn)}in`).join(", ")})`
         : "") +
-      `, depth ${fmtIn(depthIn)}in${depthAssumed ? " (ASSUMED — confirm on site)" : ""}.`,
+      `, depth ${fmtIn(depthIn)}in${depthAssumed ? " (ASSUMED — confirm on site)" : ""}` +
+      `, fabrication route: ${route === "cnc-outsource" ? "CNC OUTSOURCE (trade shop cuts/drills/edgebands; Level Up assembles)" : "IN-SHOP (Level Up cuts/edgebands/assembles)"}.`,
   );
 
   const pb = PRICE_BOOK;
   const mm = MATERIAL_MODEL;
   const lm = LABOR_MODEL;
+
+  // Sheet counts hoisted so the CNC block can reuse them.
+  let boardSheets = 0;
+  let cleatSheets = 0;
+  let wallSheetsForCnc = 0;
+  let wallCncSpareSheets = 0;
 
   // ---------- MATERIALS ----------
   if (n > 0) {
@@ -105,7 +132,7 @@ export function estimateWall(input: FabWallInput): WallEstimate {
       (a, s) => a + s.lengthIn * depthIn * layers,
       0,
     );
-    const boardSheets = Math.ceil(
+    boardSheets = Math.ceil(
       (boardNetSqIn * mm.wasteFactor) / mm.sheetAreaSqIn,
     );
     const boardCost = r2(boardSheets * pb.materials.birchPly34.unitCostCad);
@@ -131,7 +158,7 @@ export function estimateWall(input: FabWallInput): WallEstimate {
       (a, s) => a + s.lengthIn * 3.5 * 2,
       0,
     );
-    const cleatSheets = Math.ceil(
+    cleatSheets = Math.ceil(
       (cleatNetSqIn * mm.wasteFactor) / mm.sheetAreaSqIn,
     );
     const cleatCost = r2(cleatSheets * pb.materials.ply34Cleat.unitCostCad);
@@ -278,6 +305,74 @@ export function estimateWall(input: FabWallInput): WallEstimate {
   });
   math.push(`Delivery: ${fmtMoney(delCost)} flat per wall.`);
 
+  // ---------- CNC OUTSOURCE ROUTE ----------
+  // Trade shop cuts, drills, edgebands, labels. Shop still buys all sheets
+  // (plus spares) and supplies its own edge tape; fab labor drops to assembly.
+  if (route === "cnc-outsource" && n > 0) {
+    const cnc = pb.cnc;
+    wallSheetsForCnc = boardSheets + cleatSheets;
+
+    // Spare sheets for recuts/defects — a shop material purchase.
+    wallCncSpareSheets = Math.ceil(wallSheetsForCnc / cnc.spareSheetsPerN);
+    const spareCost = r2(wallCncSpareSheets * pb.materials.birchPly34.unitCostCad);
+    lines.push({
+      section: "Materials",
+      description: "Spare sheets for CNC recuts/defects (shop-supplied)",
+      detail:
+        `ceil(${wallSheetsForCnc} sheets ÷ ${cnc.spareSheetsPerN}) = ${wallCncSpareSheets} sheet${wallCncSpareSheets === 1 ? "" : "s"}` +
+        ` × ${fmtMoney(pb.materials.birchPly34.unitCostCad)} (CNC shop requires spares; unused come back)`,
+      qty: wallCncSpareSheets,
+      unit: pb.materials.birchPly34.unit,
+      unitCostCad: pb.materials.birchPly34.unitCostCad,
+      totalCad: spareCost,
+    });
+    math.push(`CNC spare sheets: ${wallCncSpareSheets} × ${fmtMoney(pb.materials.birchPly34.unitCostCad)} = ${fmtMoney(spareCost)} (material purchase, not CNC billing).`);
+
+    // CNC billing: per-sheet with a minimum billable count per job.
+    const billableSheets = Math.max(wallSheetsForCnc, cnc.minimumBillableSheets);
+    const cutCost = r2(billableSheets * cnc.perSheetCad);
+    lines.push({
+      section: "Subcontract",
+      description: "CNC cutting — cut, drill, edgeband, label (trade shop)",
+      detail:
+        `max(${wallSheetsForCnc} sheets needed, ${cnc.minimumBillableSheets} minimum/job) = ${billableSheets} × ${fmtMoney(cnc.perSheetCad)}` +
+        ` (edge tape supplied by shop; flat-slab parts only)`,
+      qty: billableSheets,
+      unit: "sheet",
+      unitCostCad: cnc.perSheetCad,
+      totalCad: cutCost,
+    });
+    const progCost = r2(cnc.programmingPerJobCad);
+    lines.push({
+      section: "Subcontract",
+      description: "CNC programming (per job, non-refundable)",
+      detail: `1 job × ${fmtMoney(cnc.programmingPerJobCad)} — shop programs from your sizes/drawings`,
+      qty: 1,
+      unit: "job",
+      unitCostCad: cnc.programmingPerJobCad,
+      totalCad: progCost,
+    });
+    const skidCost = r2(cnc.skidPerJobCad);
+    lines.push({
+      section: "Subcontract",
+      description: "CNC skid / wrap / strapping",
+      detail: `1 job × ${fmtMoney(cnc.skidPerJobCad)}`,
+      qty: 1,
+      unit: "job",
+      unitCostCad: cnc.skidPerJobCad,
+      totalCad: skidCost,
+    });
+    math.push(
+      `CNC subcontract: ${billableSheets} sheets × ${fmtMoney(cnc.perSheetCad)} = ${fmtMoney(cutCost)}` +
+        ` + programming ${fmtMoney(progCost)} + skid ${fmtMoney(skidCost)} = ${fmtMoney(r2(cutCost + progCost + skidCost))}.`,
+    );
+    math.push(
+      "NOTE: this wall is priced as its own CNC job (programming fee + sheet minimum). " +
+        "On multi-wall projects, use estimateProject with the cnc-outsource route — " +
+        "it pools CNC billing across all walls (one programming fee, one minimum).",
+    );
+  }
+
   const materialsTotalCad = r2(
     lines.filter((l) => l.section === "Materials").reduce((a, l) => a + l.totalCad, 0),
   );
@@ -287,6 +382,19 @@ export function estimateWall(input: FabWallInput): WallEstimate {
   math.push(
     `Materials: ${fmtMoney(materialsTotalCad)} × ${(1 + pb.business.materialMarkup).toFixed(2)} (${Math.round(pb.business.materialMarkup * 100)}% markup) = ${fmtMoney(materialsWithMarkupCad)}.`,
   );
+
+  // ---------- SUBCONTRACT (CNC route only) ----------
+  const subcontractTotalCad = r2(
+    lines.filter((l) => l.section === "Subcontract").reduce((a, l) => a + l.totalCad, 0),
+  );
+  const subcontractWithMarkupCad = r2(
+    subcontractTotalCad * (1 + pb.business.subcontractMarkup),
+  );
+  if (subcontractTotalCad > 0) {
+    math.push(
+      `Subcontract: ${fmtMoney(subcontractTotalCad)} × ${(1 + pb.business.subcontractMarkup).toFixed(2)} (${Math.round(pb.business.subcontractMarkup * 100)}% markup) = ${fmtMoney(subcontractWithMarkupCad)}.`,
+    );
+  }
 
   // ---------- LABOR (INTERNAL — target hours × rates; never customer-facing) ----------
   const labor = (
@@ -313,8 +421,17 @@ export function estimateWall(input: FabWallInput): WallEstimate {
   const primeH = n * lm.primeHoursPerShelf;
   const paintH = n * lm.paintHoursPerShelf;
   const instH = n * lm.installHoursPerShelf;
-  labor("Fabrication — cut, edgeband, assemble (shop)", fabH, pb.labor.shopRatePerHrCad,
-    `${n} units × ${lm.fabHoursPerShelf}h`);
+  if (route === "cnc-outsource") {
+    // Parts arrive cut/drilled/edgebanded/labelled — shop labor is assembly only.
+    const asmH = n * lm.cncAssemblyHoursPerShelf;
+    labor("Assembly — parts arrive CNC-cut/drilled/edgebanded (shop)", asmH, pb.labor.shopRatePerHrCad,
+      `${n} units × ${lm.cncAssemblyHoursPerShelf}h (no shop cutting on CNC route)`);
+    labor("CNC shop runs — drop off sheets + pick up parts", lm.cncRunHoursPerWall, pb.labor.installRatePerHrCad,
+      `${lm.cncRunHoursPerWall}h per wall (field time)`);
+  } else {
+    labor("Fabrication — cut, edgeband, assemble (shop)", fabH, pb.labor.shopRatePerHrCad,
+      `${n} units × ${lm.fabHoursPerShelf}h`);
+  }
   labor("Knock-down for finishing + reassembly (shop)", knockH, pb.labor.shopRatePerHrCad,
     `${n} units × ${lm.knockdownHoursPerShelf}h`);
   labor("Prime coat (shop)", primeH, pb.labor.shopRatePerHrCad,
@@ -345,13 +462,13 @@ export function estimateWall(input: FabWallInput): WallEstimate {
   );
   math.push(
     `Labor: ${fmtMoney(laborTotalCad)} ` +
-      `(shop ${fmtMoney(pb.labor.shopRatePerHrCad)}/h on fab/knock-down/prime/paint/admin, ` +
-      `on-site ${fmtMoney(pb.labor.installRatePerHrCad)}/h on install/load-in/clean-up/measure/drive; ` +
+      `(shop ${fmtMoney(pb.labor.shopRatePerHrCad)}/h on ${route === "cnc-outsource" ? "assembly" : "fab"}/knock-down/prime/paint/admin, ` +
+      `on-site ${fmtMoney(pb.labor.installRatePerHrCad)}/h on install/load-in/clean-up/measure/drive${route === "cnc-outsource" ? "/CNC runs" : ""}; ` +
       `includes paid dry/wait time after prime and after final coat).`,
   );
 
   // ---------- TOTALS ----------
-  const subtotalCad = r2(materialsWithMarkupCad + laborTotalCad);
+  const subtotalCad = r2(materialsWithMarkupCad + subcontractWithMarkupCad + laborTotalCad);
   const contingencyCad = r2(subtotalCad * pb.business.overheadContingency);
   const totalCostCad = r2(subtotalCad + contingencyCad);
   const customerPriceCad =
@@ -359,7 +476,9 @@ export function estimateWall(input: FabWallInput): WallEstimate {
     pb.business.priceRoundingCad;
 
   math.push(
-    `Subtotal: ${fmtMoney(materialsWithMarkupCad)} materials + ${fmtMoney(laborTotalCad)} labor = ${fmtMoney(subtotalCad)}.`,
+    `Subtotal: ${fmtMoney(materialsWithMarkupCad)} materials` +
+      (subcontractWithMarkupCad > 0 ? ` + ${fmtMoney(subcontractWithMarkupCad)} subcontract` : "") +
+      ` + ${fmtMoney(laborTotalCad)} labor = ${fmtMoney(subtotalCad)}.`,
   );
   math.push(
     `Contingency/overhead ${Math.round(pb.business.overheadContingency * 100)}%: ${fmtMoney(subtotalCad)} × ${(1 + pb.business.overheadContingency).toFixed(2)} → internal cost ${fmtMoney(totalCostCad)}.`,
@@ -370,11 +489,16 @@ export function estimateWall(input: FabWallInput): WallEstimate {
 
   return {
     wallLabel: input.wallLabel,
+    fabricationRoute: route,
     depthAssumed,
     lines,
     materialsTotalCad,
     materialsWithMarkupCad,
+    subcontractTotalCad,
+    subcontractWithMarkupCad,
     laborTotalCad,
+    sheetsForCnc: wallSheetsForCnc,
+    cncSpareSheets: wallCncSpareSheets,
     subtotalCad,
     contingencyCad,
     totalCostCad,
@@ -411,26 +535,83 @@ export function customerView(est: WallEstimate): CustomerEstimate {
   };
 }
 
-/** Sum several wall estimates into one project figure (internal view). */
-export function estimateProject(walls: WallEstimate[]): {
+/**
+ * Sum several wall estimates into one project figure (internal view).
+ *
+ * On the cnc-outsource route, CNC billing is pooled across all walls: the
+ * programming fee and the sheet minimum apply once per JOB, and spare
+ * sheets are pooled (1 per N of total sheets). Per-wall estimates price
+ * CNC as a standalone job, so the pooled project figure is the honest one
+ * for multi-wall quotes.
+ */
+export function estimateProject(walls: WallEstimate[], opts: EstimateOptions = {}): {
   walls: WallEstimate[];
+  fabricationRoute: FabricationRoute;
   projectCustomerPriceCad: number;
   projectTotalCostCad: number;
   math: string[];
 } {
-  const projectTotalCostCad = r2(walls.reduce((a, w) => a + w.totalCostCad, 0));
-  const rounding = PRICE_BOOK.business.priceRoundingCad;
+  const route: FabricationRoute = opts.fabricationRoute ?? "in-shop";
+  const pb = PRICE_BOOK;
+  const rounding = pb.business.priceRoundingCad;
+  const math: string[] = [];
+
+  let projectSubtotalCad: number;
+  if (route === "cnc-outsource") {
+    const cnc = pb.cnc;
+    const totalSheets = walls.reduce((a, w) => a + (w.sheetsForCnc ?? 0), 0);
+    const perWallSpares = walls.reduce((a, w) => a + (w.cncSpareSheets ?? 0), 0);
+    const pooledSpares = Math.ceil(totalSheets / cnc.spareSheetsPerN);
+    const billableSheets = Math.max(totalSheets, cnc.minimumBillableSheets);
+    const cncJobCost = r2(
+      billableSheets * cnc.perSheetCad + cnc.programmingPerJobCad + cnc.skidPerJobCad,
+    );
+    const cncWithMarkup = r2(cncJobCost * (1 + pb.business.subcontractMarkup));
+    // Walls carry per-wall CNC billing + per-wall spares; replace both with pooled figures.
+    const wallsExCnc = r2(
+      walls.reduce(
+        (a, w) =>
+          a +
+          w.materialsWithMarkupCad +
+          w.laborTotalCad -
+          (w.cncSpareSheets ?? 0) * pb.materials.birchPly34.unitCostCad * (1 + pb.business.materialMarkup),
+        0,
+      ),
+    );
+    const pooledSpareCost = r2(
+      pooledSpares * pb.materials.birchPly34.unitCostCad * (1 + pb.business.materialMarkup),
+    );
+    projectSubtotalCad = r2(wallsExCnc + pooledSpareCost + cncWithMarkup);
+    math.push(
+      `CNC pooled across ${walls.length} wall${walls.length === 1 ? "" : "s"}: ${totalSheets} sheets needed → ` +
+        `${billableSheets} billable × ${fmtMoney(cnc.perSheetCad)} + ${fmtMoney(cnc.programmingPerJobCad)} programming + ${fmtMoney(cnc.skidPerJobCad)} skid` +
+        ` = ${fmtMoney(cncJobCost)} × ${(1 + pb.business.subcontractMarkup).toFixed(2)} markup = ${fmtMoney(cncWithMarkup)} (ONE programming fee and ONE sheet minimum for the whole job).`,
+    );
+    math.push(
+      `Spare sheets pooled: ${perWallSpares} (per-wall) → ${pooledSpares} (1 per ${cnc.spareSheetsPerN} of ${totalSheets} total) = ${fmtMoney(pooledSpareCost)} with markup.`,
+    );
+  } else {
+    projectSubtotalCad = r2(walls.reduce((a, w) => a + w.subtotalCad, 0));
+  }
+
+  const contingencyCad = r2(projectSubtotalCad * pb.business.overheadContingency);
+  const projectTotalCostCad = r2(projectSubtotalCad + contingencyCad);
   const projectCustomerPriceCad =
     Math.round(projectTotalCostCad / rounding) * rounding;
+
+  math.push(
+    ...walls.map(
+      (w) => `"${w.wallLabel}" (${w.fabricationRoute}): cost ${"$" + w.totalCostCad.toFixed(2)} → fixed ${"$" + w.customerPriceCad.toFixed(2)}`,
+    ),
+    `Project subtotal ${"$" + projectSubtotalCad.toFixed(2)} + ${Math.round(pb.business.overheadContingency * 100)}% overhead/contingency` +
+      ` → project cost ${"$" + projectTotalCostCad.toFixed(2)} → project fixed price ${"$" + projectCustomerPriceCad.toFixed(2)} (pre-tax).`,
+  );
+
   return {
     walls,
+    fabricationRoute: route,
     projectCustomerPriceCad,
     projectTotalCostCad,
-    math: [
-      ...walls.map(
-        (w) => `"${w.wallLabel}": cost ${"$" + w.totalCostCad.toFixed(2)} → fixed ${"$" + w.customerPriceCad.toFixed(2)}`,
-      ),
-      `Project total cost ${"$" + projectTotalCostCad.toFixed(2)} → project fixed price ${"$" + projectCustomerPriceCad.toFixed(2)} (pre-tax).`,
-    ],
+    math,
   };
 }
