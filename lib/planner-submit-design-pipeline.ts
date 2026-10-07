@@ -1,4 +1,5 @@
 import { Prisma } from "@prisma/client";
+import { randomUUID } from "crypto";
 
 import {
   geminiEstimateMaterialsShoppingList,
@@ -239,7 +240,7 @@ export async function executePlannerSubmitDesignPipeline(params: {
   const renderingsForStore = renderingParts.map((p, idx) => ({
     mimeType: p.inline_data.mime_type,
     dataUrl: `data:${p.inline_data.mime_type};base64,${p.inline_data.data}`,
-    caption: `Agreed concept rendering ${idx + 1}`,
+    caption: p.caption?.trim() || `Agreed concept rendering ${idx + 1}`,
   }));
 
   const spacePhotosForStore = spacePhotoParts.map((p, idx) => ({
@@ -248,6 +249,26 @@ export async function executePlannerSubmitDesignPipeline(params: {
     caption: `Customer space photo ${idx + 1}`,
   }));
 
+  // Shop-drawing dimension checklist for the post-deposit site measure.
+  const shopDrawingDims: Array<{
+    id: string;
+    wallLabel: string;
+    name: string;
+    expectedIn: number;
+    known: boolean;
+  }> = [];
+  for (const p of renderingParts) {
+    for (const d of p.dimensions ?? []) {
+      shopDrawingDims.push({
+        id: randomUUID(),
+        wallLabel: d.wallLabel?.trim() || "wall",
+        name: d.name,
+        expectedIn: d.expectedIn,
+        known: d.known,
+      });
+    }
+  }
+
   const proposal = await createWorkProposalDraftForPortalUser({
     portalUserId: params.portalUserId,
     title: defaultProposalTitle(clientName),
@@ -255,6 +276,7 @@ export async function executePlannerSubmitDesignPipeline(params: {
     paymentAmountCents: immediateCents,
     renderings: renderingsForStore,
     ...(spacePhotosForStore.length ? { spacePhotos: spacePhotosForStore } : {}),
+    ...(shopDrawingDims.length ? { shopDrawingDims } : {}),
     ...(budgetHint ? { budgetNotes: budgetHint } : {}),
   });
 

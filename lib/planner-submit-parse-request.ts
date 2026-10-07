@@ -9,7 +9,11 @@ export type PlannerSubmitRawRendering = { mimeType?: string; dataBase64?: string
 
 export type PlannerSubmitParsedMultipart = {
   transcript: string;
-  renderingParts: Array<{ inline_data: { mime_type: string; data: string } }>;
+  renderingParts: Array<{
+    inline_data: { mime_type: string; data: string };
+    caption?: string;
+    dimensions?: Array<{ name: string; expectedIn: number; known: boolean; wallLabel?: string }>;
+  }>;
   spacePhotoParts: Array<{ inline_data: { mime_type: string; data: string } }>;
 };
 
@@ -78,7 +82,11 @@ export async function parsePlannerSubmitMultipart(
     return { ok: false, status: 400, error: "Transcript is required." };
   }
 
-  const renderingParts: Array<{ inline_data: { mime_type: string; data: string } }> = [];
+  const renderingParts: Array<{
+    inline_data: { mime_type: string; data: string };
+    caption?: string;
+    dimensions?: Array<{ name: string; expectedIn: number; known: boolean; wallLabel?: string }>;
+  }> = [];
 
   for (
     let i = 0;
@@ -96,8 +104,27 @@ export async function parsePlannerSubmitMultipart(
       };
     }
     const mime = String(row?.mimeType ?? "image/jpeg").trim() || "image/jpeg";
+    const caption = String(row?.caption ?? "").trim();
+    const dimensions = Array.isArray(row?.dimensions)
+      ? row.dimensions
+          .filter(
+            (d) =>
+              d && typeof d.name === "string" && Number.isFinite(Number(d.expectedIn)),
+          )
+          .map((d) => ({
+            name: String(d.name).slice(0, 80),
+            expectedIn: Math.round(Number(d.expectedIn) * 10) / 10,
+            known: d.known !== false,
+            ...(typeof d.wallLabel === "string" && d.wallLabel.trim()
+              ? { wallLabel: d.wallLabel.trim().slice(0, 80) }
+              : {}),
+          }))
+          .slice(0, 40)
+      : [];
     renderingParts.push({
       inline_data: { mime_type: mime, data: b64 },
+      ...(caption ? { caption } : {}),
+      ...(dimensions.length ? { dimensions } : {}),
     });
   }
 

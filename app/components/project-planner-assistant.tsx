@@ -24,7 +24,12 @@ import { lu } from "@/lib/level-up-ui";
 type ChatMessage = {
   role: "user" | "assistant";
   content: string;
-  images?: { mimeType: string; dataUrl: string; caption?: string }[];
+  images?: {
+    mimeType: string;
+    dataUrl: string;
+    caption?: string;
+    dimensions?: Array<{ name: string; expectedIn: number; known: boolean; wallLabel?: string }>;
+  }[];
   showSubmitDesignCta?: boolean;
   sketchNotUpdated?: boolean;
 };
@@ -34,7 +39,12 @@ type AssistantResponse = {
   phase: PlannerPhaseTag;
   showPhotoUploader?: boolean;
   showSubmitDesignCta?: boolean;
-  images?: { mimeType: string; data: string; caption?: string }[];
+  images?: {
+    mimeType: string;
+    data: string;
+    caption?: string;
+    dimensions?: Array<{ name: string; expectedIn: number; known: boolean; wallLabel?: string }>;
+  }[];
   /** Server tried to refine a sketch but returned no new image bytes. */
   sketchNotUpdated?: boolean;
   /** Present when PLANNER_DEBUG_DIAGNOSTICS or NODE_ENV=development on server. */
@@ -453,6 +463,7 @@ export default function ProjectPlannerAssistant({
         mimeType: img.mimeType,
         dataUrl: `data:${img.mimeType};base64,${img.data}`,
         ...(img.caption ? { caption: img.caption } : {}),
+        ...(img.dimensions?.length ? { dimensions: img.dimensions } : {}),
       }));
 
       const safeReply = stripPlannerPhaseMarkers(data.reply);
@@ -566,7 +577,12 @@ export default function ProjectPlannerAssistant({
       .join("\n\n");
 
     const seen = new Set<string>();
-    const renderings: { mimeType: string; dataBase64: string }[] = [];
+    const renderings: {
+      mimeType: string;
+      dataBase64: string;
+      caption?: string;
+      dimensions?: Array<{ name: string; expectedIn: number; known: boolean; wallLabel?: string }>;
+    }[] = [];
     for (const m of messages) {
       if (m.role !== "assistant" || !m.images?.length) continue;
       for (const img of m.images) {
@@ -575,10 +591,15 @@ export default function ProjectPlannerAssistant({
         const fingerprint = parsed[2].slice(0, 200);
         if (seen.has(fingerprint)) continue;
         seen.add(fingerprint);
-        renderings.push({ mimeType: parsed[1], dataBase64: parsed[2] });
-        if (renderings.length >= 6) break;
+        renderings.push({
+          mimeType: parsed[1],
+          dataBase64: parsed[2],
+          ...(img.caption?.trim() ? { caption: img.caption.trim() } : {}),
+          ...(img.dimensions?.length ? { dimensions: img.dimensions } : {}),
+        });
+        if (renderings.length >= 10) break;
       }
-      if (renderings.length >= 6) break;
+      if (renderings.length >= 10) break;
     }
 
     const compressedSpace = await Promise.all(

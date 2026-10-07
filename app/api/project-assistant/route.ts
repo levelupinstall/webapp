@@ -1126,7 +1126,12 @@ The homeowner likes the design direction — pivot to booking. In one or two war
       // photos — wait until the homeowner labels each wall.
       !(userAttachedPhotosThisTurn && imageFiles.length >= 2 && wallLabelsPreReply.length < 2);
 
-    const responseImages: { mimeType: string; data: string; caption?: string }[] = [
+    const responseImages: {
+      mimeType: string;
+      data: string;
+      caption?: string;
+      dimensions?: Array<{ name: string; expectedIn: number; known: boolean }>;
+    }[] = [
       ...plannerInlineImages,
     ];
 
@@ -1642,6 +1647,10 @@ The homeowner likes the design direction — pivot to booking. In one or two war
                 mimeType: elevation.mimeType,
                 data: elevation.dataBase64,
                 caption: `Shop drawing — ${label}`,
+                dimensions: elevation.dimensions.map((d) => ({
+                  ...d,
+                  wallLabel: label,
+                })),
               });
             }
           }

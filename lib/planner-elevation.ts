@@ -17,6 +17,12 @@ import type { PlannerVisualSpec } from "@/lib/planner-visual-spec";
 export type ElevationResult = {
   mimeType: "image/png";
   dataBase64: string;
+  /** Dimensions shown on the drawing, for the proposal checklist + site measure. */
+  dimensions: Array<{
+    name: string;
+    expectedIn: number;
+    known: boolean;
+  }>;
 };
 
 const W = 1024;
@@ -82,6 +88,18 @@ export async function buildPlannerElevation(params: {
   const dimC = "#6a4a8f";
   const millFill = "#b794e6";
   const millStroke = "#6e3eb2";
+
+  const dimensions: ElevationResult["dimensions"] = [];
+  dimensions.push({
+    name: "Wall width",
+    expectedIn: Math.round(wallWIn * 10) / 10,
+    known: widthKnown,
+  });
+  dimensions.push({
+    name: "Wall height",
+    expectedIn: Math.round(wallHIn * 10) / 10,
+    known: heightKnown,
+  });
 
   const svg: string[] = [];
   svg.push(
@@ -169,6 +187,25 @@ export async function buildPlannerElevation(params: {
 
   // Per-shelf: height from floor (left, staggered) + length below shelf.
   shelves.forEach((s, i) => {
+    dimensions.push({
+      name: `Shelf ${i + 1} height from floor`,
+      expectedIn: Math.round(s.hFromFloorIn * 10) / 10,
+      known: true,
+    });
+    dimensions.push({
+      name: `Shelf ${i + 1} length`,
+      expectedIn: Math.round(s.lenIn * 10) / 10,
+      known: true,
+    });
+  });
+  if (spec.depth !== null) {
+    dimensions.push({
+      name: "Millwork depth",
+      expectedIn: Math.round(spec.depth * 10) / 10,
+      known: true,
+    });
+  }
+  shelves.forEach((s, i) => {
     const hy = s.y;
     const dimX = wx0 - 88 - (i % 2) * 0; // single column
     // extension from shelf to dim line
@@ -223,5 +260,5 @@ export async function buildPlannerElevation(params: {
     return null;
   }
 
-  return { mimeType: "image/png", dataBase64: png.toString("base64") };
+  return { mimeType: "image/png", dataBase64: png.toString("base64"), dimensions };
 }

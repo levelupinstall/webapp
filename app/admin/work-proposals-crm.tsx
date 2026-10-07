@@ -19,6 +19,18 @@ export type WorkProposalRow = {
   budgetNotes?: string;
   renderings?: Array<{ id: string; mimeType: string; dataUrl: string; caption?: string }>;
   changeOrders?: ChangeOrder[];
+  shopDrawingDims?: Array<{
+    id: string;
+    wallLabel: string;
+    name: string;
+    expectedIn: number;
+    known: boolean;
+  }>;
+  siteMeasure?: {
+    verifiedAt: string;
+    actuals: Record<string, number>;
+    notes: string;
+  } | null;
 };
 
 function cadMoney(cents: number) {
@@ -248,6 +260,12 @@ function ProposalEditor(props: {
         onRefresh={onRefresh}
       />
 
+      <SiteMeasureSection
+        portalUserId={portalUserId}
+        proposal={proposal}
+        onRefresh={onRefresh}
+      />
+
       <div className="border-t border-zinc-800 pt-4 space-y-2">
         <h5 className="text-[11px] font-semibold uppercase text-zinc-500">
           AI assistant (edits proposal)
@@ -285,6 +303,195 @@ function ProposalEditor(props: {
         </p>
       ) : null}
     </>
+  );
+}
+
+function SiteMeasureSection(props: {
+  portalUserId: string;
+  proposal: WorkProposalRow;
+  onRefresh: () => void | Promise<void>;
+}) {
+  const { portalUserId, proposal, onRefresh } = props;
+  const dims = proposal.shopDrawingDims ?? [];
+  const [actuals, setActuals] = useState<Record<string, string>>(() => {
+    const init: Record<string, string> = {};
+    for (const [k, v] of Object.entries(proposal.siteMeasure?.actuals ?? {})) {
+      init[k] = String(v);
+    }
+    return init;
+  });
+  const [notes, setNotes] = useState(proposal.siteMeasure?.notes ?? "");
+  const [busy, setBusy] = useState(false);
+  const [flash, setFlash] = useState<{ type: "ok" | "err"; message: string } | null>(null);
+
+  const TOLERANCE_IN = 0.5;
+
+  const rows = dims.map((d) => {
+    const raw = (actuals[d.id] ?? "").trim();
+    const actual = raw ? Number(raw) : null;
+    const valid = actual !== null && Number.isFinite(actual) && actual > 0;
+    const diff = valid ? Math.abs(actual - d.expectedIn) : null;
+    // Unknown ("?") dims just need a confirmed value; known dims must match.
+    const pass = valid && (d.known ? diff !== null && diff <= TOLERANCE_IN : true);
+    return { d, raw, actual: valid ? actual : null, diff, pass };
+  });
+  const entered = rows.filter((r) => r.actual !== null);
+  const failed = rows.filter((r) => r.actual !== null && !r.pass);
+  const allEntered = dims.length > 0 && entered.length === dims.length;
+  const verified = allEntered && failed.length === 0;
+
+  const save = async () => {
+    setBusy(true);
+    setFlash(null);
+    try {
+      const payload: Record<string, number> = {};
+      for (const r of rows) {
+        if (r.actual !== null) payload[r.d.id] = r.actual;
+      }
+      const res = await fetch("/api/admin/work-proposals/site-measure", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          portalUserId,
+          proposalId: proposal.id,
+          actuals: payload,
+          notes,
+        }),
+      });
+      if (!res.ok) throw new Error("Save failed.");
+      setFlash({ type: "ok", message: "Site measure saved." });
+      await onRefresh();
+    } catch {
+      setFlash({ type: "err", message: "Could not save. Try again." });
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="border-t border-zinc-800 pt-4 space-y-3">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <h5 className="text-[11px] font-semibold uppercase text-zinc-500">
+          Site measure {dims.length ? `(${entered.length}/${dims.length})` : ""}
+        </h5>
+        {dims.length > 0 ? (
+          verified ? (
+            <span className="rounded-full bg-emerald-950/60 border border-emerald-900/50 px-3 py-1 text-[11px] font-medium text-emerald-300">
+              Verified — matches drawings, work can start
+            </span>
+          ) : failed.length > 0 ? (
+            <span className="rounded-full bg-rose-950/60 border border-rose-900/50 px-3 py-1 text-[11px] font-medium text-rose-300">
+              {failed.length} mismatch{failed.length === 1 ? "" : "es"} — review before ordering
+            </span>
+          ) : (
+            <span className="rounded-full bg-amber-950/60 border border-amber-900/50 px-3 py-1 text-[11px] font-medium text-amber-300">
+              Pending site visit
+            </span>
+          )
+        ) : null}
+      </div>
+
+      <p className="text-xs text-zinc-500">
+        After the deposit, confirm each shop-drawing dimension on site. Known dims must match
+        within {TOLERANCE_IN}&Prime;; &ldquo;?&rdquo; dims just need a confirmed value.
+      </p>
+
+      {dims.length === 0 ? (
+        <p className="text-xs text-zinc-500">
+          No shop drawings on this proposal yet — they&rsquo;re generated when the planner
+          produces dimensioned elevations.
+        </p>
+      ) : (
+        <ul className="space-y-2">
+          {rows.map((r) => (
+            <li
+              key={r.d.id}
+              className={`flex flex-wrap items-center gap-3 rounded-lg border p-3 text-xs ${
+                r.actual === null
+                  ? "border-zinc-800 bg-zinc-950/60"
+                  : r.pass
+                    ? "border-emerald-900/50 bg-emerald-950/30"
+                    : "border-rose-900/50 bg-rose-950/30"
+              }`}
+            >
+              <div className="min-w-0 flex-1">
+                <p className="text-sm font-medium text-zinc-100 capitalize">
+                  {r.d.wallLabel} — {r.d.name}
+                </p>
+                <p className="mt-0.5 text-zinc-400">
+                  Drawing: {r.d.expectedIn}&Prime; {!r.d.known ? <span className="text-amber-300">(assumed — confirm)</span> : null}
+                  {r.diff !== null ? (
+                    <span className={r.pass ? "text-emerald-300" : "text-rose-300"}>
+                      {" "}· off by {r.diff.toFixed(1)}&Prime;
+                    </span>
+                  ) : null}
+                </p>
+              </div>
+              <label className="flex items-center gap-2 text-zinc-400">
+                Actual
+                <input
+                  type="number"
+                  inputMode="decimal"
+                  step="0.1"
+                  min="0"
+                  value={r.raw}
+                  onChange={(e) =>
+                    setActuals((prev) => ({ ...prev, [r.d.id]: e.target.value }))
+                  }
+                  placeholder={String(r.d.expectedIn)}
+                  className="w-24 rounded-lg border border-zinc-700 bg-zinc-950 px-2 py-1.5 text-sm text-white"
+                />
+                <span>&Prime;</span>
+              </label>
+              <span
+                className={`rounded-full px-2.5 py-0.5 text-[11px] font-medium ${
+                  r.actual === null
+                    ? "bg-zinc-800 text-zinc-400"
+                    : r.pass
+                      ? "bg-emerald-950/70 text-emerald-300 border border-emerald-900/50"
+                      : "bg-rose-950/70 text-rose-300 border border-rose-900/50"
+                }`}
+              >
+                {r.actual === null ? "Not measured" : r.pass ? "Match" : "Mismatch"}
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
+
+      {dims.length > 0 ? (
+        <>
+          <textarea
+            value={notes}
+            onChange={(e) => setNotes(e.target.value)}
+            rows={2}
+            placeholder="Site notes (obstructions, uneven walls, outlet positions…)"
+            className="w-full rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2 text-sm text-white"
+          />
+          <div className="flex items-center gap-3">
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => void save()}
+              className="rounded-lg bg-violet-700 px-4 py-2 text-xs font-medium text-white hover:bg-violet-600 disabled:opacity-50"
+            >
+              {busy ? "Saving…" : "Save site measure"}
+            </button>
+            {proposal.siteMeasure?.verifiedAt ? (
+              <span className="text-[11px] text-zinc-500">
+                Last saved {new Date(proposal.siteMeasure.verifiedAt).toLocaleString()}
+              </span>
+            ) : null}
+          </div>
+        </>
+      ) : null}
+
+      {flash ? (
+        <p className={`text-xs ${flash.type === "ok" ? "text-emerald-400" : "text-rose-400"}`}>
+          {flash.message}
+        </p>
+      ) : null}
+    </div>
   );
 }
 

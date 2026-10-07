@@ -124,6 +124,24 @@ export type WorkProposalAiTurn = {
   at: string;
 };
 
+/** One dimension from a shop-drawing elevation, for the site-measure checklist. */
+export type ShopDrawingDimension = {
+  id: string;
+  wallLabel: string;
+  name: string;
+  expectedIn: number;
+  /** False when the drawing marked it "?" (assumed, must be confirmed on site). */
+  known: boolean;
+};
+
+/** Tom's on-site verification of the shop-drawing dimensions (after deposit). */
+export type SiteMeasureVerification = {
+  verifiedAt: string;
+  /** dimensionId -> actual measured inches */
+  actuals: Record<string, number>;
+  notes: string;
+};
+
 /** Subset exposed to the signed-in client portal (includes link token). */
 export type PortalWorkProposalSummary = {
   id: string;
@@ -162,6 +180,10 @@ export type WorkProposal = {
   sourceEstimateId?: string;
   /** Site-condition / extra-scope change orders issued against the accepted proposal. */
   changeOrders?: ChangeOrder[];
+  /** Dimension checklist from the shop-drawing elevations (for the site measure). */
+  shopDrawingDims?: ShopDrawingDimension[];
+  /** Tom's on-site verification after contract + deposit. */
+  siteMeasure?: SiteMeasureVerification;
 };
 
 export type ChangeOrderStatus = "proposed" | "approved" | "rejected";
@@ -1830,6 +1852,7 @@ export async function createWorkProposalDraftForPortalUser(params: {
   paymentAmountCents: number;
   renderings: Array<{ mimeType: string; dataUrl: string; caption?: string }>;
   spacePhotos?: Array<{ mimeType: string; dataUrl: string; caption?: string }>;
+  shopDrawingDims?: ShopDrawingDimension[];
   budgetNotes?: string;
   assignedCarpenterId?: string | null;
   sourceEstimateId?: string;
@@ -1859,6 +1882,9 @@ export async function createWorkProposalDraftForPortalUser(params: {
     ...(spacePhotos.length ? { spacePhotos } : {}),
     ...(params.budgetNotes?.trim()
       ? { budgetNotes: params.budgetNotes.trim().slice(0, 2000) }
+      : {}),
+    ...(params.shopDrawingDims?.length
+      ? { shopDrawingDims: params.shopDrawingDims }
       : {}),
     ...(params.assignedCarpenterId ? { assignedCarpenterId: params.assignedCarpenterId } : {}),
     ...(params.sourceEstimateId ? { sourceEstimateId: params.sourceEstimateId } : {}),
@@ -1903,6 +1929,44 @@ export async function adminPatchWorkProposal(params: {
     ...(params.paymentAmountCents !== undefined
       ? { paymentAmountCents: Math.max(100, Math.floor(params.paymentAmountCents)) }
       : {}),
+  };
+
+  user.workProposals[idx] = next;
+  await persistJsonSnapshots(row.id, {
+    workProposals: user.workProposals as unknown as Prisma.InputJsonValue,
+  });
+  return next;
+}
+
+export async function saveSiteMeasureVerification(params: {
+  portalUserId: string;
+  proposalId: string;
+  actuals: Record<string, number>;
+  notes: string;
+}): Promise<WorkProposal | null> {
+  const row = await prisma.portalUser.findUnique({ where: { id: params.portalUserId } });
+  if (!row) return null;
+
+  const user = rowToUserRecord(row);
+  const idx = user.workProposals.findIndex((p) => p.id === params.proposalId);
+  if (idx < 0) return null;
+
+  const cleanActuals: Record<string, number> = {};
+  for (const [k, v] of Object.entries(params.actuals ?? {})) {
+    const n = Number(v);
+    if (k && Number.isFinite(n) && n > 0 && n < 1200) {
+      cleanActuals[k.slice(0, 80)] = Math.round(n * 10) / 10;
+    }
+  }
+
+  const next: WorkProposal = {
+    ...user.workProposals[idx],
+    siteMeasure: {
+      verifiedAt: new Date().toISOString(),
+      actuals: cleanActuals,
+      notes: params.notes.trim().slice(0, 2000),
+    },
+    updatedAt: new Date().toISOString(),
   };
 
   user.workProposals[idx] = next;
