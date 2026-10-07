@@ -63,6 +63,21 @@ export type PriceBook = {
   };
   /** Ontario HST — shown as a note on estimates; prices are pre-tax. */
   taxNote: string;
+  /**
+   * Delivery — Tom has no truck. Sheet goods, CNC parts, and finished
+   * millwork move by hired driver with van ("man with a van") or supplier
+   * delivery. Rates from GTA Kijiji cargo-van listings + TaskRabbit, Oct 2026.
+   * INTERNAL — never customer-facing.
+   */
+  delivery: {
+    /** One hired-driver leg (~2 hr GTA run): driver with cargo van, no labour. */
+    hiredDriverPerLegCad: number;
+    /** Legs on the in-shop route: materials in + finished goods to site. */
+    legsInShop: number;
+    /** Legs on the CNC route: sheets → CNC + parts → work location + finished → site. */
+    legsCncOutsource: number;
+    verify: string;
+  };
 };
 
 export const PRICE_BOOK: PriceBook = {
@@ -96,12 +111,6 @@ export const PRICE_BOOK: PriceBook = {
       unit: "bf",
       unitCostCad: 12,
       verify: "VERIFY — GTA 2026 placeholder; Tom: confirm your white oak bf price",
-    },
-    deliveryFee: {
-      description: "Material delivery charge (supplier to shop), flat per project",
-      unit: "trip",
-      unitCostCad: 85,
-      verify: "VERIFY — GTA 2026 placeholder; Tom: confirm your supplier's delivery fee",
     },
     rodBracket: {
       description: 'Hidden steel rod bracket, 1/2" x 12"',
@@ -193,6 +202,13 @@ export const PRICE_BOOK: PriceBook = {
   },
   taxNote:
     "All prices pre-tax. Ontario HST 13% added at invoice. Tom to confirm tax handling with accountant.",
+  delivery: {
+    hiredDriverPerLegCad: 125,
+    legsInShop: 2,
+    legsCncOutsource: 3,
+    verify:
+      "VERIFY — GTA Oct 2026: Kijiji cargo-van $90 first hr + $40/hr (~$130/2hr run), $99 flat-rate floor; TaskRabbit from ~$40/hr. Tom: confirm with the driver(s) you actually use",
+  },
 };
 
 /** Labor time model — target hours per unit of work. Tunable; INTERNAL ONLY.

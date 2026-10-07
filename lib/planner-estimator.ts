@@ -340,18 +340,34 @@ export function estimateWall(input: FabWallInput, opts: EstimateOptions = {}): W
     });
   }
 
-  // Delivery charge: flat per wall (supplier → shop).
-  const delCost = r2(pb.materials.deliveryFee.unitCostCad);
+  // ---------- DELIVERY ----------
+  // Tom has no truck. Sheet goods, CNC parts, and finished millwork move by
+  // hired driver with van ("man with a van"). Legs per route:
+  //   in-shop: materials → work location, finished goods → site (2 legs)
+  //   cnc-outsource: sheets → CNC shop, parts → work location, finished → site (3 legs)
+  // Supplier delivery (often free/$60–75) can replace the first leg — adjust per job.
+  const del = pb.delivery;
+  const legs = route === "cnc-outsource" ? del.legsCncOutsource : del.legsInShop;
+  const legDescriptions =
+    route === "cnc-outsource"
+      ? "sheets → CNC shop, parts → work location, finished → site"
+      : "materials → work location, finished goods → site";
+  const delCost = r2(legs * del.hiredDriverPerLegCad);
   lines.push({
-    section: "Materials",
-    description: pb.materials.deliveryFee.description,
-    detail: `1 trip × ${fmtMoney(pb.materials.deliveryFee.unitCostCad)}`,
-    qty: 1,
-    unit: pb.materials.deliveryFee.unit,
-    unitCostCad: pb.materials.deliveryFee.unitCostCad,
+    section: "Subcontract",
+    description: "Delivery — hired driver with van",
+    detail: `${legs} legs (${legDescriptions}) × ${fmtMoney(del.hiredDriverPerLegCad)}/leg`,
+    qty: legs,
+    unit: "leg",
+    unitCostCad: del.hiredDriverPerLegCad,
     totalCad: delCost,
   });
-  math.push(`Delivery: ${fmtMoney(delCost)} flat per wall.`);
+  math.push(
+    `Delivery: ${legs} hired-driver legs × ${fmtMoney(del.hiredDriverPerLegCad)} = ${fmtMoney(delCost)} (no truck; "man with a van" GTA rates).` +
+      (route === "cnc-outsource"
+        ? " Book the CNC pickup driver at drop-off — missed same-day pickup risks $150/day/skid storage."
+        : " If the supplier delivers sheets free, drop one leg."),
+  );
 
   // ---------- CNC OUTSOURCE ROUTE ----------
   // Trade shop cuts, drills, edgebands, labels. Shop still buys all sheets
