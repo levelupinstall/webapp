@@ -23,6 +23,12 @@ import {
   LABOR_MODEL,
   MATERIAL_MODEL,
 } from "@/lib/estimator-price-book";
+import {
+  classifyFinish,
+  FINISH_FAMILY_LABELS,
+  FINISH_PROCESSES,
+  type FinishFamily,
+} from "@/lib/estimator-finishes";
 
 export type EstimateLine = {
   section: "Materials" | "Labor" | "Subcontract";
@@ -46,6 +52,12 @@ export type EstimateOptions = {
    * assembly-only; CNC job costs appear under Subcontract.
    */
   fabricationRoute?: FabricationRoute;
+  /**
+   * Finish description override, e.g. "white oak, stained" or "painted white".
+   * When omitted, input.finish is used. The finish selects the entire
+   * finishing process (painted ≠ stained ≠ clear ≠ prefinished).
+   */
+  finish?: string | null;
 };
 
 export type WallEstimate = {
@@ -63,6 +75,12 @@ export type WallEstimate = {
   shopHoursTotal: number;
   /** Tom's hands-on time: site hours (install/measure/drive/CNC runs). */
   siteHoursTotal: number;
+  /** Finish family driving the finishing process. */
+  finishFamily: FinishFamily;
+  /** True when the finish was assumed (not specified). */
+  finishAssumed: boolean;
+  /** Unpaid dry/cure calendar holds in days (schedule impact, not payroll). */
+  calendarHoldDays: number;
   /** Sheets of 4x8 that go to the CNC shop (0 on in-shop route). */
   sheetsForCnc: number;
   /** Spare sheets bought for CNC recuts (0 on in-shop route). */
@@ -109,13 +127,21 @@ export function estimateWall(input: FabWallInput, opts: EstimateOptions = {}): W
   const depthIn = input.depthIn ?? 10;
   const depthAssumed = input.depthIn == null;
 
+  // Finish drives the entire finishing process (painted ≠ stained ≠ clear).
+  const finishRaw = opts.finish !== undefined ? opts.finish : input.finish;
+  const finishInfo = classifyFinish(finishRaw);
+  const finishFamily: FinishFamily = finishInfo.family;
+  const finishProcess = FINISH_PROCESSES[finishFamily];
+  let calendarHoldDays = 0;
+
   math.push(
     `Wall "${input.wallLabel}": ${n} ${n === 1 ? "shelf" : "shelves"}` +
       (n > 0
         ? ` (${input.shelves.map((s) => `${s.tag} ${fmtIn(s.lengthIn)}in`).join(", ")})`
         : "") +
       `, depth ${fmtIn(depthIn)}in${depthAssumed ? " (ASSUMED — confirm on site)" : ""}` +
-      `, fabrication route: ${route === "cnc-outsource" ? "CNC OUTSOURCE (trade shop cuts/drills/edgebands; Level Up assembles)" : "IN-SHOP (Level Up cuts/edgebands/assembles)"}.`,
+      `, fabrication route: ${route === "cnc-outsource" ? "CNC OUTSOURCE (trade shop cuts/drills/edgebands; Level Up assembles)" : "IN-SHOP (Level Up cuts/edgebands/assembles)"}` +
+      `, finish: ${FINISH_FAMILY_LABELS[finishFamily]}${finishInfo.assumed ? " — ASSUMED, confirm with customer" : ""} (${finishInfo.basis}).`,
   );
 
   const pb = PRICE_BOOK;
@@ -129,6 +155,14 @@ export function estimateWall(input: FabWallInput, opts: EstimateOptions = {}): W
   let wallCncSpareSheets = 0;
 
   // ---------- MATERIALS ----------
+  // Board material follows the finish: stained/clear/oil in oak → white oak
+  // plywood (house standard); paint-grade → birch. Never price oak boards
+  // with a paint workflow or vice versa.
+  const boardMat =
+    (finishFamily === "stained" || finishFamily === "clear-coat" || finishFamily === "oil") &&
+    /oak/i.test(finishRaw || "")
+      ? pb.materials.whiteOakPly34
+      : pb.materials.birchPly34;
   if (n > 0) {
     // Shelf boards: length × depth rectangles, 2 laminated layers for 1-1/2" thickness.
     const layers = 2;
@@ -139,18 +173,19 @@ export function estimateWall(input: FabWallInput, opts: EstimateOptions = {}): W
     boardSheets = Math.ceil(
       (boardNetSqIn * mm.wasteFactor) / mm.sheetAreaSqIn,
     );
-    const boardCost = r2(boardSheets * pb.materials.birchPly34.unitCostCad);
+    const boardCost = r2(boardSheets * boardMat.unitCostCad);
     lines.push({
       section: "Materials",
-      description: pb.materials.birchPly34.description,
+      description: boardMat.description,
       detail:
         `${n} shelves × ${fmtIn(input.shelves[0].lengthIn)}in × ${fmtIn(depthIn)}in × ${layers} layers` +
         ` = ${fmtIn(boardNetSqIn)} sq in net × ${mm.wasteFactor} waste ÷ ${mm.sheetAreaSqIn.toLocaleString()} sq in/sheet` +
         ` = ${(boardNetSqIn * mm.wasteFactor / mm.sheetAreaSqIn).toFixed(2)} → ${boardSheets} sheet${boardSheets === 1 ? "" : "s"}` +
-        ` × ${fmtMoney(pb.materials.birchPly34.unitCostCad)}`,
+        ` × ${fmtMoney(boardMat.unitCostCad)}` +
+        (boardMat === pb.materials.whiteOakPly34 ? " (white oak — finish-driven)" : ""),
       qty: boardSheets,
-      unit: pb.materials.birchPly34.unit,
-      unitCostCad: pb.materials.birchPly34.unitCostCad,
+      unit: boardMat.unit,
+      unitCostCad: boardMat.unitCostCad,
       totalCad: boardCost,
     });
     math.push(
@@ -219,36 +254,45 @@ export function estimateWall(input: FabWallInput, opts: EstimateOptions = {}): W
       totalCad: screwCost,
     });
 
-    // Finish: top+bottom+edges per shelf, primer + paint at coverage rate.
+    // Finish materials per finish family (primer+paint for painted;
+    // stain+sealer+topcoat for stained; sealer+topcoat for clear; oil for oil).
     const finishSqIn = input.shelves.reduce(
       (a, s) => a + 2 * (s.lengthIn * depthIn) + 2 * (s.lengthIn + depthIn) * 1.5,
       0,
     );
     const finishSqFt = finishSqIn / 144;
-    const gals = Math.max(1, Math.ceil(finishSqFt / mm.coverageSqFtPerGal));
-    const primerCost = r2(gals * pb.materials.primerGal.unitCostCad);
-    const paintCost = r2(gals * pb.materials.paintGal.unitCostCad);
-    lines.push({
-      section: "Materials",
-      description: pb.materials.primerGal.description,
-      detail: `${fmtIn(finishSqFt)} sq ft finished surface ÷ ${mm.coverageSqFtPerGal}/gal = ${(finishSqFt / mm.coverageSqFtPerGal).toFixed(2)} → ${gals} gal × ${fmtMoney(pb.materials.primerGal.unitCostCad)}`,
-      qty: gals,
-      unit: pb.materials.primerGal.unit,
-      unitCostCad: pb.materials.primerGal.unitCostCad,
-      totalCad: primerCost,
-    });
-    lines.push({
-      section: "Materials",
-      description: pb.materials.paintGal.description,
-      detail: `same coverage → ${gals} gal × ${fmtMoney(pb.materials.paintGal.unitCostCad)}`,
-      qty: gals,
-      unit: pb.materials.paintGal.unit,
-      unitCostCad: pb.materials.paintGal.unitCostCad,
-      totalCad: paintCost,
-    });
     math.push(
-      `Finish: ${fmtIn(finishSqFt)} sq ft → ${gals} gal primer (${fmtMoney(primerCost)}) + ${gals} gal paint (${fmtMoney(paintCost)}).`,
+      `Finished surface: ${fmtIn(finishSqFt)} sq ft (top+bottom+edges per shelf).`,
     );
+    const finishMatQty = (key: string): { qty: number; unit: string; detail: string } => {
+      if (key === "stainQt") {
+        const perQt = mm.coverageSqFtPerQtStain;
+        const qty = Math.max(1, Math.ceil(finishSqFt / perQt));
+        return { qty, unit: "qt", detail: `${fmtIn(finishSqFt)} sq ft ÷ ${perQt}/qt = ${(finishSqFt / perQt).toFixed(2)} → ${qty} qt` };
+      }
+      if (key === "hardwaxOilL") {
+        const qty = Math.max(1, Math.ceil(finishSqFt / mm.coverageSqFtPerLitreOil));
+        return { qty, unit: "L", detail: `${fmtIn(finishSqFt)} sq ft ÷ ${mm.coverageSqFtPerLitreOil}/L = ${(finishSqFt / mm.coverageSqFtPerLitreOil).toFixed(2)} → ${qty} L` };
+      }
+      const qty = Math.max(1, Math.ceil(finishSqFt / mm.coverageSqFtPerGal));
+      return { qty, unit: "gal", detail: `${fmtIn(finishSqFt)} sq ft ÷ ${mm.coverageSqFtPerGal}/gal = ${(finishSqFt / mm.coverageSqFtPerGal).toFixed(2)} → ${qty} gal` };
+    };
+    for (const key of finishProcess.materialKeys) {
+      const mat = pb.materials[key as keyof typeof pb.materials];
+      if (!mat) continue;
+      const { qty, unit, detail } = finishMatQty(key);
+      const cost = r2(qty * mat.unitCostCad);
+      lines.push({
+        section: "Materials",
+        description: mat.description,
+        detail: `${detail} × ${fmtMoney(mat.unitCostCad)}`,
+        qty,
+        unit,
+        unitCostCad: mat.unitCostCad,
+        totalCad: cost,
+      });
+      math.push(`Finish material: ${mat.description} — ${qty} ${unit} = ${fmtMoney(cost)}.`);
+    }
 
     // Caulk, filler, consumables.
     const caulkTubes = Math.ceil(n / 3);
@@ -425,9 +469,6 @@ export function estimateWall(input: FabWallInput, opts: EstimateOptions = {}): W
   };
 
   const fabH = n * lm.fabHoursPerShelf;
-  const knockH = n * lm.knockdownHoursPerShelf;
-  const primeH = n * lm.primeHoursPerShelf;
-  const paintH = n * lm.paintHoursPerShelf;
   const instH = n * lm.installHoursPerShelf;
   if (route === "cnc-outsource") {
     // Parts arrive cut/drilled/edgebanded/labelled — shop labor is assembly only.
@@ -440,16 +481,29 @@ export function estimateWall(input: FabWallInput, opts: EstimateOptions = {}): W
     labor("Fabrication — cut, edgeband, assemble (shop)", fabH, pb.labor.shopRatePerHrCad,
       `${n} units × ${lm.fabHoursPerShelf}h`);
   }
-  labor("Knock-down for finishing + reassembly (shop)", knockH, pb.labor.shopRatePerHrCad,
-    `${n} units × ${lm.knockdownHoursPerShelf}h`);
-  labor("Prime coat (shop)", primeH, pb.labor.shopRatePerHrCad,
-    `${n} units × ${lm.primeHoursPerShelf}h`);
-  labor("Dry/wait after prime — PAID (shop)", lm.dryWaitHoursAfterPrimePerWall, pb.labor.shopRatePerHrCad,
-    `${lm.dryWaitHoursAfterPrimePerWall}h per wall batch (all parts dry together)`);
-  labor("Topcoats ×2 + sand between (shop)", paintH, pb.labor.shopRatePerHrCad,
-    `${n} units × ${lm.paintHoursPerShelf}h`);
-  labor("Dry/wait after final coat — PAID (shop)", lm.dryWaitHoursAfterPaintPerWall, pb.labor.shopRatePerHrCad,
-    `${lm.dryWaitHoursAfterPaintPerWall}h per wall batch before handling`);
+
+  // ---------- FINISHING — process selected by finish family ----------
+  // Painted, stained, clear-coat, oil, and prefinished are fundamentally
+  // different shop processes (see lib/estimator-finishes.ts). White oak is
+  // stained, never primed/painted.
+  math.push(`Finishing process (${FINISH_FAMILY_LABELS[finishFamily]}): ${finishProcess.notes}`);
+  for (const step of finishProcess.steps) {
+    const hours = r2(n * step.hoursPerUnit + step.hoursPerWall);
+    if (step.calendarDays) calendarHoldDays += step.calendarDays;
+    if (hours <= 0 && !step.calendarDays) continue;
+    const perUnit = step.hoursPerUnit > 0 ? `${n} units × ${step.hoursPerUnit}h` : null;
+    const perWall = step.hoursPerWall > 0 ? `${step.hoursPerWall}h per wall batch` : null;
+    const hold = step.calendarDays ? `${step.calendarDays}-day calendar hold` : null;
+    if (hours > 0) {
+      labor(step.label, hours, pb.labor.shopRatePerHrCad,
+        [perUnit, perWall, hold].filter(Boolean).join(" + ") + ` — ${step.detail}`);
+    } else {
+      math.push(`${step.label}: ${hold} — ${step.detail} (no paid labor; parts sit while the finisher does other work).`);
+    }
+  }
+  if (calendarHoldDays > 0) {
+    math.push(`Schedule: ${calendarHoldDays} calendar day${calendarHoldDays === 1 ? "" : "s"} of dry/cure holds — unpaid, but the job spans extra days.`);
+  }
   labor("Install — mount, level, caulk (on site)", instH, pb.labor.installRatePerHrCad,
     `${n} units × ${lm.installHoursPerShelf}h`);
   labor("Load-in tools + materials (on site)", lm.loadInHoursPerWall, pb.labor.installRatePerHrCad,
@@ -470,9 +524,9 @@ export function estimateWall(input: FabWallInput, opts: EstimateOptions = {}): W
   );
   math.push(
     `Labor: ${fmtMoney(laborTotalCad)} ` +
-      `(shop ${fmtMoney(pb.labor.shopRatePerHrCad)}/h on ${route === "cnc-outsource" ? "assembly" : "fab"}/knock-down/prime/paint/admin, ` +
+      `(shop ${fmtMoney(pb.labor.shopRatePerHrCad)}/h on ${route === "cnc-outsource" ? "assembly" : "fab"}/${finishProcess.steps.map((s) => s.key).join("/")}/admin, ` +
       `on-site ${fmtMoney(pb.labor.installRatePerHrCad)}/h on install/load-in/clean-up/measure/drive${route === "cnc-outsource" ? "/CNC runs" : ""}; ` +
-      `includes paid dry/wait time after prime and after final coat).`,
+      `includes paid dry/wait time between finish coats).`,
   );
 
   // ---------- TOTALS ----------
@@ -507,6 +561,9 @@ export function estimateWall(input: FabWallInput, opts: EstimateOptions = {}): W
     laborTotalCad,
     shopHoursTotal,
     siteHoursTotal,
+    finishFamily,
+    finishAssumed: finishInfo.assumed,
+    calendarHoldDays,
     sheetsForCnc: wallSheetsForCnc,
     cncSpareSheets: wallCncSpareSheets,
     subtotalCad,

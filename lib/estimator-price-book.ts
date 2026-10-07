@@ -127,6 +127,30 @@ export const PRICE_BOOK: PriceBook = {
       unitCostCad: 65,
       verify: "VERIFY — GTA 2026 placeholder",
     },
+    stainQt: {
+      description: "Wood stain, 1 quart (stained finishes)",
+      unit: "qt",
+      unitCostCad: 22,
+      verify: "VERIFY — GTA 2026 placeholder; Tom: confirm your stain price",
+    },
+    sealerGal: {
+      description: "Sanding sealer, 1 gallon (stained/clear finishes)",
+      unit: "gal",
+      unitCostCad: 55,
+      verify: "VERIFY — GTA 2026 placeholder; Tom: confirm your sealer price",
+    },
+    topcoatGal: {
+      description: "Clear topcoat (lacquer/conversion varnish), 1 gallon",
+      unit: "gal",
+      unitCostCad: 75,
+      verify: "VERIFY — GTA 2026 placeholder; Tom: confirm your topcoat price + type",
+    },
+    hardwaxOilL: {
+      description: "Hardwax oil finish, 1 litre (oil finishes)",
+      unit: "L",
+      unitCostCad: 65,
+      verify: "VERIFY — GTA 2026 placeholder; Tom: confirm your oil price",
+    },
     caulkTube: {
       description: "Paintable caulk, tube",
       unit: "tube",
@@ -173,12 +197,10 @@ export const PRICE_BOOK: PriceBook = {
 
 /** Labor time model — target hours per unit of work. Tunable; INTERNAL ONLY.
  *
- * Finishing workflow (per Tom, Oct 7): cabinets/shelves are ASSEMBLED first,
- * then knocked down into paintable parts, primed, left to dry (≥30 min —
- * paid wait, the finisher is on the clock), topcoated twice, dried again,
- * then reassembled. Dry/wait time is per BATCH (one wall's parts dry together),
- * not per shelf — but it is still paid time unless the finisher does other
- * billable work while waiting (then set the wait hours to 0).
+ * Finishing steps live in FINISH_PROCESSES (lib/estimator-finishes.ts),
+ * keyed by finish family — painted, stained, clear-coat, oil, and
+ * prefinished are fundamentally different shop processes. The fields below
+ * cover everything EXCEPT finishing.
  */
 export const LABOR_MODEL = {
   /** Fabrication hours per shelf/cabinet unit (cut, edgeband, assemble carcass). */
@@ -191,16 +213,6 @@ export const LABOR_MODEL = {
   cncAssemblyHoursPerShelf: 0.5,
   /** CNC shop runs: drop off sheets + pick up finished parts, per wall. */
   cncRunHoursPerWall: 1.5,
-  /** Knock-down into paintable parts + reassembly after finishing, per unit. */
-  knockdownHoursPerShelf: 0.25,
-  /** Prime coat, per unit. */
-  primeHoursPerShelf: 0.25,
-  /** PAID WAIT — primer dry time before topcoat, per wall batch (Tom: ≥30 min). */
-  dryWaitHoursAfterPrimePerWall: 0.5,
-  /** Two topcoats with sanding between, per unit. */
-  paintHoursPerShelf: 0.5,
-  /** PAID WAIT — dry time after final coat before handling/reassembly, per wall batch. */
-  dryWaitHoursAfterPaintPerWall: 0.5,
   /** On-site install hours per shelf (mount, level, caulk). */
   installHoursPerShelf: 0.75,
   /** Load-in: unload truck, carry tools + materials into the home, per visit. */
@@ -224,8 +236,12 @@ export const MATERIAL_MODEL = {
   sheetAreaSqIn: 48 * 96,
   /** Waste/nesting factor applied to net material area before rounding up to sheets. */
   wasteFactor: 1.25,
-  /** Finished-surface coverage per gallon of paint/primer, sq ft. */
+  /** Finished-surface coverage per gallon of paint/primer/sealer/topcoat, sq ft. */
   coverageSqFtPerGal: 350,
+  /** Wiping stain coverage, sq ft per quart (~800/gal per manufacturer tech sheets). */
+  coverageSqFtPerQtStain: 200,
+  /** Hardwax oil coverage, sq ft per litre. */
+  coverageSqFtPerLitreOil: 250,
   /** Shelves covered by one box of screws. */
   shelvesPerScrewBox: 4,
   verify: "VERIFY — GTA 2026 placeholder usage factors",
