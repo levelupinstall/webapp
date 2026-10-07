@@ -62,7 +62,7 @@ export type EstimateOptions = {
    * Crew size for the install: 1 (default, Tom solo) or 2 (Tom + hired helper).
    * Use 2 when any unit is over ~100–150 lbs, 10 ft or longer, full-height
    * (7 ft+) needing a holder while fastening, or has a stone/wood top.
-   * Helper bills at the helper rate on the same 4/8-hr day blocks.
+   * Helper bills at the helper rate ($55/hr) on the same 4/8-hr day blocks.
    */
   crewSize?: 1 | 2;
 };

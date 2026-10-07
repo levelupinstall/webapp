@@ -30,8 +30,8 @@ export type PriceBook = {
     /** On-site install rate. INTERNAL — never shown to customers. */
     installRatePerHrCad: number;
     /**
-     * Helper/second-person day rate (hired for heavy lifts, tall units).
-     * GTA Oct 2026: $22–35/hr cash typical; $30 mid-range pick.
+     * Helper/second-person day rate. Tom Oct 7: $30/hr not workable —
+     * a capable helper costs $50–60/hr. $55 mid-range pick.
      * INTERNAL — never shown to customers.
      */
     helperRatePerHrCad: number;
@@ -194,7 +194,7 @@ export const PRICE_BOOK: PriceBook = {
   labor: {
     shopRatePerHrCad: 85,
     installRatePerHrCad: 95,
-    helperRatePerHrCad: 30,
+    helperRatePerHrCad: 55,
     verify: "VERIFY — GTA 2026 placeholder rates; INTERNAL ONLY, never on customer paperwork",
   },
   business: {
