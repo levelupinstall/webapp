@@ -558,6 +558,47 @@ export function extractStatedDimensionsFromTranscript(text: string): Pick<
       toInches: (m) => valueToInches(nu(m, 1), "in"),
       clamp: DIM_W,
     },
+    {
+      // Replacement phrasing: "make it 2 meters", "60 cm instead"
+      re: new RegExp(
+        `(?:make\\s+it|change\\s+it\\s+to|set\\s+it\\s+to)\\s+(?:${MAY_APX})?(\\d+(?:\\.\\d+)?)\\s*${METRIC_UNIT_SRC}\\b`,
+        "gi",
+      ),
+      toInches: fromUnit,
+      clamp: DIM_W,
+    },
+    {
+      re: new RegExp(
+        `(?:make\\s+it|change\\s+it\\s+to|set\\s+it\\s+to)\\s+(?:${MAY_APX})?(\\d+(?:\\.\\d+)?)\\s*(?:"|in(?:ches)?\\.?)\\b`,
+        "gi",
+      ),
+      toInches: (m) => valueToInches(nu(m, 1), "in"),
+      clamp: DIM_W,
+    },
+    {
+      re: new RegExp(
+        `(?:make\\s+it|change\\s+it\\s+to|set\\s+it\\s+to)\\s+(?:${MAY_APX})?(\\d+(?:\\.\\d+)?)\\s*(?:ft|feet|foot)\\b`,
+        "gi",
+      ),
+      toInches: fromFt,
+      clamp: DIM_W,
+    },
+    {
+      re: new RegExp(
+        `(\\d+(?:\\.\\d+)?)\\s*${METRIC_UNIT_SRC}\\s+instead\\b`,
+        "gi",
+      ),
+      toInches: fromUnit,
+      clamp: DIM_W,
+    },
+    {
+      re: new RegExp(
+        `(\\d+(?:\\.\\d+)?)\\s*(?:ft|feet|foot)\\s+instead\\b`,
+        "gi",
+      ),
+      toInches: fromFt,
+      clamp: DIM_W,
+    },
   ]);
 
   const height = lastDimAcrossPatterns(hay, [
@@ -852,6 +893,55 @@ export function extractStatedDimensionsFromTranscript(text: string): Pick<
         "gi",
       ),
       toInches: fromUnit,
+      clamp: DIM_SHELF_SPAN,
+    },
+    {
+      // Replacement phrasing: "make it 60 cm", "change it to 2 feet", "60 cm instead"
+      re: new RegExp(
+        `(?:make\\s+it|change\\s+it\\s+to|set\\s+it\\s+to)\\s+(?:${MAY_APX})?(\\d+(?:\\.\\d+)?)\\s*${METRIC_UNIT_SRC}\\b`,
+        "gi",
+      ),
+      toInches: fromUnit,
+      clamp: DIM_SHELF_SPAN,
+    },
+    {
+      re: new RegExp(
+        `(?:make\\s+it|change\\s+it\\s+to|set\\s+it\\s+to)\\s+(?:${MAY_APX})?(\\d+(?:\\.\\d+)?)\\s*(?:"|in(?:ches)?\\.?)\\b`,
+        "gi",
+      ),
+      toInches: (m) => valueToInches(nu(m, 1), "in"),
+      clamp: DIM_SHELF_SPAN,
+    },
+    {
+      re: new RegExp(
+        `(?:make\\s+it|change\\s+it\\s+to|set\\s+it\\s+to)\\s+(?:${MAY_APX})?(\\d+(?:\\.\\d+)?)\\s*(?:ft|feet|foot)\\b`,
+        "gi",
+      ),
+      toInches: fromFt,
+      clamp: DIM_SHELF_SPAN,
+    },
+    {
+      re: new RegExp(
+        `(\\d+(?:\\.\\d+)?)\\s*${METRIC_UNIT_SRC}\\s+instead\\b`,
+        "gi",
+      ),
+      toInches: fromUnit,
+      clamp: DIM_SHELF_SPAN,
+    },
+    {
+      re: new RegExp(
+        `(\\d+(?:\\.\\d+)?)\\s*(?:"|in(?:ches)?\\.?)\\s+instead\\b`,
+        "gi",
+      ),
+      toInches: (m) => valueToInches(nu(m, 1), "in"),
+      clamp: DIM_SHELF_SPAN,
+    },
+    {
+      re: new RegExp(
+        `(\\d+(?:\\.\\d+)?)\\s*(?:ft|feet|foot)\\s+instead\\b`,
+        "gi",
+      ),
+      toInches: fromFt,
       clamp: DIM_SHELF_SPAN,
     },
     {
