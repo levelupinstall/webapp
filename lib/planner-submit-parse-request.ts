@@ -5,7 +5,12 @@ export const PLANNER_SUBMIT_MAX_RENDERINGS = 6;
 export const PLANNER_SUBMIT_MAX_SPACE_PHOTOS = 6;
 export const PLANNER_SUBMIT_MAX_B64_PER_IMAGE = 750_000;
 
-export type PlannerSubmitRawRendering = { mimeType?: string; dataBase64?: string };
+export type PlannerSubmitRawRendering = {
+  mimeType?: string;
+  dataBase64?: string;
+  caption?: string;
+  dimensions?: Array<{ name?: string; expectedIn?: number; known?: boolean; wallLabel?: string }>;
+};
 
 export type PlannerSubmitParsedMultipart = {
   transcript: string;
