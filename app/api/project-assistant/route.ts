@@ -21,6 +21,7 @@ import {
   type PlannerPhaseTag,
 } from "@/lib/planner-phase-utils";
 import { buildPlannerFloorPlan } from "@/lib/planner-floor-plan";
+import { buildPlannerElevation } from "@/lib/planner-elevation";
 import {
   deriveNorthStarLabelsFromUserText,
   evaluateSimplifiedIntakeReadiness,
@@ -1624,6 +1625,28 @@ The homeowner likes the design direction — pivot to booking. In one or two war
           }
         } catch (e) {
           console.warn("[project-assistant] floor plan generation failed:", e);
+        }
+        // Elevations: one dimensioned shop-drawing elevation per wall, for
+        // customer approval and the later on-site verification (site measure
+        // only happens after contract + deposit). Code-drawn, deterministic.
+        try {
+          for (let w = 0; w < multiWallCount; w++) {
+            const label = wallLabelsEffective[w];
+            const elevation = await buildPlannerElevation({
+              wallLabel: label,
+              spec: conceptRenderSpec ?? emptyPlannerVisualSpec(),
+              roomType: conceptRenderSpec?.designCategory ?? null,
+            });
+            if (elevation) {
+              responseImages.push({
+                mimeType: elevation.mimeType,
+                data: elevation.dataBase64,
+                caption: `Shop drawing — ${label}`,
+              });
+            }
+          }
+        } catch (e) {
+          console.warn("[project-assistant] elevation generation failed:", e);
         }
       } else {
         const firstPass = await runOneRender("");

@@ -99,7 +99,7 @@ function millworkDepthIn(spec: PlannerVisualSpec): number {
   const cat = (spec.designCategory ?? "").toLowerCase();
   if (cat.includes("closet")) return 24;
   if (cat.includes("cabinet") || cat.includes("kitchen")) return 24;
-  if (cat.includes("shelf")) return 12;
+  if (cat.includes("shelv")) return 12;
   return 16;
 }
 
@@ -151,7 +151,6 @@ export async function buildPlannerFloorPlan(params: {
   const roomTitle = params.roomType ? ` — ${params.roomType}` : "";
   svg.push(
     `<text x="${W / 2}" y="38" font-family="sans-serif" font-size="26" font-weight="bold" fill="#31184a" text-anchor="middle">FLOOR PLAN${esc(roomTitle).toUpperCase()}</text>`,
-    `<text x="${W / 2}" y="64" font-family="sans-serif" font-size="15" fill="#6a4a8f" text-anchor="middle">Assumed ${esc(shape)} · verify all dimensions on site</text>`,
   );
 
   // Interior fill.
@@ -198,6 +197,28 @@ export async function buildPlannerFloorPlan(params: {
 
   labels.forEach((label, i) => drawWall(positions[i], label));
 
+  // Assumed-footprint dimensions (the room size is assumed, not measured —
+  // the "?" marks it for the site measure). Top = width, left = depth.
+  const dimC = "#6a4a8f";
+  const tick = (x1: number, y1: number, x2: number, y2: number) =>
+    `<line x1="${x1.toFixed(1)}" y1="${y1.toFixed(1)}" x2="${x2.toFixed(1)}" y2="${y2.toFixed(1)}" stroke="${dimC}" stroke-width="2"/>`;
+  const assumedWIn = Math.round(roomW / pxPerIn);
+  const assumedHIn = Math.round(roomH / pxPerIn);
+  const topDimY = y0 - 44;
+  svg.push(
+    `<line x1="${x0}" y1="${topDimY}" x2="${x1}" y2="${topDimY}" stroke="${dimC}" stroke-width="1.5"/>`,
+    tick(x0 - 5, topDimY + 5, x0 + 5, topDimY - 5),
+    tick(x1 - 5, topDimY + 5, x1 + 5, topDimY - 5),
+    `<text x="${(x0 + x1) / 2}" y="${topDimY - 10}" font-family="monospace" font-size="16" font-weight="bold" fill="#31184a" text-anchor="middle">~${assumedWIn}" ?</text>`,
+  );
+  const leftDimX = x0 - 64;
+  svg.push(
+    `<line x1="${leftDimX}" y1="${y0}" x2="${leftDimX}" y2="${y1}" stroke="${dimC}" stroke-width="1.5"/>`,
+    tick(leftDimX - 5, y0 + 5, leftDimX + 5, y0 - 5),
+    tick(leftDimX - 5, y1 + 5, leftDimX + 5, y1 - 5),
+    `<text x="${leftDimX - 12}" y="${(y0 + y1) / 2}" font-family="monospace" font-size="16" font-weight="bold" fill="#31184a" text-anchor="middle" transform="rotate(-90 ${leftDimX - 12} ${(y0 + y1) / 2})">~${assumedHIn}" ?</text>`,
+  );
+
   // Corner dots at wall junctions.
   const corners: Array<[number, number]> = [];
   if (posSet.has("top") && posSet.has("left")) corners.push([x0, y0]);
@@ -213,7 +234,7 @@ export async function buildPlannerFloorPlan(params: {
   svg.push(
     `<rect x="${x0}" y="${legY - 14}" width="26" height="16" fill="${bandFill}" fill-opacity="0.55" stroke="${bandStroke}" stroke-width="2"/>`,
     `<text x="${x0 + 34}" y="${legY}" font-family="sans-serif" font-size="15" fill="#31184a">${esc(mwLabel)} · ${depthIn}" deep</text>`,
-    `<text x="${x1}" y="${legY}" font-family="sans-serif" font-size="15" fill="#6a4a8f" text-anchor="end">Not to scale — concept only</text>`,
+    `<text x="${x1}" y="${legY}" font-family="sans-serif" font-size="15" fill="#6a4a8f" text-anchor="end">Assumed ${esc(shape)} · not to scale · verify on site</text>`,
   );
 
   svg.push(`</svg>`);
