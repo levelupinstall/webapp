@@ -251,10 +251,17 @@ export async function buildSectionSheet(params: {
   );
   const asc = input.shelves.slice().sort((a, b) => a.heightIn - b.heightIn);
   const chainX = locX - 56;
-  svg.push(
-    `<line x1="${f1(chainX)}" y1="${f1(fy - asc[asc.length - 1].heightIn * ls)}" x2="${f1(chainX)}" y2="${f1(fy)}" stroke="${DIMC}" stroke-width="1.5"/>`,
-  );
-  tickV(chainX, fy);
+  if (asc.length > 0) {
+    svg.push(
+      `<line x1="${f1(chainX)}" y1="${f1(fy - asc[asc.length - 1].heightIn * ls)}" x2="${f1(chainX)}" y2="${f1(fy)}" stroke="${DIMC}" stroke-width="1.5"/>`,
+    );
+    tickV(chainX, fy);
+  } else {
+    svg.push(
+      `<text x="${f1(locX + locW / 2)}" y="${f1(fy - 30)}" font-family="DejaVu Sans" font-size="12" fill="${DIMC}" text-anchor="middle">NO SHELVES IN SPEC —</text>`,
+      `<text x="${f1(locX + locW / 2)}" y="${f1(fy - 12)}" font-family="DejaVu Sans" font-size="12" fill="${DIMC}" text-anchor="middle">CONFIRM LAYOUT BEFORE FAB</text>`,
+    );
+  }
   for (const s of asc) {
     const y = fy - s.heightIn * ls;
     tickV(chainX, y);
