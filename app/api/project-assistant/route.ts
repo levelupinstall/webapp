@@ -2,6 +2,11 @@ import { NextResponse } from "next/server";
 import sharp from "sharp";
 import { getSessionFromCookie } from "@/lib/client-portal-auth";
 import {
+  buildSideElevation,
+  buildPlanView,
+  buildIsometricView,
+} from "@/lib/planner-multi-view";
+import {
   buildGeminiConceptImagePromptText,
   defaultGeminiImageModel,
   geminiCountShelvesInImage,
@@ -1845,8 +1850,6 @@ The homeowner likes the design direction — pivot to booking. In one or two war
           });
           // Multi-view set: side, plan, isometric alongside the front elevation.
           try {
-            const { buildSideElevation, buildPlanView, buildIsometricView } =
-              await import("@/lib/planner-multi-view");
             const side = await buildSideElevation({ wallLabel: singleLabel, spec: enrichedSpec });
             if (side) {
               responseImages.push({
