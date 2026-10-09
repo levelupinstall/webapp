@@ -3,6 +3,7 @@ import { randomUUID } from "crypto";
 
 import {
   geminiEstimateMaterialsShoppingList,
+  geminiExtractMillworkStructure,
   geminiExtractPlannerVisualSpec,
   geminiExtractPlannerSubmitDesign,
   geminiGenerateInstallBlueprint,
@@ -243,6 +244,30 @@ export async function executePlannerSubmitDesignPipeline(params: {
     caption: p.caption?.trim() || `Agreed concept rendering ${idx + 1}`,
   }));
 
+  // Vision: count door/drawer fronts from the concept for hardware quantities.
+  // Non-blocking — falls back to unset counts (Tom confirms at proposal).
+  let doorCount: number | undefined;
+  let drawerCount: number | undefined;
+  try {
+    const firstConcept = renderingParts.find(
+      (p) => !p.caption?.toLowerCase().includes("shop drawing"),
+    );
+    if (firstConcept) {
+      const struct = await geminiExtractMillworkStructure({
+        imageMimeType: firstConcept.inline_data.mime_type,
+        imageDataBase64: firstConcept.inline_data.data,
+      });
+      if (struct) {
+        const doors = struct.baseCabinets.present ? struct.baseCabinets.doors : 0;
+        const drawers = (struct.baseCabinets.present ? struct.baseCabinets.drawers : 0) + struct.drawers;
+        if (doors > 0) doorCount = doors;
+        if (drawers > 0) drawerCount = drawers;
+      }
+    }
+  } catch (e) {
+    console.warn("[submit-design] door/drawer vision count failed:", e);
+  }
+
   const spacePhotosForStore = spacePhotoParts.map((p, idx) => ({
     mimeType: p.inline_data.mime_type,
     dataUrl: `data:${p.inline_data.mime_type};base64,${p.inline_data.data}`,
@@ -278,6 +303,8 @@ export async function executePlannerSubmitDesignPipeline(params: {
     ...(spacePhotosForStore.length ? { spacePhotos: spacePhotosForStore } : {}),
     ...(shopDrawingDims.length ? { shopDrawingDims } : {}),
     ...(budgetHint ? { budgetNotes: budgetHint } : {}),
+    ...(doorCount ? { doorCount } : {}),
+    ...(drawerCount ? { drawerCount } : {}),
   });
 
   if (!proposal) {
