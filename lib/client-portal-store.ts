@@ -182,6 +182,8 @@ export type WorkProposal = {
   changeOrders?: ChangeOrder[];
   /** Dimension checklist from the shop-drawing elevations (for the site measure). */
   shopDrawingDims?: ShopDrawingDimension[];
+  /** Customer's finish/hardware selections from the configurator (post-concept). */
+  finishSelection?: import("@/lib/finish-hardware-catalog").CustomerFinishSelection;
   /** Tom's on-site verification after contract + deposit. */
   siteMeasure?: SiteMeasureVerification;
 };
@@ -1929,6 +1931,35 @@ export async function adminPatchWorkProposal(params: {
     ...(params.paymentAmountCents !== undefined
       ? { paymentAmountCents: Math.max(100, Math.floor(params.paymentAmountCents)) }
       : {}),
+  };
+
+  user.workProposals[idx] = next;
+  await persistJsonSnapshots(row.id, {
+    workProposals: user.workProposals as unknown as Prisma.InputJsonValue,
+  });
+  return next;
+}
+
+/**
+ * Save the customer's finish/hardware selections from the configurator
+ * to their work proposal.
+ */
+export async function saveProposalFinishSelection(params: {
+  portalUserId: string;
+  proposalId: string;
+  finishSelection: import("@/lib/finish-hardware-catalog").CustomerFinishSelection;
+}): Promise<WorkProposal | null> {
+  const row = await prisma.portalUser.findUnique({ where: { id: params.portalUserId } });
+  if (!row) return null;
+
+  const user = rowToUserRecord(row);
+  const idx = user.workProposals.findIndex((p) => p.id === params.proposalId);
+  if (idx < 0) return null;
+
+  const next: WorkProposal = {
+    ...user.workProposals[idx],
+    updatedAt: new Date().toISOString(),
+    finishSelection: params.finishSelection,
   };
 
   user.workProposals[idx] = next;

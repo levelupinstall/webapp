@@ -59,6 +59,12 @@ export type EstimateOptions = {
    */
   finish?: string | null;
   /**
+   * Customer's finish/hardware selections from the configurator. Applies
+   * the sheen labor multiplier to finishing steps and adds hardware
+   * material costs (pulls, knobs, slides, hinges).
+   */
+  finishSelection?: import("@/lib/finish-hardware-catalog").CustomerFinishSelection;
+  /**
    * Crew size for the install: 1 (default, Tom solo) or 2 (Tom + hired helper).
    * Use 2 when any unit is over ~100–150 lbs, 10 ft or longer, full-height
    * (7 ft+) needing a holder while fastening, or has a stone/wood top.
@@ -273,6 +279,34 @@ export function estimateWall(input: FabWallInput, opts: EstimateOptions = {}): W
       totalCad: scribeCost,
     });
     math.push(`Scribe/filler stock: ${fmtMoney(scribeCost)} allowance per wall.`);
+
+    // Customer-selected hardware from the configurator (pulls, knobs,
+    // drawer slides, hinges) — real products, Toronto-sourced.
+    if (opts.finishSelection) {
+      const catalog = await import("@/lib/finish-hardware-catalog");
+      const sel = opts.finishSelection;
+      const hwIds = [sel.pullId, sel.knobId, sel.drawerSlideId, sel.hingeId].filter(Boolean) as string[];
+      for (const hwId of hwIds) {
+        const hw = catalog.getHardware(hwId);
+        if (!hw || hw.priceCAD == null) continue;
+        // Quantities are project-specific; Tom confirms counts at proposal.
+        // Default: 1 unit per hardware line as a placeholder Tom adjusts.
+        const qty = 1;
+        const total = r2(qty * hw.priceCAD);
+        lines.push({
+          section: "Materials",
+          description: `${hw.brand} ${hw.model} (${hw.finish ?? hw.category})`,
+          detail: `Customer-selected ${hw.category} — ${hw.sku ?? "SKU TBD"} · ${hw.whereToBuy[0]}${hw.priceVerified ? "" : " (price VERIFY)"}`,
+          qty,
+          unit: "ea",
+          unitCostCad: hw.priceCAD,
+          totalCad: total,
+        });
+        math.push(`Hardware (${hw.category}): ${hw.brand} ${hw.model} × ${qty} = ${fmtMoney(total)}${hw.priceVerified ? "" : " (price VERIFY — Tom confirms)"}.`);
+      }
+      // Finish color/sheen called out on the estimate for the record.
+      math.push(`Customer finish: ${catalog.describeFinishSelection(sel)}.`);
+    }
 
     // Finish materials per finish family (primer+paint for painted;
     // stain+sealer+topcoat for stained; sealer+topcoat for clear; oil for oil).
@@ -524,8 +558,17 @@ export function estimateWall(input: FabWallInput, opts: EstimateOptions = {}): W
   // different shop processes (see lib/estimator-finishes.ts). White oak is
   // stained, never primed/painted.
   math.push(`Finishing process (${FINISH_FAMILY_LABELS[finishFamily]}): ${finishProcess.notes}`);
+  // Sheen multiplier from the customer's configurator selection (high-gloss
+  // needs significantly more surface prep than satin/matte).
+  const sheenMult = opts.finishSelection
+    ? (await import("@/lib/finish-hardware-catalog")).SHEEN_LABOR_MULTIPLIER[opts.finishSelection.sheen] ?? 1
+    : 1;
+  if (sheenMult !== 1 && opts.finishSelection) {
+    const sheenLabel = (await import("@/lib/finish-hardware-catalog")).SHEEN_LABELS[opts.finishSelection.sheen];
+    math.push(`Sheen (${sheenLabel}): finishing labor × ${sheenMult} — extra prep for the selected sheen.`);
+  }
   for (const step of finishProcess.steps) {
-    const hours = r2(n * step.hoursPerUnit + step.hoursPerWall);
+    const hours = r2((n * step.hoursPerUnit + step.hoursPerWall) * sheenMult);
     if (step.calendarDays) calendarHoldDays += step.calendarDays;
     if (hours <= 0 && !step.calendarDays) continue;
     const perUnit = step.hoursPerUnit > 0 ? `${n} units × ${step.hoursPerUnit}h` : null;
