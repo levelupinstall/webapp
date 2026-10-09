@@ -93,8 +93,6 @@ export async function buildShopDrawingElevation(params: {
   verified?: boolean;
 }): Promise<ShopDrawingResult | null> {
   const spec = params.spec;
-  // Debug: log spec fields that drive zone selection
-  console.log("[elevation] designCategory:", spec.designCategory, "| scopeNotes:", (spec.scopeNotes ?? "").slice(0, 80), "| shelfCount:", spec.shelfCount, "| zones:", spec.zones ? spec.zones.length : "null");
   const label = (params.wallLabel || "wall").trim();
   const project = (params.projectName || "RESIDENTIAL MILLWORK").trim().toUpperCase();
 
@@ -149,7 +147,8 @@ export async function buildShopDrawingElevation(params: {
   const isCloset = /closet|wardrobe/i.test(spec.designCategory ?? "");
   let zones: MillworkZone[] | null = spec.zones && spec.zones.length > 0 ? spec.zones : null;
   let zonesAssumed = false;
-  if (!zones && isCloset) {
+  const zonesEmpty = !zones || zones.length === 0;
+  if (zonesEmpty && isCloset) {
     // Use vision-derived closet layout when available (e.g. ["DOUBLE-HANG", "DRAWERS", "SINGLE-HANG"])
     // for an accurate section-by-section elevation. Falls back to a generic
     // assumed layout when vision didn't provide one.
@@ -231,7 +230,7 @@ export async function buildShopDrawingElevation(params: {
   const isBuiltIn = /built-?in|bookcase|sideboard|wall unit|display cabinet/i.test(
     `${spec.designCategory ?? ""} ${spec.scopeNotes ?? ""}`,
   );
-  if (!zones && isBuiltIn && (spec.shelfCount ?? 0) >= 4) {
+  if (zonesEmpty && isBuiltIn && (spec.shelfCount ?? 0) >= 4) {
     const totalShelves = spec.shelfCount!;
     // 3-4 bays is typical for a built-in; distribute shelves evenly.
     const bayCount = totalShelves >= 12 ? 4 : 3;
@@ -264,7 +263,7 @@ export async function buildShopDrawingElevation(params: {
   const isFloating = /media wall|floating shelves?|accent wall|tv wall/i.test(designText) ||
     // Fallback: shelf-heavy but not a built-in case → floating shelves
     ((spec.shelfCount ?? 0) >= 4 && !/built-?in|bookcase|sideboard|wall unit|display cabinet|closet|wardrobe/i.test(designText));
-  if (!zones && isFloating && (spec.shelfCount ?? 0) >= 2) {
+  if (zonesEmpty && isFloating && (spec.shelfCount ?? 0) >= 2) {
     const totalShelves = spec.shelfCount!;
     const hasBase = /credenza|console|cabinet|sideboard/i.test(
       `${spec.designCategory ?? ""} ${spec.scopeNotes ?? ""}`,
