@@ -93,6 +93,8 @@ export async function buildShopDrawingElevation(params: {
   verified?: boolean;
 }): Promise<ShopDrawingResult | null> {
   const spec = params.spec;
+  // Debug: log spec fields that drive zone selection
+  console.log("[elevation] designCategory:", spec.designCategory, "| scopeNotes:", (spec.scopeNotes ?? "").slice(0, 80), "| shelfCount:", spec.shelfCount, "| zones:", spec.zones ? spec.zones.length : "null");
   const label = (params.wallLabel || "wall").trim();
   const project = (params.projectName || "RESIDENTIAL MILLWORK").trim().toUpperCase();
 
