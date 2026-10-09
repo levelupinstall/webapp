@@ -1690,9 +1690,10 @@ The homeowner likes the design direction — pivot to booking. In one or two war
             const conceptImg = responseImages.find(
               (ri) => ri.caption === label && ri.mimeType.startsWith("image/"),
             );
-            // Per-wall shelf count for the elevation's deterministic bay fallback.
+            // Per-wall shelf count from the concept image (transcript counts
+            // are unreliable — the image is ground truth for the elevation).
             let wallSpec = conceptRenderSpec ?? emptyPlannerVisualSpec();
-            if (conceptImg && !(wallSpec.shelfCount && wallSpec.shelfCount > 0)) {
+            if (conceptImg) {
               try {
                 const counted = await geminiCountShelvesInImage({
                   imageMimeType: conceptImg.mimeType,
@@ -1783,10 +1784,10 @@ The homeowner likes the design direction — pivot to booking. In one or two war
       // design (not just multi-wall) gets a drawing for customer approval.
       // Vision-grounded from the just-rendered concept image.
       try {
-        // Ensure the spec has the vision-counted shelf count for the
-        // elevation's deterministic bay fallback (runs even when the
-        // accuracy check above was skipped, e.g. refinement turns).
-        if (renderedImages.length > 0 && conceptRenderSpec && !(conceptRenderSpec.shelfCount && conceptRenderSpec.shelfCount > 0)) {
+        // Always count shelves from the concept image for the elevation —
+        // the transcript count is unreliable (it said 2 for a 12-shelf
+        // built-in). The image is ground truth.
+        if (renderedImages.length > 0 && conceptRenderSpec) {
           try {
             const counted = await geminiCountShelvesInImage({
               imageMimeType: renderedImages[0].mimeType,
