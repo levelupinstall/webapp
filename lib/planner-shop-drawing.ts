@@ -260,11 +260,15 @@ export async function buildShopDrawingElevation(params: {
   // horizontal boards on the wall (no case box), with optional grouping
   // (e.g. shelves flanking a TV) and a base cabinet.
   const designText = `${spec.designCategory ?? ""} ${spec.scopeNotes ?? ""}`;
+  const mentionsFloating = /floating|media wall|tv wall|accent wall/i.test(designText);
   const isFloating = /media wall|floating shelves?|accent wall|tv wall/i.test(designText) ||
     // Fallback: shelf-heavy but not a built-in case → floating shelves
-    ((spec.shelfCount ?? 0) >= 4 && !/built-?in|bookcase|sideboard|wall unit|display cabinet|closet|wardrobe/i.test(designText));
-  if (zonesEmpty && isFloating && (spec.shelfCount ?? 0) >= 2) {
-    const totalShelves = spec.shelfCount!;
+    ((spec.shelfCount ?? 0) >= 4 && !/built-?in|bookcase|sideboard|wall unit|display cabinet|closet|wardrobe/i.test(designText)) ||
+    // Last resort: design mentions floating but vision didn't count → assume 4 shelves
+    (mentionsFloating && (spec.shelfCount ?? 0) === 0);
+  const floatingShelfCount = (spec.shelfCount ?? 0) > 0 ? spec.shelfCount! : 4;
+  if (zonesEmpty && isFloating) {
+    const totalShelves = floatingShelfCount;
     const hasBase = /credenza|console|cabinet|sideboard/i.test(
       `${spec.designCategory ?? ""} ${spec.scopeNotes ?? ""}`,
     );
