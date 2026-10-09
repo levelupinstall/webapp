@@ -184,6 +184,9 @@ export type WorkProposal = {
   shopDrawingDims?: ShopDrawingDimension[];
   /** Customer's finish/hardware selections from the configurator (post-concept). */
   finishSelection?: import("@/lib/finish-hardware-catalog").CustomerFinishSelection;
+  /** Door/drawer front counts from vision analysis of the concept (for hardware quantities). */
+  doorCount?: number;
+  drawerCount?: number;
   /** Tom's on-site verification after contract + deposit. */
   siteMeasure?: SiteMeasureVerification;
 };
@@ -1858,6 +1861,8 @@ export async function createWorkProposalDraftForPortalUser(params: {
   budgetNotes?: string;
   assignedCarpenterId?: string | null;
   sourceEstimateId?: string;
+  doorCount?: number;
+  drawerCount?: number;
 }): Promise<WorkProposal | null> {
   const row = await prisma.portalUser.findUnique({ where: { id: params.portalUserId } });
   if (!row || row.signupVerificationPending) return null;
@@ -1890,6 +1895,8 @@ export async function createWorkProposalDraftForPortalUser(params: {
       : {}),
     ...(params.assignedCarpenterId ? { assignedCarpenterId: params.assignedCarpenterId } : {}),
     ...(params.sourceEstimateId ? { sourceEstimateId: params.sourceEstimateId } : {}),
+    ...(params.doorCount ? { doorCount: params.doorCount } : {}),
+    ...(params.drawerCount ? { drawerCount: params.drawerCount } : {}),
     renderings: params.renderings.map((r) => ({
       id: randomUUID(),
       mimeType: r.mimeType || "image/jpeg",
@@ -1967,6 +1974,47 @@ export async function saveProposalFinishSelection(params: {
     workProposals: user.workProposals as unknown as Prisma.InputJsonValue,
   });
   return next;
+}
+
+/**
+ * Persist an updated workProposals array for a portal user.
+ * Used by background tasks (e.g. finish re-render) that modify proposals
+ * outside the normal request flow.
+ */
+export async function persistPortalUserWorkProposals(
+  portalUserId: string,
+  workProposals: WorkProposal[],
+): Promise<void> {
+  await persistJsonSnapshots(portalUserId, {
+    workProposals: workProposals as unknown as Prisma.InputJsonValue,
+  });
+}
+
+/**
+ * Append a rendering (e.g. the finish re-render) to a proposal.
+ * Used by the background finish re-render task.
+ */
+export async function appendProposalRendering(params: {
+  portalUserId: string;
+  proposalId: string;
+  mimeType: string;
+  dataUrl: string;
+  caption?: string;
+}): Promise<boolean> {
+  const row = await prisma.portalUser.findUnique({ where: { id: params.portalUserId } });
+  if (!row) return false;
+  const user = rowToUserRecord(row);
+  const proposal = user.workProposals.find((p) => p.id === params.proposalId);
+  if (!proposal) return false;
+  proposal.renderings.push({
+    id: randomUUID(),
+    mimeType: params.mimeType,
+    dataUrl: params.dataUrl,
+    caption: params.caption?.trim() || undefined,
+  });
+  proposal.updatedAt = new Date().toISOString();
+  await persistPortalUserWorkProposals(params.portalUserId, user.workProposals);
+  return true;
 }
 
 export async function saveSiteMeasureVerification(params: {

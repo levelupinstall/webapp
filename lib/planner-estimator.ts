@@ -71,6 +71,13 @@ export type EstimateOptions = {
    */
   finishSelection?: import("@/lib/finish-hardware-catalog").CustomerFinishSelection;
   /**
+   * Door/drawer front counts (from vision analysis of the concept).
+   * Drives hardware quantities: pulls/knobs per front, 2 hinges per door,
+   * 1 slide pair per drawer. When omitted, hardware lines use ×1 placeholder.
+   */
+  doorCount?: number;
+  drawerCount?: number;
+  /**
    * Crew size for the install: 1 (default, Tom solo) or 2 (Tom + hired helper).
    * Use 2 when any unit is over ~100–150 lbs, 10 ft or longer, full-height
    * (7 ft+) needing a holder while fastening, or has a stone/wood top.
@@ -288,26 +295,34 @@ export function estimateWall(input: FabWallInput, opts: EstimateOptions = {}): W
 
     // Customer-selected hardware from the configurator (pulls, knobs,
     // drawer slides, hinges) — real products, Toronto-sourced.
+    // Quantities come from the vision-counted door/drawer fronts.
     if (opts.finishSelection) {
       const sel = opts.finishSelection;
-      const hwIds = [sel.pullId, sel.knobId, sel.drawerSlideId, sel.hingeId].filter(Boolean) as string[];
-      for (const hwId of hwIds) {
-        const hw = getHardware(hwId);
+      const doors = Math.max(0, Math.floor(opts.doorCount ?? 0));
+      const drawers = Math.max(0, Math.floor(opts.drawerCount ?? 0));
+      const hwSpecs: { id: string | undefined; qty: number; qtyNote: string }[] = [
+        { id: sel.pullId, qty: doors + drawers, qtyNote: `${doors} doors + ${drawers} drawers` },
+        { id: sel.knobId, qty: doors + drawers, qtyNote: `${doors} doors + ${drawers} drawers` },
+        { id: sel.drawerSlideId, qty: drawers, qtyNote: `${drawers} drawers × 1 pair` },
+        { id: sel.hingeId, qty: doors * 2, qtyNote: `${doors} doors × 2 hinges` },
+      ];
+      for (const spec of hwSpecs) {
+        if (!spec.id) continue;
+        const hw = getHardware(spec.id);
         if (!hw || hw.priceCAD == null) continue;
-        // Quantities are project-specific; Tom confirms counts at proposal.
-        // Default: 1 unit per hardware line as a placeholder Tom adjusts.
-        const qty = 1;
+        const qty = Math.max(1, spec.qty);
+        const qtyAssumed = doors + drawers === 0;
         const total = r2(qty * hw.priceCAD);
         lines.push({
           section: "Materials",
-          description: `${hw.brand} ${hw.model} (${hw.finish ?? hw.category})`,
-          detail: `Customer-selected ${hw.category} — ${hw.sku ?? "SKU TBD"} · ${hw.whereToBuy[0]}${hw.priceVerified ? "" : " (price VERIFY)"}`,
+          description: `${hw.brand} ${hw.model}${hw.finish ? ` (${hw.finish})` : ""}`,
+          detail: `Customer-selected ${hw.category} — ${hw.sku ?? "SKU TBD"} · ${hw.whereToBuy[0]}${hw.priceVerified ? "" : " (price VERIFY)"}${qtyAssumed ? " (qty assumed — confirm fronts)" : ""}`,
           qty,
-          unit: "ea",
+          unit: hw.category === "drawer-slide" ? "pair" : "ea",
           unitCostCad: hw.priceCAD,
           totalCad: total,
         });
-        math.push(`Hardware (${hw.category}): ${hw.brand} ${hw.model} × ${qty} = ${fmtMoney(total)}${hw.priceVerified ? "" : " (price VERIFY — Tom confirms)"}.`);
+        math.push(`Hardware (${hw.category}): ${hw.brand} ${hw.model} × ${qty} (${spec.qtyNote}) = ${fmtMoney(total)}${hw.priceVerified ? "" : " (price VERIFY)"}${qtyAssumed ? " (qty assumed)" : ""}.`);
       }
       // Finish color/sheen called out on the estimate for the record.
       math.push(`Customer finish: ${describeFinishSelection(sel)}.`);

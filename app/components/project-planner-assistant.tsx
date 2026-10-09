@@ -711,7 +711,12 @@ export default function ProjectPlannerAssistant({
         return;
       }
 
-      router.push("/planner/design-submitted");
+      const proposalId = (submitData as { proposalId?: string }).proposalId?.trim();
+      router.push(
+        proposalId
+          ? `/planner/design-submitted?proposal=${encodeURIComponent(proposalId)}`
+          : "/planner/design-submitted",
+      );
     } catch {
       setError("Something went wrong while submitting. Please try again.");
     } finally {

@@ -1343,6 +1343,42 @@ export async function geminiExtractScanDimensions(params: {
 }
 
 /**
+ * Re-render a concept image in the customer's chosen finish.
+ * Takes the approved concept rendering and changes ONLY the finish
+ * (paint/stain color + sheen) — same room, same millwork, same composition.
+ * Used after the customer picks finishes in the configurator.
+ */
+export async function geminiRerenderConceptInFinish(params: {
+  conceptImageMimeType: string;
+  conceptImageDataBase64: string;
+  finishDescription: string;
+}): Promise<{ mimeType: string; dataBase64: string } | null> {
+  if (!isGeminiConfigured()) return null;
+  const result = await geminiGenerateConceptImage({
+    promptContext:
+      `FINISH CHANGE ONLY. Take the attached concept rendering and change ONLY the millwork finish to: ${params.finishDescription}. ` +
+      `Keep the room, walls, furniture, lighting, camera angle, and millwork design EXACTLY the same — ` +
+      `same shelves, same bays, same cabinets, same positions. ` +
+      `Only the color/stain and sheen of the millwork changes. ` +
+      `Photorealistic; no text labels or annotations in the image.`,
+    userGoal: `Show the approved design in ${params.finishDescription}`,
+    referenceImageParts: [
+      {
+        inline_data: {
+          mime_type: params.conceptImageMimeType,
+          data: params.conceptImageDataBase64,
+        },
+      },
+    ],
+    visualMode: "refinement-delta",
+  });
+  if ("error" in result) return null;
+  const images = result.images ?? [];
+  if (images.length === 0) return null;
+  return { mimeType: images[0].mimeType, dataBase64: images[0].dataBase64 };
+}
+
+/**
  * Vision check: is the candidate interior photo essentially the same shot as the reference?
  * Used for ambiguous near-duplicate space uploads (CRM / portal dedupe).
  */
