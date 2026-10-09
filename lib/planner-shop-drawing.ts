@@ -254,12 +254,14 @@ export async function buildShopDrawingElevation(params: {
     zonesAssumed = true;
   }
 
-  // Floating shelf mode: for media walls, floating shelves, and accent walls.
-  // Draws shelves as horizontal boards on the wall (no case box), with
-  // optional grouping (e.g. shelves flanking a TV) and a base cabinet.
-  const isFloating = /media wall|floating shelves?|accent wall/i.test(
-    `${spec.designCategory ?? ""} ${spec.scopeNotes ?? ""}`,
-  );
+  // Floating shelf mode: for media walls, floating shelves, accent walls,
+  // and any shelf-heavy design that isn't a built-in case. Draws shelves as
+  // horizontal boards on the wall (no case box), with optional grouping
+  // (e.g. shelves flanking a TV) and a base cabinet.
+  const designText = `${spec.designCategory ?? ""} ${spec.scopeNotes ?? ""}`;
+  const isFloating = /media wall|floating shelves?|accent wall|tv wall/i.test(designText) ||
+    // Fallback: shelf-heavy but not a built-in case → floating shelves
+    ((spec.shelfCount ?? 0) >= 4 && !/built-?in|bookcase|sideboard|wall unit|display cabinet|closet|wardrobe/i.test(designText));
   if (!zones && isFloating && (spec.shelfCount ?? 0) >= 2) {
     const totalShelves = spec.shelfCount!;
     const hasBase = /credenza|console|cabinet|sideboard/i.test(
