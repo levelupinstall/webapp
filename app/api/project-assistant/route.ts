@@ -1690,8 +1690,23 @@ The homeowner likes the design direction — pivot to booking. In one or two war
             const conceptImg = responseImages.find(
               (ri) => ri.caption === label && ri.mimeType.startsWith("image/"),
             );
+            // Per-wall shelf count for the elevation's deterministic bay fallback.
+            let wallSpec = conceptRenderSpec ?? emptyPlannerVisualSpec();
+            if (conceptImg && !(wallSpec.shelfCount && wallSpec.shelfCount > 0)) {
+              try {
+                const counted = await geminiCountShelvesInImage({
+                  imageMimeType: conceptImg.mimeType,
+                  imageDataBase64: conceptImg.data as string,
+                });
+                if (counted !== null && counted > 0) {
+                  wallSpec = { ...wallSpec, shelfCount: counted };
+                }
+              } catch (e) {
+                console.warn("[project-assistant] per-wall shelf count failed:", e);
+              }
+            }
             const enrichedSpec = await enrichSpecWithConceptStructure(
-              conceptRenderSpec ?? emptyPlannerVisualSpec(),
+              wallSpec,
               conceptImg
                 ? { mimeType: conceptImg.mimeType, dataBase64: conceptImg.data as string }
                 : null,
@@ -1744,6 +1759,11 @@ The homeowner likes the design direction — pivot to booking. In one or two war
           imageMimeType: first.mimeType,
           imageDataBase64: first.dataBase64,
         });
+        // Write the observed count back to the spec so the elevation's
+        // deterministic bay fallback uses the real rendered count.
+        if (observed !== null && conceptRenderSpec) {
+          conceptRenderSpec = { ...conceptRenderSpec, shelfCount: observed };
+        }
         if (observed !== null && observed !== expectedShelfCount) {
           console.warn(
             `[project-assistant] shelf-count mismatch (expected ${expectedShelfCount}, saw ${observed}) — regenerating once with correction.`,
@@ -1763,6 +1783,22 @@ The homeowner likes the design direction — pivot to booking. In one or two war
       // design (not just multi-wall) gets a drawing for customer approval.
       // Vision-grounded from the just-rendered concept image.
       try {
+        // Ensure the spec has the vision-counted shelf count for the
+        // elevation's deterministic bay fallback (runs even when the
+        // accuracy check above was skipped, e.g. refinement turns).
+        if (renderedImages.length > 0 && conceptRenderSpec && !(conceptRenderSpec.shelfCount && conceptRenderSpec.shelfCount > 0)) {
+          try {
+            const counted = await geminiCountShelvesInImage({
+              imageMimeType: renderedImages[0].mimeType,
+              imageDataBase64: renderedImages[0].dataBase64,
+            });
+            if (counted !== null && counted > 0) {
+              conceptRenderSpec = { ...conceptRenderSpec, shelfCount: counted };
+            }
+          } catch (e) {
+            console.warn("[project-assistant] shelf count for elevation failed:", e);
+          }
+        }
         const singleLabel =
           wallLabelsEffective[0] ||
           (conceptRenderSpec?.designCategory ?? "").trim() ||

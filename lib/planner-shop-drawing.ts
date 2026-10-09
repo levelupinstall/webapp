@@ -194,6 +194,38 @@ export async function buildShopDrawingElevation(params: {
     dimensions.push({ name: `${tag} height A.F.F.`, expectedIn: r1(hIn), known: !zonesAssumed });
   };
 
+  // Built-in fallback: when vision zones aren't available but this is a
+  // built-in (bookcase, sideboard, wall unit) with a known shelf count,
+  // generate deterministic bays instead of the 2-shelf empty box.
+  // This uses the reliable shelf count, not flaky vision JSON.
+  const isBuiltIn = /built-?in|bookcase|sideboard|wall unit|display cabinet/i.test(
+    `${spec.designCategory ?? ""} ${spec.scopeNotes ?? ""}`,
+  );
+  if (!zones && isBuiltIn && (spec.shelfCount ?? 0) >= 4) {
+    const totalShelves = spec.shelfCount!;
+    // 3-4 bays is typical for a built-in; distribute shelves evenly.
+    const bayCount = totalShelves >= 12 ? 4 : 3;
+    const perBay = Math.round(totalShelves / bayCount);
+    const hasBase = /sideboard|cabinet|drawers?|doors?/i.test(
+      `${spec.designCategory ?? ""} ${spec.scopeNotes ?? ""}`,
+    );
+    zones = [
+      {
+        kind: "built-in-bays",
+        x0: 0,
+        x1: 1,
+        bays: Array.from({ length: bayCount }, (_, i) => ({
+          x0: i / bayCount,
+          x1: (i + 1) / bayCount,
+          shelves: perBay,
+          baseCabinet: hasBase ? { doors: 1, drawers: 0 } : undefined,
+        })),
+        assumed: true,
+      },
+    ];
+    zonesAssumed = true;
+  }
+
   // Legacy shelf path (non-closet, no zones) — unchanged behavior.
   const shelfLike = /shelves?|shelving|bookcase/i.test(spec.designCategory ?? "");
   const shelfCountAssumed = !zones && (spec.shelfCount ?? 0) <= 0 && shelfLike;
