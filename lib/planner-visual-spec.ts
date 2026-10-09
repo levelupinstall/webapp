@@ -1593,7 +1593,7 @@ export function buildImageRenderDirective(
  * planner-visual-spec import cycle.
  */
 export function zonesFromConceptStructure(struct: {
-  bays: { x0: number; x1: number; shelves: number }[];
+  bays: { x0: number; x1: number; shelves: number; rods?: number; drawers?: number }[];
   baseCabinets: { present: boolean; doors: number; drawers: number };
   rods: number;
   drawers: number;
@@ -1601,35 +1601,77 @@ export function zonesFromConceptStructure(struct: {
 }): MillworkZone[] | null {
   if (!struct.bays.length && !struct.rods && !struct.drawers && !struct.cubbyRows) return null;
   const zones: MillworkZone[] = [];
-  if (struct.bays.length > 0) {
-    const hasBase = struct.baseCabinets.present;
-    zones.push({
-      kind: "built-in-bays",
-      x0: 0,
-      x1: 1,
-      bays: struct.bays.map((b) => ({
+
+  // Build zones from bays with their correct positions.
+  // Each bay becomes its own zone(s) at its x0/x1 position.
+  for (const b of struct.bays) {
+    const bayRods = b.rods ?? 0;
+    const bayDrawers = b.drawers ?? 0;
+    const bayShelves = b.shelves ?? 0;
+
+    if (bayRods > 0) {
+      // Hanging section at this bay's position
+      zones.push({
+        kind: "hanging",
         x0: b.x0,
         x1: b.x1,
-        shelves: b.shelves,
-        // Distribute base-cabinet fronts across bays when present.
-        baseCabinet: hasBase
-          ? {
-              doors: Math.max(0, Math.round(struct.baseCabinets.doors / struct.bays.length)),
-              drawers: Math.max(0, Math.round(struct.baseCabinets.drawers / struct.bays.length)),
-            }
-          : undefined,
-        fromImage: true,
-      })),
-    });
+        rods: bayRods,
+        assumed: false,
+      });
+    }
+    if (bayDrawers > 0) {
+      // Drawer bank at this bay's position
+      zones.push({
+        kind: "drawers",
+        x0: b.x0,
+        x1: b.x1,
+        drawers: bayDrawers,
+        assumed: false,
+      });
+    }
+    if (bayShelves > 0) {
+      // Shelves at this bay's position
+      zones.push({
+        kind: "open-shelves",
+        x0: b.x0,
+        x1: b.x1,
+        shelves: bayShelves,
+        assumed: false,
+      });
+    }
+    // Bay with nothing (empty hanging section with no rods counted, etc.)
+    // gets a placeholder so the divider still draws.
+    if (bayRods === 0 && bayDrawers === 0 && bayShelves === 0) {
+      zones.push({
+        kind: "open-shelves",
+        x0: b.x0,
+        x1: b.x1,
+        shelves: 0,
+        assumed: false,
+      });
+    }
   }
-  if (struct.rods > 0) {
-    zones.push({ kind: "hanging", x0: 0, x1: 1, rods: struct.rods, assumed: false });
-  }
-  if (struct.drawers > 0) {
-    zones.push({ kind: "drawers", x0: 0, x1: 1, drawers: struct.drawers, assumed: false });
+
+  // Legacy fallback: global counts without positions (span full width)
+  if (struct.bays.length === 0) {
+    if (struct.rods > 0) {
+      zones.push({ kind: "hanging", x0: 0, x1: 1, rods: struct.rods, assumed: false });
+    }
+    if (struct.drawers > 0) {
+      zones.push({ kind: "drawers", x0: 0, x1: 1, drawers: struct.drawers, assumed: false });
+    }
   }
   if (struct.cubbyRows > 0) {
     zones.push({ kind: "shoe-cubbies", x0: 0, x1: 1, rows: struct.cubbyRows, assumed: false });
+  }
+  // Base cabinets span the width below (if present)
+  if (struct.baseCabinets.present) {
+    zones.push({
+      kind: "base-cabinets",
+      x0: 0,
+      x1: 1,
+      assumed: false,
+    });
   }
   return zones.length > 0 ? zones : null;
 }

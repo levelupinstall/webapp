@@ -1302,12 +1302,12 @@ export async function geminiDescribeClosetLayout(params: {
  */
 export type ConceptMillworkStructure = {
   /** Vertical bays (left to right), x0/x1 as fractions of the millwork width. */
-  bays: { x0: number; x1: number; shelves: number }[];
+  bays: { x0: number; x1: number; shelves: number; rods?: number; drawers?: number }[];
   /** Base cabinets below the open shelving (doors/drawer fronts). */
   baseCabinets: { present: boolean; doors: number; drawers: number };
-  /** Hanging rods visible. */
+  /** Hanging rods visible (legacy global count, prefer per-bay rods). */
   rods: number;
-  /** Freestanding drawer bank fronts visible. */
+  /** Freestanding drawer bank fronts visible (legacy global count). */
   drawers: number;
   /** Shoe cubby rows visible. */
   cubbyRows: number;
@@ -1330,13 +1330,15 @@ export async function geminiExtractMillworkStructure(params: {
       "You inspect an AI-generated interior concept image showing proposed finish-carpentry millwork (built-in shelving, bookcases, closet systems, floating shelves). " +
       "Analyze ONLY the proposed millwork (ignore the original room, furniture, and decor). " +
       "Reply with exactly one JSON object and nothing else, using this schema: " +
-      '{"bays":[{"x0":0,"x1":0.25,"shelves":4}],"baseCabinets":{"present":true,"doors":4,"drawers":0},"rods":0,"drawers":0,"cubbyRows":0}. ' +
+      '{"bays":[{"x0":0,"x1":0.33,"shelves":0,"rods":2,"drawers":0},{"x0":0.33,"x1":0.66,"shelves":4,"rods":0,"drawers":3},{"x0":0.66,"x1":1,"shelves":0,"rods":1,"drawers":0}],"baseCabinets":{"present":false,"doors":0,"drawers":0},"rods":0,"drawers":0,"cubbyRows":2}. ' +
       "Rules: bays are vertical divisions of the millwork left to right; x0/x1 are fractions of the total millwork width (0 to 1); " +
-      "shelves counts horizontal shelf boards per bay (0 if the bay has none, e.g. a hanging section); " +
+      "shelves counts horizontal shelf boards per bay; " +
+      "rods counts hanging rods per bay (0 if none — e.g. a double-hang section has rods:2, single-hang has rods:1); " +
+      "drawers counts drawer fronts per bay (0 if none); " +
       "baseCabinets.present is true when there are lower cabinets with door/drawer fronts below open shelving; " +
       "count door and drawer fronts separately. " +
       "For simple floating shelves with no vertical divisions, return a single bay spanning 0 to 1. " +
-      "For closets: hanging sections are bays with shelves:0; count rods, drawer fronts, and cubby rows. " +
+      "For closets: each section (double-hang, single-hang, drawer tower, shoe section) is a separate bay with its rods/drawers/shelves counts. " +
       "If no millwork is visible, return empty bays and all zeros.",
     contents: [
       {
@@ -1364,10 +1366,12 @@ export async function geminiExtractMillworkStructure(params: {
     const parsed = JSON.parse(m[0]);
     const bays = Array.isArray(parsed.bays)
       ? parsed.bays
-          .map((b: { x0?: number; x1?: number; shelves?: number }) => ({
+          .map((b: { x0?: number; x1?: number; shelves?: number; rods?: number; drawers?: number }) => ({
             x0: Math.max(0, Math.min(1, Number(b.x0) || 0)),
             x1: Math.max(0, Math.min(1, Number(b.x1) || 1)),
             shelves: Math.max(0, Math.min(20, Math.round(Number(b.shelves) || 0))),
+            rods: Math.max(0, Math.min(4, Math.round(Number(b.rods) || 0))),
+            drawers: Math.max(0, Math.min(10, Math.round(Number(b.drawers) || 0))),
           }))
           .filter((b: { x0: number; x1: number }) => b.x1 > b.x0)
       : [];
