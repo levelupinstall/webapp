@@ -55,6 +55,11 @@ export async function GET(request: Request) {
     },
     orderBy: { createdAt: "desc" },
   });
+  const jobs = await prisma.job.findMany({
+    select: { id: true, customerEmail: true, status: true, updatedAt: true },
+    orderBy: { updatedAt: "desc" },
+    take: 200,
+  });
   return NextResponse.json({
     customers: users.map((u) => {
       const log = Array.isArray(u.communicationLog)
@@ -70,6 +75,12 @@ export async function GET(request: Request) {
         estimates: Array.isArray(u.estimates) ? u.estimates : [],
       };
     }),
+    jobs: jobs.map((j) => ({
+      id: j.id,
+      customerEmail: j.customerEmail ?? "",
+      status: j.status,
+      updatedAt: j.updatedAt.toISOString(),
+    })),
   });
 }
 
