@@ -29,6 +29,12 @@ import {
   FINISH_PROCESSES,
   type FinishFamily,
 } from "@/lib/estimator-finishes";
+import {
+  describeFinishSelection,
+  getHardware,
+  SHEEN_LABELS,
+  SHEEN_LABOR_MULTIPLIER,
+} from "@/lib/finish-hardware-catalog";
 
 export type EstimateLine = {
   section: "Materials" | "Labor" | "Subcontract";
@@ -283,11 +289,10 @@ export function estimateWall(input: FabWallInput, opts: EstimateOptions = {}): W
     // Customer-selected hardware from the configurator (pulls, knobs,
     // drawer slides, hinges) — real products, Toronto-sourced.
     if (opts.finishSelection) {
-      const catalog = await import("@/lib/finish-hardware-catalog");
       const sel = opts.finishSelection;
       const hwIds = [sel.pullId, sel.knobId, sel.drawerSlideId, sel.hingeId].filter(Boolean) as string[];
       for (const hwId of hwIds) {
-        const hw = catalog.getHardware(hwId);
+        const hw = getHardware(hwId);
         if (!hw || hw.priceCAD == null) continue;
         // Quantities are project-specific; Tom confirms counts at proposal.
         // Default: 1 unit per hardware line as a placeholder Tom adjusts.
@@ -305,7 +310,7 @@ export function estimateWall(input: FabWallInput, opts: EstimateOptions = {}): W
         math.push(`Hardware (${hw.category}): ${hw.brand} ${hw.model} × ${qty} = ${fmtMoney(total)}${hw.priceVerified ? "" : " (price VERIFY — Tom confirms)"}.`);
       }
       // Finish color/sheen called out on the estimate for the record.
-      math.push(`Customer finish: ${catalog.describeFinishSelection(sel)}.`);
+      math.push(`Customer finish: ${describeFinishSelection(sel)}.`);
     }
 
     // Finish materials per finish family (primer+paint for painted;
@@ -561,10 +566,10 @@ export function estimateWall(input: FabWallInput, opts: EstimateOptions = {}): W
   // Sheen multiplier from the customer's configurator selection (high-gloss
   // needs significantly more surface prep than satin/matte).
   const sheenMult = opts.finishSelection
-    ? (await import("@/lib/finish-hardware-catalog")).SHEEN_LABOR_MULTIPLIER[opts.finishSelection.sheen] ?? 1
+    ? SHEEN_LABOR_MULTIPLIER[opts.finishSelection.sheen] ?? 1
     : 1;
   if (sheenMult !== 1 && opts.finishSelection) {
-    const sheenLabel = (await import("@/lib/finish-hardware-catalog")).SHEEN_LABELS[opts.finishSelection.sheen];
+    const sheenLabel = SHEEN_LABELS[opts.finishSelection.sheen];
     math.push(`Sheen (${sheenLabel}): finishing labor × ${sheenMult} — extra prep for the selected sheen.`);
   }
   for (const step of finishProcess.steps) {
