@@ -203,7 +203,9 @@ body {
 
   /* Planner chat */
   .lu-chat-scroll {
-    @apply min-h-[320px] max-h-[min(560px,68vh)] space-y-3 overflow-y-auto px-1 py-2;
+    @apply space-y-3 overflow-y-auto px-1 py-2;
+    overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
   }
 
   .lu-chat-bubble-assistant {

@@ -253,7 +253,7 @@ export default function ProjectPlannerAssistant({
 
   const galleryInputRef = useRef<HTMLInputElement>(null);
   const cameraInputRef = useRef<HTMLInputElement>(null);
-  const scrollAnchorRef = useRef<HTMLDivElement>(null);
+  const chatScrollRef = useRef<HTMLDivElement>(null);
   /** Compressed uploads from earlier turns — re-sent so refinement sketches stay anchored to their room. */
   const sketchSpacePhotosRef = useRef<File[]>([]);
 
@@ -279,8 +279,24 @@ export default function ProjectPlannerAssistant({
   }, [previews]);
 
   useEffect(() => {
-    scrollAnchorRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
+    // Scroll the chat pane itself, never the page. scrollIntoView() climbs
+    // every scrollable ancestor including <body>, which yanked the whole
+    // page on every new message.
+    const el = chatScrollRef.current;
+    if (!el) return;
+    const nearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 160;
+    if (nearBottom) el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
   }, [messages, isLoading]);
+
+  // Lock page scroll while the planner is open: the chat is a fixed-height
+  // app region — messages scroll inside it, the input stays pinned.
+  useEffect(() => {
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = prev;
+    };
+  }, []);
 
   useEffect(() => {
     if (!photoInviteActive) {
@@ -898,12 +914,12 @@ export default function ProjectPlannerAssistant({
 
   return (
     <section
-      className="flex min-h-[70vh] flex-col rounded-3xl border border-[#e8d9ff] bg-white/80 shadow-sm"
+      className="flex h-[calc(100dvh-210px)] min-h-[520px] flex-col overflow-hidden rounded-3xl border border-[#e8d9ff] bg-white/80 shadow-sm"
       data-planner-work-category={workCategory ?? ""}
       data-planner-style-preference={stylePreference ?? ""}
     >
       {/* Compact chat header */}
-      <div className="flex items-center gap-3 border-b border-[#e8d9ff] px-4 py-3 sm:px-5">
+      <div className="flex shrink-0 items-center gap-3 border-b border-[#e8d9ff] px-4 py-3 sm:px-5">
         <div className="flex h-10 w-10 items-center justify-center rounded-full bg-[#6e3eb2] text-lg font-bold text-white">
           A
         </div>
@@ -917,7 +933,7 @@ export default function ProjectPlannerAssistant({
         </div>
       </div>
 
-      <div className={`${lu.chatScroll} flex-1 px-4 py-4 sm:px-5`}>
+      <div ref={chatScrollRef} className={`${lu.chatScroll} min-h-0 flex-1 px-4 py-4 sm:px-5`}>
         {messages.map((message, index) => (
           <div
             key={`${message.role}-${index}`}
@@ -996,10 +1012,9 @@ export default function ProjectPlannerAssistant({
             {PLANNER_ASSISTANT_NAME} is thinking…
           </div>
         ) : null}
-        <div ref={scrollAnchorRef} />
       </div>
 
-      <form id="levelup-planner-form" onSubmit={handleSubmit} className="border-t border-[#e8d9ff] bg-white/60 px-4 py-3 sm:px-5">
+      <form id="levelup-planner-form" onSubmit={handleSubmit} className="shrink-0 border-t border-[#e8d9ff] bg-white/60 px-4 py-3 sm:px-5">
         {photoInviteActive ? (
           <div className="mb-3 rounded-2xl border border-dashed border-[#cbb8e8] bg-[#faf7ff] px-3 py-2.5">
             <div className="flex flex-wrap items-center gap-2">
