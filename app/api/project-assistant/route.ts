@@ -5,6 +5,7 @@ import {
   buildGeminiConceptImagePromptText,
   defaultGeminiImageModel,
   geminiCountShelvesInImage,
+  geminiDescribeClosetLayout,
   geminiExtractMillworkStructure,
   geminiExtractPlannerVisualSpec,
   geminiGenerateConceptImage,
@@ -1799,6 +1800,21 @@ The homeowner likes the design direction — pivot to booking. In one or two war
           } catch (e) {
             console.warn("[project-assistant] shelf count for elevation failed:", e);
           }
+          // For closets, also get the section layout (double-hang, drawers, etc.)
+          // so the elevation shows the actual design, not a generic guess.
+          if (/closet|wardrobe/i.test(conceptRenderSpec.designCategory ?? "")) {
+            try {
+              const layout = await geminiDescribeClosetLayout({
+                imageMimeType: renderedImages[0].mimeType,
+                imageDataBase64: renderedImages[0].dataBase64,
+              });
+              if (layout && layout.length > 0) {
+                conceptRenderSpec = { ...conceptRenderSpec, closetLayout: layout };
+              }
+            } catch (e) {
+              console.warn("[project-assistant] closet layout for elevation failed:", e);
+            }
+          }
         }
         const singleLabel =
           wallLabelsEffective[0] ||
@@ -1821,12 +1837,46 @@ The homeowner likes the design direction — pivot to booking. In one or two war
           responseImages.push({
             mimeType: elevation.mimeType,
             data: elevation.dataBase64,
-            caption: `Shop drawing — ${singleLabel}`,
+            caption: `Shop drawing — ${singleLabel} (front)`,
             dimensions: elevation.dimensions.map((d) => ({
               ...d,
               wallLabel: singleLabel,
             })),
           });
+          // Multi-view set: side, plan, isometric alongside the front elevation.
+          try {
+            const { buildSideElevation, buildPlanView, buildIsometricView } =
+              await import("@/lib/planner-multi-view");
+            const side = await buildSideElevation({ wallLabel: singleLabel, spec: enrichedSpec });
+            if (side) {
+              responseImages.push({
+                mimeType: side.mimeType,
+                data: side.dataBase64,
+                caption: `Shop drawing — ${singleLabel} (side)`,
+                dimensions: side.dimensions.map((d) => ({ ...d, wallLabel: singleLabel })),
+              });
+            }
+            const plan = await buildPlanView({ wallLabel: singleLabel, spec: enrichedSpec });
+            if (plan) {
+              responseImages.push({
+                mimeType: plan.mimeType,
+                data: plan.dataBase64,
+                caption: `Shop drawing — ${singleLabel} (plan)`,
+                dimensions: plan.dimensions.map((d) => ({ ...d, wallLabel: singleLabel })),
+              });
+            }
+            const iso = await buildIsometricView({ wallLabel: singleLabel, spec: enrichedSpec });
+            if (iso) {
+              responseImages.push({
+                mimeType: iso.mimeType,
+                data: iso.dataBase64,
+                caption: `Shop drawing — ${singleLabel} (isometric)`,
+                dimensions: iso.dimensions.map((d) => ({ ...d, wallLabel: singleLabel })),
+              });
+            }
+          } catch (e) {
+            console.warn("[project-assistant] multi-view drawings failed:", e);
+          }
         }
       } catch (e) {
         console.warn("[project-assistant] single-wall elevation failed:", e);

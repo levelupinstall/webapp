@@ -1205,6 +1205,50 @@ export async function geminiCountShelvesInImage(params: {
 }
 
 /**
+ * Describe a closet's left-to-right section layout from a concept image.
+ * Returns a simple comma-separated list like "DOUBLE-HANG, DRAWERS, SINGLE-HANG".
+ * Uses the same reliable pattern as geminiCountShelvesInImage (simple prompt,
+ * simple parsing) instead of complex JSON.
+ */
+export async function geminiDescribeClosetLayout(params: {
+  imageMimeType: string;
+  imageDataBase64: string;
+}): Promise<string[] | null> {
+  if (!isGeminiConfigured()) return null;
+  const res = await geminiGenerateContent({
+    model: defaultGeminiTextModel(),
+    systemInstruction:
+      "You inspect an AI-generated closet design image. Reading left to right, identify each vertical section of the closet. For each section reply with ONE of: DOUBLE-HANG (two clothing rods, shirts/jackets top and bottom), SINGLE-HANG (one rod, longer clothes), SHELVES (stacked shelves), DRAWERS (drawer bank), SHOES (shoe shelves/cubbies). Reply with ONLY a comma-separated list, e.g.: DOUBLE-HANG, DRAWERS, SINGLE-HANG",
+    contents: [
+      {
+        role: "user",
+        parts: [
+          {
+            text: "List the closet sections left to right as a comma-separated list using only: DOUBLE-HANG, SINGLE-HANG, SHELVES, DRAWERS, SHOES",
+          },
+          {
+            inline_data: {
+              mime_type: params.imageMimeType,
+              data: params.imageDataBase64,
+            },
+          },
+        ],
+      },
+    ],
+    generationConfig: { maxOutputTokens: 64, temperature: 0.1 },
+  });
+  if (!res.ok) return null;
+  const { text } = extractParts(res.json);
+  const valid = ["DOUBLE-HANG", "SINGLE-HANG", "SHELVES", "DRAWERS", "SHOES"];
+  const sections = text
+    .toUpperCase()
+    .split(",")
+    .map((s) => s.trim())
+    .filter((s) => valid.includes(s));
+  return sections.length > 0 ? sections : null;
+}
+
+/**
  * Structured millwork layout extracted from a concept image.
  * Used to ground shop-drawing elevations in what was actually rendered,
  * not just what the chat transcript mentioned.

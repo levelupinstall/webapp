@@ -148,18 +148,46 @@ export async function buildShopDrawingElevation(params: {
   let zones: MillworkZone[] | null = spec.zones && spec.zones.length > 0 ? spec.zones : null;
   let zonesAssumed = false;
   if (!zones && isCloset) {
-    // Fallback: a representative closet layout so the sheet shows the
-    // actual design instead of an empty box. Every dim is marked assumed.
-    const towerShelves =
-      spec.shelfCount && spec.shelfCount > 0 ? Math.min(Math.round(spec.shelfCount), 8) : 5;
-    const rods =
-      spec.closetRodCount && spec.closetRodCount > 0 ? Math.round(spec.closetRodCount) : 2;
-    zones = [
-      { kind: "shelf-tower", x0: 0, x1: 0.38, shelves: towerShelves, assumed: true },
-      { kind: "hanging", x0: 0.38, x1: 1, rods, assumed: true },
-      { kind: "shoe-cubbies", x0: 0, x1: 1, rows: 2, assumed: true },
-    ];
-    zonesAssumed = true;
+    // Use vision-derived closet layout when available (e.g. ["DOUBLE-HANG", "DRAWERS", "SINGLE-HANG"])
+    // for an accurate section-by-section elevation. Falls back to a generic
+    // assumed layout when vision didn't provide one.
+    if (spec.closetLayout && spec.closetLayout.length > 0) {
+      const layout = spec.closetLayout;
+      const n = layout.length;
+      zones = layout.map((section, i) => {
+        const x0 = i / n;
+        const x1 = (i + 1) / n;
+        switch (section) {
+          case "DOUBLE-HANG":
+            return { kind: "hanging", x0, x1, rods: 2, assumed: false };
+          case "SINGLE-HANG":
+            return { kind: "hanging", x0, x1, rods: 1, assumed: false };
+          case "SHELVES":
+            return { kind: "shelf-tower", x0, x1, shelves: 5, assumed: false };
+          case "DRAWERS":
+            return { kind: "drawers", x0, x1, drawers: 3, assumed: false };
+          case "SHOES":
+            return { kind: "shoe-cubbies", x0, x1, rows: 2, assumed: false };
+          default:
+            return { kind: "shelf-tower", x0, x1, shelves: 4, assumed: true };
+        }
+      });
+      // Add a top shelf spanning full width (typical closet) if not already covered
+      zonesAssumed = false;
+    } else {
+      // Fallback: a representative closet layout so the sheet shows the
+      // actual design instead of an empty box. Every dim is marked assumed.
+      const towerShelves =
+        spec.shelfCount && spec.shelfCount > 0 ? Math.min(Math.round(spec.shelfCount), 8) : 5;
+      const rods =
+        spec.closetRodCount && spec.closetRodCount > 0 ? Math.round(spec.closetRodCount) : 2;
+      zones = [
+        { kind: "shelf-tower", x0: 0, x1: 0.38, shelves: towerShelves, assumed: true },
+        { kind: "hanging", x0: 0.38, x1: 1, rods, assumed: true },
+        { kind: "shoe-cubbies", x0: 0, x1: 1, rows: 2, assumed: true },
+      ];
+      zonesAssumed = true;
+    }
   }
 
   type Part = { tag: string; hIn: number; y: number; cx: number };

@@ -39,6 +39,12 @@ export type PlannerVisualSpec = {
    * for closet-labeled designs).
    */
   zones: MillworkZone[] | null;
+  /**
+   * Closet section layout left-to-right from vision (e.g. ["DOUBLE-HANG", "DRAWERS", "SINGLE-HANG"]).
+   * Used to build accurate closet zones instead of the generic fallback.
+   * Null = unknown (falls back to generic assumed layout).
+   */
+  closetLayout: string[] | null;
 };
 
 /**
@@ -109,6 +115,7 @@ export function emptyPlannerVisualSpec(): PlannerVisualSpec {
     shelfVerticalSpacingIn: null,
     shelfBoardSpanAlongWallIn: null,
     zones: null,
+    closetLayout: null,
   };
 }
 
@@ -1282,6 +1289,7 @@ export function normalizeVisualSpec(raw: Record<string, unknown>): PlannerVisual
     shelfVerticalSpacingIn: parseInchesFieldClamped(raw.shelfVerticalSpacingIn, 4, 60),
     shelfBoardSpanAlongWallIn: parseInchesFieldClamped(raw.shelfBoardSpanAlongWallIn, 8, 120),
     zones: null,
+    closetLayout: null,
   };
 }
 
