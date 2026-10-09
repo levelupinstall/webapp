@@ -56,8 +56,8 @@ export async function GET(request: Request) {
     orderBy: { createdAt: "desc" },
   });
   const jobs = await prisma.job.findMany({
-    select: { id: true, customerEmail: true, status: true, updatedAt: true },
-    orderBy: { updatedAt: "desc" },
+    select: { id: true, customerEmail: true, status: true, createdAt: true },
+    orderBy: { createdAt: "desc" },
     take: 200,
   });
   return NextResponse.json({
@@ -79,7 +79,7 @@ export async function GET(request: Request) {
       id: j.id,
       customerEmail: j.customerEmail ?? "",
       status: j.status,
-      updatedAt: j.updatedAt.toISOString(),
+      createdAt: j.createdAt.toISOString(),
     })),
   });
 }
