@@ -46,7 +46,7 @@ export function isGeminiConfigured(): boolean {
 }
 
 export function defaultGeminiTextModel(): string {
-  return process.env.GEMINI_TEXT_MODEL?.trim() || "gemini-2.5-flash";
+  return process.env.GEMINI_TEXT_MODEL?.trim() || "gemini-3.8-flash";
 }
 
 export function defaultGeminiImageModel(): string {
@@ -1177,13 +1177,13 @@ export async function geminiCountShelvesInImage(params: {
   const res = await geminiGenerateContent({
     model: defaultGeminiTextModel(),
     systemInstruction:
-      "You inspect an AI-generated interior concept image. Count ONLY the horizontal shelf boards that are part of the proposed finish-carpentry built-in/shelving (ignore countertops, mantels, windowsills, and background furniture). Reply with exactly one integer and nothing else.",
+      "You inspect an AI-generated interior concept image. Count ONLY the horizontal shelf boards that are part of the proposed finish-carpentry built-in/shelving (ignore countertops, mantels, windowsills, and background furniture). Count methodically: scan left to right, top to bottom, and count each distinct horizontal board. Reply with exactly one integer and nothing else.",
     contents: [
       {
         role: "user",
         parts: [
           {
-            text: "How many horizontal shelf boards are part of the proposed built-in shelving in this image? Reply with exactly one integer.",
+            text: "Count the horizontal shelf boards that are part of the proposed built-in shelving in this image. Scan methodically left to right, top to bottom. Reply with exactly one integer and nothing else.",
           },
           {
             inline_data: {
@@ -1202,6 +1202,53 @@ export async function geminiCountShelvesInImage(params: {
   if (!m) return null;
   const n = parseInt(m[1], 10);
   return Number.isFinite(n) ? n : null;
+}
+
+/**
+ * 4x consensus shelf counting: runs geminiCountShelvesInImage 4 times in
+ * parallel and returns the majority vote. This dramatically improves
+ * reliability for the non-deterministic vision counting — if 3 out of 4
+ * agree on 6 shelves, we trust 6. Ties are broken by taking the median.
+ * Returns null only if all 4 fail.
+ */
+export async function geminiCountShelvesWithConsensus(params: {
+  imageMimeType: string;
+  imageDataBase64: string;
+}): Promise<number | null> {
+  const results = await Promise.all([
+    geminiCountShelvesInImage(params),
+    geminiCountShelvesInImage(params),
+    geminiCountShelvesInImage(params),
+    geminiCountShelvesInImage(params),
+  ]);
+  const valid = results.filter((n): n is number => n !== null);
+  if (valid.length === 0) return null;
+
+  // Count votes for each value
+  const votes = new Map<number, number>();
+  for (const n of valid) {
+    votes.set(n, (votes.get(n) ?? 0) + 1);
+  }
+
+  // Find the value with the most votes
+  let best = valid[0];
+  let bestVotes = 0;
+  for (const [value, count] of votes) {
+    if (count > bestVotes) {
+      best = value;
+      bestVotes = count;
+    }
+  }
+
+  // If there's a tie (e.g. 2-2 split), take the median as the compromise
+  const maxVotes = Math.max(...votes.values());
+  const tied = [...votes.entries()].filter(([_, c]) => c === maxVotes).map(([v]) => v);
+  if (tied.length > 1) {
+    tied.sort((a, b) => a - b);
+    best = tied[Math.floor(tied.length / 2)];
+  }
+
+  return best;
 }
 
 /**

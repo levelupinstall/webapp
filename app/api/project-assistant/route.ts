@@ -9,7 +9,7 @@ import {
 import {
   buildGeminiConceptImagePromptText,
   defaultGeminiImageModel,
-  geminiCountShelvesInImage,
+  geminiCountShelvesWithConsensus,
   geminiDescribeClosetLayout,
   geminiExtractMillworkStructure,
   geminiExtractPlannerVisualSpec,
@@ -1701,7 +1701,7 @@ The homeowner likes the design direction — pivot to booking. In one or two war
             let wallSpec = conceptRenderSpec ?? emptyPlannerVisualSpec();
             if (conceptImg) {
               try {
-                const counted = await geminiCountShelvesInImage({
+                const counted = await geminiCountShelvesWithConsensus({
                   imageMimeType: conceptImg.mimeType,
                   imageDataBase64: conceptImg.data as string,
                 });
@@ -1762,7 +1762,7 @@ The homeowner likes the design direction — pivot to booking. In one or two war
           : (conceptRenderSpec?.shelfCount ?? null);
       if (renderedImages.length > 0 && expectedShelfCount !== null) {
         const first = renderedImages[0];
-        const observed = await geminiCountShelvesInImage({
+        const observed = await geminiCountShelvesWithConsensus({
           imageMimeType: first.mimeType,
           imageDataBase64: first.dataBase64,
         });
@@ -1795,7 +1795,7 @@ The homeowner likes the design direction — pivot to booking. In one or two war
         // built-in). The image is ground truth.
         if (renderedImages.length > 0 && conceptRenderSpec) {
           try {
-            const counted = await geminiCountShelvesInImage({
+            const counted = await geminiCountShelvesWithConsensus({
               imageMimeType: renderedImages[0].mimeType,
               imageDataBase64: renderedImages[0].dataBase64,
             });
