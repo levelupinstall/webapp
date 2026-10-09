@@ -386,6 +386,8 @@ export default function ProjectPlannerAssistant({
 
   const galleryInputRef = useRef<HTMLInputElement>(null);
   const cameraInputRef = useRef<HTMLInputElement>(null);
+  const videoInputRef = useRef<HTMLInputElement>(null);
+  const [videoProcessing, setVideoProcessing] = useState(false);
   const scrollAnchorRef = useRef<HTMLDivElement>(null);
   /** Compressed uploads from earlier turns — re-sent so refinement sketches stay anchored to their room. */
   const sketchSpacePhotosRef = useRef<File[]>([]);
@@ -695,6 +697,56 @@ export default function ProjectPlannerAssistant({
 
   function removeImage(index: number) {
     setImages((prev) => prev.filter((_, current) => current !== index));
+  }
+
+  /** Video walkthrough: upload a narrated walkthrough video, extract the design brief. */
+  async function handleVideoChange(fileList: FileList | null) {
+    const file = fileList?.[0];
+    if (videoInputRef.current) videoInputRef.current.value = "";
+    if (!file) return;
+
+    // ~20MB limit for inline base64
+    if (file.size > 20 * 1024 * 1024) {
+      setError("Video is too large. Please keep walkthroughs under ~2 minutes.");
+      return;
+    }
+
+    setVideoProcessing(true);
+    setError(null);
+    try {
+      const base64 = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => {
+          const result = reader.result as string;
+          const comma = result.indexOf(",");
+          resolve(comma >= 0 ? result.slice(comma + 1) : result);
+        };
+        reader.onerror = reject;
+        reader.readAsDataURL(file);
+      });
+
+      const res = await fetch("/api/planner/video-walkthrough", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          videoMimeType: file.type || "video/mp4",
+          videoDataBase64: base64,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || "Video processing failed");
+      }
+
+      // Post the extracted brief as the user's opening message
+      const briefText = `Here's my video walkthrough — I walked through the space describing what I want:\n\n${data.brief}`;
+      await sendPlannerMessage(briefText);
+      setPhotoInviteActive(false);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Video processing failed. Please try again.");
+    } finally {
+      setVideoProcessing(false);
+    }
   }
 
   async function createWorkProposalFormData(): Promise<FormData> {
@@ -1150,6 +1202,15 @@ export default function ProjectPlannerAssistant({
               >
                 <span aria-hidden>📸</span> Take photo
               </button>
+              <button
+                type="button"
+                onClick={() => videoInputRef.current?.click()}
+                disabled={videoProcessing}
+                className="inline-flex items-center gap-1.5 rounded-full border border-[#6e3eb2] bg-white px-4 py-2 text-sm font-medium text-[#5b3292] transition hover:bg-[#f5efff] disabled:opacity-50"
+                title="Record a video walkthrough while describing what you want — the planner will listen and watch"
+              >
+                <span aria-hidden>🎥</span> {videoProcessing ? "Watching your video…" : "Video walkthrough"}
+              </button>
               <input
                 ref={galleryInputRef}
                 type="file"
@@ -1165,6 +1226,14 @@ export default function ProjectPlannerAssistant({
                 capture="environment"
                 className="hidden"
                 onChange={(event) => handleFilesChange(event.target.files)}
+              />
+              <input
+                ref={videoInputRef}
+                type="file"
+                accept="video/*"
+                capture="environment"
+                className="hidden"
+                onChange={(event) => handleVideoChange(event.target.files)}
               />
               <span className="text-xs text-[#6a4a8f]">
                 Up to {MAX_IMAGES} photos, {MAX_IMAGE_MB}MB each

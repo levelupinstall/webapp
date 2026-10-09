@@ -1468,3 +1468,41 @@ export async function geminiConfirmDuplicateSpacePhoto(params: {
   if (t.includes("DISTINCT")) return false;
   return null;
 }
+
+/**
+ * Extract a design brief from a narrated video walkthrough.
+ * The homeowner walks through their space recording video while describing
+ * what they want built. Gemini watches the video AND listens to the narration.
+ */
+export async function geminiExtractVideoWalkthroughBrief(params: {
+  videoMimeType: string;
+  videoDataBase64: string;
+}): Promise<string | null> {
+  if (!isGeminiConfigured()) return null;
+  const res = await geminiGenerateContent({
+    model: defaultGeminiTextModel(),
+    systemInstruction:
+      "You watch a homeowner's video walkthrough of their room. They are recording video while narrating what they want built. Listen carefully to their spoken narration AND observe the video. Extract a clear design brief.",
+    contents: [
+      {
+        role: "user",
+        parts: [
+          {
+            text: "Watch this video walkthrough and listen to the homeowner's narration. Extract a design brief with: 1) WHAT they want built (be specific), 2) WHERE in the room (which wall/area), 3) Any DIMENSIONS or sizes they mention, 4) STYLE, materials, or color preferences they mention, 5) Anything they explicitly do NOT want. Write it as a clear, concise brief in the homeowner's own words where possible. If they didn't narrate much, describe what you see in the video that suggests what they might want.",
+          },
+          {
+            inline_data: {
+              mime_type: params.videoMimeType,
+              data: params.videoDataBase64,
+            },
+          },
+        ],
+      },
+    ],
+    generationConfig: { maxOutputTokens: 1024, temperature: 0.2 },
+    retryTransientErrors: true,
+  });
+  if (!res.ok) return null;
+  const { text } = extractParts(res.json);
+  return text.trim() || null;
+}
