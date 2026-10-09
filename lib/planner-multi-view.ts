@@ -122,7 +122,7 @@ export async function buildSideElevation(params: {
 
   // Render to PNG via sharp
   const { default: sharp } = await import("sharp");
-  const { ensurePlannerFonts } = await import("./planner-svg-font.js");
+  const { ensurePlannerFonts } = await import("./planner-svg-font");
   await ensurePlannerFonts();
   const png = await sharp(Buffer.from(svg.join("\n"))).png().toBuffer();
 
@@ -207,7 +207,7 @@ export async function buildPlanView(params: {
   svg.push(`</svg>`);
 
   const { default: sharp } = await import("sharp");
-  const { ensurePlannerFonts } = await import("./planner-svg-font.js");
+  const { ensurePlannerFonts } = await import("./planner-svg-font");
   await ensurePlannerFonts();
   const png = await sharp(Buffer.from(svg.join("\n"))).png().toBuffer();
 
@@ -331,7 +331,7 @@ export async function buildIsometricView(params: {
   svg.push(`</svg>`);
 
   const { default: sharp } = await import("sharp");
-  const { ensurePlannerFonts } = await import("./planner-svg-font.js");
+  const { ensurePlannerFonts } = await import("./planner-svg-font");
   await ensurePlannerFonts();
   const png = await sharp(Buffer.from(svg.join("\n"))).png().toBuffer();
 
