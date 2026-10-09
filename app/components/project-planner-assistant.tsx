@@ -705,9 +705,9 @@ export default function ProjectPlannerAssistant({
     if (videoInputRef.current) videoInputRef.current.value = "";
     if (!file) return;
 
-    // ~20MB limit for inline base64
-    if (file.size > 20 * 1024 * 1024) {
-      setError("Video is too large. Please keep walkthroughs under ~2 minutes.");
+    // ~200MB limit via Files API (roughly 10 minutes)
+    if (file.size > 200 * 1024 * 1024) {
+      setError("Video is too large. Please keep walkthroughs under ~10 minutes.");
       return;
     }
 

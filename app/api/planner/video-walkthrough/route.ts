@@ -1,5 +1,9 @@
 import { NextResponse } from "next/server";
-import { geminiExtractVideoWalkthroughBrief } from "@/lib/gemini-client";
+import {
+  geminiExtractVideoWalkthroughBrief,
+  geminiExtractVideoWalkthroughBriefFromFile,
+  geminiUploadFile,
+} from "@/lib/gemini-client";
 
 /**
  * POST /api/planner/video-walkthrough
@@ -8,8 +12,8 @@ import { geminiExtractVideoWalkthroughBrief } from "@/lib/gemini-client";
  * returning a structured design brief.
  *
  * Body: { videoMimeType: string, videoDataBase64: string }
- * Video should be under ~20MB (inline). For longer walkthroughs,
- * the client should compress or trim first.
+ * - Under 20MB: sent inline (fast)
+ * - 20MB–200MB: uploaded via Gemini Files API (supports ~10 min walkthroughs)
  */
 export async function POST(req: Request) {
   try {
@@ -26,18 +30,39 @@ export async function POST(req: Request) {
       );
     }
 
-    // Rough size guard: base64 is ~4/3 of binary. 20MB binary ≈ 27MB base64.
-    if (videoDataBase64.length > 28_000_000) {
+    // Size routing:
+    // - Under 20MB binary (~27MB base64): inline (fast, single request)
+    // - 20MB–200MB: Gemini Files API (supports up to ~10 min walkthroughs)
+    const approxBytes = Math.floor(videoDataBase64.length * 0.75);
+    let brief: string | null = null;
+
+    if (approxBytes <= 20 * 1024 * 1024) {
+      brief = await geminiExtractVideoWalkthroughBrief({
+        videoMimeType,
+        videoDataBase64,
+      });
+    } else if (approxBytes <= 200 * 1024 * 1024) {
+      const fileUri = await geminiUploadFile({
+        mimeType: videoMimeType,
+        dataBase64: videoDataBase64,
+        displayName: "video-walkthrough",
+      });
+      if (!fileUri) {
+        return NextResponse.json(
+          { error: "Video upload failed. Please try a shorter video." },
+          { status: 502 },
+        );
+      }
+      brief = await geminiExtractVideoWalkthroughBriefFromFile({
+        fileUri,
+        videoMimeType,
+      });
+    } else {
       return NextResponse.json(
-        { error: "Video too large. Please keep walkthroughs under ~2 minutes or compress the video." },
+        { error: "Video too large. Please keep walkthroughs under ~10 minutes." },
         { status: 413 },
       );
     }
-
-    const brief = await geminiExtractVideoWalkthroughBrief({
-      videoMimeType,
-      videoDataBase64,
-    });
 
     if (!brief) {
       return NextResponse.json(

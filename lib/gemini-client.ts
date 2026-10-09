@@ -1506,3 +1506,101 @@ export async function geminiExtractVideoWalkthroughBrief(params: {
   const { text } = extractParts(res.json);
   return text.trim() || null;
 }
+
+/**
+ * Upload a file to the Gemini Files API for use with large media
+ * (videos over ~20MB that can't go inline). Returns the file URI.
+ */
+export async function geminiUploadFile(params: {
+  mimeType: string;
+  dataBase64: string;
+  displayName?: string;
+}): Promise<string | null> {
+  const apiKey = getApiKey();
+  if (!apiKey) return null;
+
+  try {
+    const bytes = Buffer.from(params.dataBase64, "base64");
+
+    // Step 1: initiate resumable upload
+    const initRes = await fetch(
+      `https://generativelanguage.googleapis.com/upload/v1beta/files?key=${apiKey}`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-Goog-Upload-Protocol": "resumable",
+          "X-Goog-Upload-Command": "start",
+          "X-Goog-Upload-Header-Content-Length": String(bytes.length),
+          "X-Goog-Upload-Header-Content-Type": params.mimeType,
+        },
+        body: JSON.stringify({
+          file: { display_name: params.displayName || "walkthrough" },
+        }),
+      },
+    );
+    if (!initRes.ok) {
+      console.warn("[gemini] file upload init failed:", initRes.status);
+      return null;
+    }
+    const uploadUrl = initRes.headers.get("x-goog-upload-url");
+    if (!uploadUrl) return null;
+
+    // Step 2: upload the bytes
+    const uploadRes = await fetch(uploadUrl, {
+      method: "PUT",
+      headers: {
+        "Content-Length": String(bytes.length),
+        "X-Goog-Upload-Offset": "0",
+        "X-Goog-Upload-Command": "upload, finalize",
+      },
+      body: bytes as unknown as BodyInit,
+    });
+    if (!uploadRes.ok) {
+      console.warn("[gemini] file upload failed:", uploadRes.status);
+      return null;
+    }
+    const fileInfo = (await uploadRes.json()) as { file?: { uri?: string; name?: string } };
+    return fileInfo.file?.uri ?? null;
+  } catch (e) {
+    console.warn("[gemini] file upload error:", e);
+    return null;
+  }
+}
+
+/**
+ * Extract a design brief from a narrated video walkthrough using the Files API.
+ * For videos too large for inline upload (>20MB).
+ */
+export async function geminiExtractVideoWalkthroughBriefFromFile(params: {
+  fileUri: string;
+  videoMimeType: string;
+}): Promise<string | null> {
+  if (!isGeminiConfigured()) return null;
+  const res = await geminiGenerateContent({
+    model: defaultGeminiTextModel(),
+    systemInstruction:
+      "You watch a homeowner's video walkthrough of their room. They are recording video while narrating what they want built. Listen carefully to their spoken narration AND observe the video. Extract a clear design brief.",
+    contents: [
+      {
+        role: "user",
+        parts: [
+          {
+            text: "Watch this video walkthrough and listen to the homeowner's narration. Extract a design brief with: 1) WHAT they want built (be specific), 2) WHERE in the room (which wall/area), 3) Any DIMENSIONS or sizes they mention, 4) STYLE, materials, or color preferences they mention, 5) Anything they explicitly do NOT want. Write it as a clear, concise brief in the homeowner's own words where possible. If they didn't narrate much, describe what you see in the video that suggests what they might want.",
+          },
+          {
+            file_data: {
+              mime_type: params.videoMimeType,
+              file_uri: params.fileUri,
+            },
+          } as unknown as ContentPart,
+        ],
+      },
+    ],
+    generationConfig: { maxOutputTokens: 1024, temperature: 0.2 },
+    retryTransientErrors: true,
+  });
+  if (!res.ok) return null;
+  const { text } = extractParts(res.json);
+  return text.trim() || null;
+}
