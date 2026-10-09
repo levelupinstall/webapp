@@ -1205,6 +1205,99 @@ export async function geminiCountShelvesInImage(params: {
 }
 
 /**
+ * Structured millwork layout extracted from a concept image.
+ * Used to ground shop-drawing elevations in what was actually rendered,
+ * not just what the chat transcript mentioned.
+ */
+export type ConceptMillworkStructure = {
+  /** Vertical bays (left to right), x0/x1 as fractions of the millwork width. */
+  bays: { x0: number; x1: number; shelves: number }[];
+  /** Base cabinets below the open shelving (doors/drawer fronts). */
+  baseCabinets: { present: boolean; doors: number; drawers: number };
+  /** Hanging rods visible. */
+  rods: number;
+  /** Freestanding drawer bank fronts visible. */
+  drawers: number;
+  /** Shoe cubby rows visible. */
+  cubbyRows: number;
+};
+
+/**
+ * Vision pass over the rendered concept image: extract the actual millwork
+ * structure (bays, per-bay shelf counts, base cabinets, rods) so the SVG
+ * elevation draws what the concept shows. Returns null on any failure —
+ * callers fall back to transcript-harvested zones.
+ */
+export async function geminiExtractMillworkStructure(params: {
+  imageMimeType: string;
+  imageDataBase64: string;
+}): Promise<ConceptMillworkStructure | null> {
+  if (!isGeminiConfigured()) return null;
+  const res = await geminiGenerateContent({
+    model: defaultGeminiTextModel(),
+    systemInstruction:
+      "You inspect an AI-generated interior concept image showing proposed finish-carpentry millwork (built-in shelving, bookcases, closet systems, floating shelves). " +
+      "Analyze ONLY the proposed millwork (ignore the original room, furniture, and decor). " +
+      "Reply with exactly one JSON object and nothing else, using this schema: " +
+      '{"bays":[{"x0":0,"x1":0.25,"shelves":4}],"baseCabinets":{"present":true,"doors":4,"drawers":0},"rods":0,"drawers":0,"cubbyRows":0}. ' +
+      "Rules: bays are vertical divisions of the millwork left to right; x0/x1 are fractions of the total millwork width (0 to 1); " +
+      "shelves counts horizontal shelf boards per bay (0 if the bay has none, e.g. a hanging section); " +
+      "baseCabinets.present is true when there are lower cabinets with door/drawer fronts below open shelving; " +
+      "count door and drawer fronts separately. " +
+      "For simple floating shelves with no vertical divisions, return a single bay spanning 0 to 1. " +
+      "For closets: hanging sections are bays with shelves:0; count rods, drawer fronts, and cubby rows. " +
+      "If no millwork is visible, return empty bays and all zeros.",
+    contents: [
+      {
+        role: "user",
+        parts: [
+          {
+            text: "Extract the millwork structure from this concept image as JSON per the schema. Reply with exactly one JSON object and nothing else.",
+          },
+          {
+            inline_data: {
+              mime_type: params.imageMimeType,
+              data: params.imageDataBase64,
+            },
+          },
+        ],
+      },
+    ],
+    generationConfig: { maxOutputTokens: 512, temperature: 0.1 },
+  });
+  if (!res.ok) return null;
+  const { text } = extractParts(res.json);
+  const m = text.match(/\{[\s\S]*\}/);
+  if (!m) return null;
+  try {
+    const parsed = JSON.parse(m[0]);
+    const bays = Array.isArray(parsed.bays)
+      ? parsed.bays
+          .map((b: { x0?: number; x1?: number; shelves?: number }) => ({
+            x0: Math.max(0, Math.min(1, Number(b.x0) || 0)),
+            x1: Math.max(0, Math.min(1, Number(b.x1) || 1)),
+            shelves: Math.max(0, Math.min(20, Math.round(Number(b.shelves) || 0))),
+          }))
+          .filter((b: { x0: number; x1: number }) => b.x1 > b.x0)
+      : [];
+    const bc = parsed.baseCabinets ?? {};
+    return {
+      bays,
+      baseCabinets: {
+        present: !!bc.present,
+        doors: Math.max(0, Math.min(20, Math.round(Number(bc.doors) || 0))),
+        drawers: Math.max(0, Math.min(20, Math.round(Number(bc.drawers) || 0))),
+      },
+      rods: Math.max(0, Math.min(10, Math.round(Number(parsed.rods) || 0))),
+      drawers: Math.max(0, Math.min(20, Math.round(Number(parsed.drawers) || 0))),
+      cubbyRows: Math.max(0, Math.min(10, Math.round(Number(parsed.cubbyRows) || 0))),
+    };
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Vision check: is the candidate interior photo essentially the same shot as the reference?
  * Used for ambiguous near-duplicate space uploads (CRM / portal dedupe).
  */

@@ -42,11 +42,36 @@ export type PlannerVisualSpec = {
 };
 
 /**
+ * One vertical division within a millwork zone, positioned horizontally.
+ * x0/x1 are fractions of the ZONE width (0..1), left to right.
+ * Used for built-ins with multiple bays (e.g. a 4-bay bookcase), where each
+ * bay has its own shelf count and optionally a base cabinet below.
+ */
+export type MillworkBay = {
+  x0: number;
+  x1: number;
+  /** Number of horizontal shelf boards visible in this bay. */
+  shelves: number;
+  /**
+   * Base cabinet under this bay (doors/drawers below the open shelving).
+   * When present, the bay's shelves sit above the cabinet box.
+   */
+  baseCabinet?: {
+    /** Number of door fronts. */
+    doors: number;
+    /** Number of drawer fronts. */
+    drawers: number;
+  };
+  /** True when the bay was inferred from the concept image, not stated in chat. */
+  fromImage?: boolean;
+};
+
+/**
  * One functional band of a millwork elevation, positioned along the wall.
  * x0/x1 are fractions of the wall width (0..1), left to right.
  */
 export type MillworkZone = {
-  kind: "shelf-tower" | "hanging" | "shoe-cubbies" | "drawers" | "open-shelves";
+  kind: "shelf-tower" | "hanging" | "shoe-cubbies" | "drawers" | "open-shelves" | "base-cabinets" | "built-in-bays";
   x0: number;
   x1: number;
   /** shelf-tower / open-shelves: number of shelf boards. */
@@ -57,6 +82,12 @@ export type MillworkZone = {
   rows?: number;
   /** drawers: number of drawer fronts. */
   drawers?: number;
+  /**
+   * built-in-bays: vertical divisions within the zone, each with its own
+   * shelf count and optional base cabinet. Populated by vision-grounded
+   * extraction from the concept image (not the transcript).
+   */
+  bays?: MillworkBay[];
   /** True when the zone was assumed by a fallback, not stated in chat. */
   assumed?: boolean;
 };
@@ -545,6 +576,8 @@ export function extractMillworkZonesFromTranscript(
     drawers: 0.35,
     "shoe-cubbies": 1,
     "open-shelves": 0.5,
+    "base-cabinets": 0.5,
+    "built-in-bays": 1,
   };
   const totalW = ordered.reduce((a, r) => a + defaultW[r.kind], 0) || 1;
   const zones: MillworkZone[] = [];
@@ -1539,4 +1572,55 @@ export function buildImageRenderDirective(
   ]
     .filter(Boolean)
     .join("\n");
+}
+
+/**
+ * Convert a vision-extracted concept structure into MillworkZones for the
+ * elevation renderer. The vision pass saw the actual rendered concept, so
+ * these zones ground the drawing in what was really designed — bays with
+ * per-bay shelf counts, base cabinets, rods.
+ *
+ * The type is structural (not imported) to avoid a lib/gemini-client ↔
+ * planner-visual-spec import cycle.
+ */
+export function zonesFromConceptStructure(struct: {
+  bays: { x0: number; x1: number; shelves: number }[];
+  baseCabinets: { present: boolean; doors: number; drawers: number };
+  rods: number;
+  drawers: number;
+  cubbyRows: number;
+}): MillworkZone[] | null {
+  if (!struct.bays.length && !struct.rods && !struct.drawers && !struct.cubbyRows) return null;
+  const zones: MillworkZone[] = [];
+  if (struct.bays.length > 0) {
+    const hasBase = struct.baseCabinets.present;
+    zones.push({
+      kind: "built-in-bays",
+      x0: 0,
+      x1: 1,
+      bays: struct.bays.map((b) => ({
+        x0: b.x0,
+        x1: b.x1,
+        shelves: b.shelves,
+        // Distribute base-cabinet fronts across bays when present.
+        baseCabinet: hasBase
+          ? {
+              doors: Math.max(0, Math.round(struct.baseCabinets.doors / struct.bays.length)),
+              drawers: Math.max(0, Math.round(struct.baseCabinets.drawers / struct.bays.length)),
+            }
+          : undefined,
+        fromImage: true,
+      })),
+    });
+  }
+  if (struct.rods > 0) {
+    zones.push({ kind: "hanging", x0: 0, x1: 1, rods: struct.rods, assumed: false });
+  }
+  if (struct.drawers > 0) {
+    zones.push({ kind: "drawers", x0: 0, x1: 1, drawers: struct.drawers, assumed: false });
+  }
+  if (struct.cubbyRows > 0) {
+    zones.push({ kind: "shoe-cubbies", x0: 0, x1: 1, rows: struct.cubbyRows, assumed: false });
+  }
+  return zones.length > 0 ? zones : null;
 }

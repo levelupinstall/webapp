@@ -303,6 +303,61 @@ export async function buildShopDrawingElevation(params: {
           dimensions.push({ name: `${tag} center A.F.F.`, expectedIn: r1(hIn), known: !zonesAssumed });
           y = yTop - 4;
         }
+      } else if (z.kind === "built-in-bays" && z.bays && z.bays.length > 0) {
+        // Vision-grounded built-in: vertical bays with per-bay shelf counts
+        // and optional base cabinets. This is what makes the elevation match
+        // the concept image instead of drawing a generic empty box.
+        const bays = z.bays;
+        for (const bay of bays) {
+          const bx0 = zx0 + bay.x0 * zw;
+          const bx1 = zx0 + bay.x1 * zw;
+          const bw = bx1 - bx0;
+          if (bw < 16) continue;
+          // Bay vertical dividers.
+          svg.push(
+            `<line x1="${f1(bx0)}" y1="${f1(wy0)}" x2="${f1(bx0)}" y2="${f1(shoeTopY)}" stroke="${MILL_EDGE}" stroke-width="2.5"/>`,
+            `<line x1="${f1(bx1)}" y1="${f1(wy0)}" x2="${f1(bx1)}" y2="${f1(shoeTopY)}" stroke="${MILL_EDGE}" stroke-width="2.5"/>`,
+          );
+          // Base cabinet below (if any): box with door/drawer front lines.
+          let shelfTopY = shoeTopY;
+          const bc = bay.baseCabinet;
+          if (bc && (bc.doors > 0 || bc.drawers > 0)) {
+            const cabHIn = 30;
+            const cabTopY = shoeTopY - cabHIn * pxPerIn;
+            const fronts = Math.max(1, bc.doors + bc.drawers);
+            const fw = bw / fronts;
+            svg.push(
+              `<rect x="${f1(bx0)}" y="${f1(cabTopY)}" width="${f1(bw)}" height="${f1(shoeTopY - cabTopY)}" fill="${MILL_FILL}" stroke="${MILL_EDGE}" stroke-width="2.5"/>`,
+            );
+            for (let fi = 1; fi < fronts; fi++) {
+              const fx = bx0 + fi * fw;
+              svg.push(`<line x1="${f1(fx)}" y1="${f1(cabTopY)}" x2="${f1(fx)}" y2="${f1(shoeTopY)}" stroke="${MILL_EDGE}" stroke-width="1.5"/>`);
+            }
+            // Drawer fronts get a pull line; doors are plain.
+            for (let fi = 0; fi < fronts; fi++) {
+              if (fi < bc.drawers) {
+                const fx0 = bx0 + fi * fw;
+                svg.push(`<line x1="${f1(fx0 + fw / 2 - 12)}" y1="${f1(cabTopY + 14)}" x2="${f1(fx0 + fw / 2 + 12)}" y2="${f1(cabTopY + 14)}" stroke="${MILL_EDGE}" stroke-width="2.5"/>`);
+              }
+            }
+            shelfTopY = cabTopY;
+            dimensions.push({ name: "Base cabinet height", expectedIn: cabHIn, known: !zonesAssumed });
+          }
+          // Shelves within the bay, bottom-up above the base cabinet.
+          const n = Math.max(0, Math.min(10, Math.round(bay.shelves)));
+          if (n > 0) {
+            const topIn = (wy1 - contentTopY) / pxPerIn - 6;
+            const botIn = (wy1 - shelfTopY) / pxPerIn + 4;
+            for (let i = 0; i < n; i++) {
+              const hIn = n === 1 ? (topIn + botIn) / 2 : botIn + (i * (topIn - botIn)) / (n - 1);
+              const y = wy1 - hIn * pxPerIn;
+              if (y < contentTopY || y > shelfTopY - 4) continue;
+              shN += 1;
+              drawShelf(bx0 + 3, bw - 6, y, `SH-${shN}`, hIn);
+              dimensions.push({ name: `SH-${shN} length`, expectedIn: r1((bw - 6) / pxPerIn), known: !zonesAssumed });
+            }
+          }
+        }
       }
     }
     // Part tags with leaders in the tag column (collision-avoided:

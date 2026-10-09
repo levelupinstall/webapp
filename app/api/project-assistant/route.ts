@@ -5,6 +5,7 @@ import {
   buildGeminiConceptImagePromptText,
   defaultGeminiImageModel,
   geminiCountShelvesInImage,
+  geminiExtractMillworkStructure,
   geminiExtractPlannerVisualSpec,
   geminiGenerateConceptImage,
   geminiPlannerMultiTurn,
@@ -49,6 +50,7 @@ import {
   mergePlannerFixtureCounts,
   transcriptSuggestsCloset,
   type PlannerVisualSpec,
+  zonesFromConceptStructure,
 } from "@/lib/planner-visual-spec";
 import { PLANNER_ASSISTANT_SYSTEM } from "@/lib/planner-assistant-prompt";
 import {
@@ -249,6 +251,37 @@ export const maxDuration = 120;
 function plannerEnvFlagEnabled(name: string): boolean {
   const v = process.env[name]?.trim().toLowerCase();
   return v === "1" || v === "true" || v === "yes";
+}
+
+/**
+ * Vision-grounded elevation spec: analyze the rendered concept image to
+ * extract the actual millwork structure (bays, per-bay shelves, base
+ * cabinets), then merge it into the spec so the SVG elevation draws what
+ * the concept really shows — not just what the transcript mentioned.
+ * Returns the spec unchanged on any vision failure (transcript zones win).
+ */
+async function enrichSpecWithConceptStructure(
+  spec: PlannerVisualSpec,
+  conceptImage: { mimeType: string; dataBase64: string } | null,
+): Promise<PlannerVisualSpec> {
+  if (!conceptImage) return spec;
+  try {
+    const struct = await geminiExtractMillworkStructure({
+      imageMimeType: conceptImage.mimeType,
+      imageDataBase64: conceptImage.dataBase64,
+    });
+    if (!struct) return spec;
+    const zones = zonesFromConceptStructure(struct);
+    if (!zones) return spec;
+    console.info(
+      `[project-assistant] vision-grounded zones: ${zones.length} zone(s), ` +
+        `${struct.bays.length} bay(s), base=${struct.baseCabinets.present}`,
+    );
+    return { ...spec, zones };
+  } catch (e) {
+    console.warn("[project-assistant] concept-structure vision failed:", e);
+    return spec;
+  }
 }
 
 function shouldShowSubmitDesignCta(params: {
@@ -1649,12 +1682,23 @@ The homeowner likes the design direction — pivot to booking. In one or two war
         // Elevations: one dimensioned shop-drawing elevation per wall, for
         // customer approval and the later on-site verification (site measure
         // only happens after contract + deposit). Code-drawn, deterministic.
+        // Vision-grounded: each elevation's spec is enriched from that wall's
+        // concept image so the drawing matches what was actually rendered.
         try {
           for (let w = 0; w < multiWallCount; w++) {
             const label = wallLabelsEffective[w];
+            const conceptImg = responseImages.find(
+              (ri) => ri.caption === label && ri.mimeType.startsWith("image/"),
+            );
+            const enrichedSpec = await enrichSpecWithConceptStructure(
+              conceptRenderSpec ?? emptyPlannerVisualSpec(),
+              conceptImg
+                ? { mimeType: conceptImg.mimeType, dataBase64: conceptImg.data as string }
+                : null,
+            );
             const elevation = await buildShopDrawingElevation({
               wallLabel: label,
-              spec: conceptRenderSpec ?? emptyPlannerVisualSpec(),
+              spec: enrichedSpec,
               sheetNo: w + 1,
               sheetCount: multiWallCount,
             });
@@ -1717,14 +1761,22 @@ The homeowner likes the design direction — pivot to booking. In one or two war
       }
       // Single-wall: also emit a dimensioned shop-drawing elevation so every
       // design (not just multi-wall) gets a drawing for customer approval.
+      // Vision-grounded from the just-rendered concept image.
       try {
         const singleLabel =
           wallLabelsEffective[0] ||
           (conceptRenderSpec?.designCategory ?? "").trim() ||
           "Wall";
+        const firstConcept = renderedImages.length > 0 ? renderedImages[0] : null;
+        const enrichedSpec = await enrichSpecWithConceptStructure(
+          conceptRenderSpec ?? emptyPlannerVisualSpec(),
+          firstConcept
+            ? { mimeType: firstConcept.mimeType, dataBase64: firstConcept.dataBase64 }
+            : null,
+        );
         const elevation = await buildShopDrawingElevation({
           wallLabel: singleLabel,
-          spec: conceptRenderSpec ?? emptyPlannerVisualSpec(),
+          spec: enrichedSpec,
           sheetNo: 1,
           sheetCount: 1,
         });
