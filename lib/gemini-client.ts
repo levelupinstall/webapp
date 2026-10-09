@@ -1298,6 +1298,51 @@ export async function geminiExtractMillworkStructure(params: {
 }
 
 /**
+ * Vision pass over a 3D-scan floor plan export (Polycam etc.): extract the
+ * room's real wall dimensions so the planner spec uses measured values
+ * instead of assumed ones. Returns the raw parsed JSON (validate with
+ * normalizeScanDimensions); null on any failure.
+ */
+export async function geminiExtractScanDimensions(params: {
+  imageMimeType: string;
+  imageDataBase64: string;
+  dimensionPrompt: string;
+}): Promise<unknown | null> {
+  if (!isGeminiConfigured()) return null;
+  const res = await geminiGenerateContent({
+    model: defaultGeminiTextModel(),
+    systemInstruction:
+      "You inspect a floor plan image exported from a 3D room scan. " +
+      "Extract dimensions exactly as shown — never guess. " +
+      "Reply with exactly one JSON object and nothing else.",
+    contents: [
+      {
+        role: "user",
+        parts: [
+          { text: params.dimensionPrompt },
+          {
+            inline_data: {
+              mime_type: params.imageMimeType,
+              data: params.imageDataBase64,
+            },
+          },
+        ],
+      },
+    ],
+    generationConfig: { maxOutputTokens: 512, temperature: 0.1 },
+  });
+  if (!res.ok) return null;
+  const { text } = extractParts(res.json);
+  const m = text.match(/\{[\s\S]*\}/);
+  if (!m) return null;
+  try {
+    return JSON.parse(m[0]);
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Vision check: is the candidate interior photo essentially the same shot as the reference?
  * Used for ambiguous near-duplicate space uploads (CRM / portal dedupe).
  */
