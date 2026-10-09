@@ -233,6 +233,139 @@ export default function ProjectPlannerAssistant({
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [saveStatus, setSaveStatus] = useState<string | null>(null);
+  const [isRecording, setIsRecording] = useState(false);
+  const [voiceSupported, setVoiceSupported] = useState(false);
+  const [voiceMode, setVoiceMode] = useState(false);
+  const [isSpeaking, setIsSpeaking] = useState(false);
+  const recognitionRef = useRef<any>(null);
+  const voiceModeRef = useRef(false);
+
+  // Voice input: Web Speech API (free, built into Chrome/Edge/Safari).
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      const SR = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+      const SS = (window as any).speechSynthesis;
+      setVoiceSupported(!!SR && !!SS);
+    }
+  }, []);
+
+  // Keep ref in sync for use in callbacks
+  useEffect(() => {
+    voiceModeRef.current = voiceMode;
+  }, [voiceMode]);
+
+  // In voice mode, speak each new assistant message aloud
+  const lastSpokenRef = useRef<number>(-1);
+  useEffect(() => {
+    if (!voiceMode || messages.length === 0) return;
+    const lastIdx = messages.length - 1;
+    const last = messages[lastIdx];
+    if (last.role === "assistant" && lastIdx !== lastSpokenRef.current && last.content) {
+      lastSpokenRef.current = lastIdx;
+      // Small delay so the UI updates first
+      setTimeout(() => speakText(last.content), 300);
+    }
+  }, [messages, voiceMode]);
+
+  // Speak text aloud using the browser's speech synthesis
+  const speakText = (text: string) => {
+    if (typeof window === "undefined" || !(window as any).speechSynthesis) return;
+    const synth = (window as any).speechSynthesis;
+    synth.cancel(); // stop any current speech
+    // Strip markdown and keep it conversational
+    const clean = text
+      .replace(/\[([^\]]+)\]\([^)]+\)/g, "$1")
+      .replace(/[*_~`#]/g, "")
+      .replace(/\n+/g, ". ")
+      .trim();
+    if (!clean) return;
+    const utter = new SpeechSynthesisUtterance(clean);
+    utter.rate = 1.05;
+    utter.pitch = 1;
+    utter.onstart = () => setIsSpeaking(true);
+    utter.onend = () => {
+      setIsSpeaking(false);
+      // In voice mode, auto-listen for the next turn (free-flowing conversation)
+      if (voiceModeRef.current) {
+        setTimeout(() => startListening(), 400);
+      }
+    };
+    utter.onerror = () => setIsSpeaking(false);
+    synth.speak(utter);
+  };
+
+  const startListening = () => {
+    const SR = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    if (!SR || isRecording) return;
+    const rec = new SR();
+    rec.continuous = false; // single utterance per turn in voice mode
+    rec.interimResults = true;
+    rec.lang = "en-US";
+    const baseText = "";
+    rec.onresult = (event: any) => {
+      let finalText = "";
+      let interimText = "";
+      for (let i = 0; i < event.results.length; i++) {
+        const transcript = event.results[i][0].transcript;
+        if (event.results[i].isFinal) {
+          finalText += transcript + " ";
+        } else {
+          interimText += transcript;
+        }
+      }
+      const combined = (baseText + " " + finalText + interimText).trim().replace(/\s+/g, " ");
+      setDraft(combined);
+      // Auto-send when we get a final result in voice mode
+      if (finalText.trim() && voiceModeRef.current) {
+        setTimeout(() => {
+          const textToSend = (baseText + " " + finalText).trim();
+          if (textToSend) {
+            setDraft("");
+            sendPlannerMessage(textToSend);
+          }
+        }, 800);
+      }
+    };
+    rec.onend = () => setIsRecording(false);
+    rec.onerror = () => setIsRecording(false);
+    recognitionRef.current = rec;
+    rec.start();
+    setIsRecording(true);
+  };
+
+  const toggleVoiceInput = () => {
+    if (isRecording) {
+      recognitionRef.current?.stop();
+      setIsRecording(false);
+      return;
+    }
+    const SR = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    if (!SR) return;
+    const rec = new SR();
+    rec.continuous = true;
+    rec.interimResults = true;
+    rec.lang = "en-US";
+    const baseText = draft;
+    rec.onresult = (event: any) => {
+      let finalText = "";
+      let interimText = "";
+      for (let i = 0; i < event.results.length; i++) {
+        const transcript = event.results[i][0].transcript;
+        if (event.results[i].isFinal) {
+          finalText += transcript + " ";
+        } else {
+          interimText += transcript;
+        }
+      }
+      const combined = (baseText + " " + finalText + interimText).trim().replace(/\s+/g, " ");
+      setDraft(combined);
+    };
+    rec.onend = () => setIsRecording(false);
+    rec.onerror = () => setIsRecording(false);
+    recognitionRef.current = rec;
+    rec.start();
+    setIsRecording(true);
+  };
   const [showCreateAccountPrompt, setShowCreateAccountPrompt] = useState(false);
   /** Upload-first opener: show picker until first space photos are sent (then match API gate). */
   const [photoInviteActive, setPhotoInviteActive] = useState(true);
@@ -253,7 +386,7 @@ export default function ProjectPlannerAssistant({
 
   const galleryInputRef = useRef<HTMLInputElement>(null);
   const cameraInputRef = useRef<HTMLInputElement>(null);
-  const chatScrollRef = useRef<HTMLDivElement>(null);
+  const scrollAnchorRef = useRef<HTMLDivElement>(null);
   /** Compressed uploads from earlier turns — re-sent so refinement sketches stay anchored to their room. */
   const sketchSpacePhotosRef = useRef<File[]>([]);
 
@@ -279,24 +412,8 @@ export default function ProjectPlannerAssistant({
   }, [previews]);
 
   useEffect(() => {
-    // Scroll the chat pane itself, never the page. scrollIntoView() climbs
-    // every scrollable ancestor including <body>, which yanked the whole
-    // page on every new message.
-    const el = chatScrollRef.current;
-    if (!el) return;
-    const nearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 160;
-    if (nearBottom) el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
+    scrollAnchorRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
   }, [messages, isLoading]);
-
-  // Lock page scroll while the planner is open: the chat is a fixed-height
-  // app region — messages scroll inside it, the input stays pinned.
-  useEffect(() => {
-    const prev = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-    return () => {
-      document.body.style.overflow = prev;
-    };
-  }, []);
 
   useEffect(() => {
     if (!photoInviteActive) {
@@ -914,12 +1031,12 @@ export default function ProjectPlannerAssistant({
 
   return (
     <section
-      className="flex h-[calc(100dvh-210px)] min-h-[520px] flex-col overflow-hidden rounded-3xl border border-[#e8d9ff] bg-white/80 shadow-sm"
+      className="flex min-h-[70vh] flex-col rounded-3xl border border-[#e8d9ff] bg-white/80 shadow-sm"
       data-planner-work-category={workCategory ?? ""}
       data-planner-style-preference={stylePreference ?? ""}
     >
       {/* Compact chat header */}
-      <div className="flex shrink-0 items-center gap-3 border-b border-[#e8d9ff] px-4 py-3 sm:px-5">
+      <div className="flex items-center gap-3 border-b border-[#e8d9ff] px-4 py-3 sm:px-5">
         <div className="flex h-10 w-10 items-center justify-center rounded-full bg-[#6e3eb2] text-lg font-bold text-white">
           A
         </div>
@@ -933,7 +1050,7 @@ export default function ProjectPlannerAssistant({
         </div>
       </div>
 
-      <div ref={chatScrollRef} className={`${lu.chatScroll} min-h-0 flex-1 px-4 py-4 sm:px-5`}>
+      <div className={`${lu.chatScroll} flex-1 px-4 py-4 sm:px-5`}>
         {messages.map((message, index) => (
           <div
             key={`${message.role}-${index}`}
@@ -1012,9 +1129,10 @@ export default function ProjectPlannerAssistant({
             {PLANNER_ASSISTANT_NAME} is thinking…
           </div>
         ) : null}
+        <div ref={scrollAnchorRef} />
       </div>
 
-      <form id="levelup-planner-form" onSubmit={handleSubmit} className="shrink-0 border-t border-[#e8d9ff] bg-white/60 px-4 py-3 sm:px-5">
+      <form id="levelup-planner-form" onSubmit={handleSubmit} className="border-t border-[#e8d9ff] bg-white/60 px-4 py-3 sm:px-5">
         {photoInviteActive ? (
           <div className="mb-3 rounded-2xl border border-dashed border-[#cbb8e8] bg-[#faf7ff] px-3 py-2.5">
             <div className="flex flex-wrap items-center gap-2">
@@ -1084,13 +1202,74 @@ export default function ProjectPlannerAssistant({
         ) : null}
 
         <div className="flex items-end gap-2">
+          {voiceSupported && !voiceMode ? (
+            <button
+              type="button"
+              onClick={() => {
+                setVoiceMode(true);
+                voiceModeRef.current = true;
+                setTimeout(() => startListening(), 300);
+              }}
+              className="inline-flex h-11 shrink-0 items-center gap-2 rounded-full border border-[#6e3eb2] bg-white px-4 text-xs font-semibold text-[#5b3292] transition hover:bg-[#f5efff]"
+              title="Start a spoken conversation with the planner"
+            >
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+                <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z" />
+                <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
+                <line x1="12" y1="19" x2="12" y2="23" />
+                <line x1="8" y1="23" x2="16" y2="23" />
+              </svg>
+              Voice chat
+            </button>
+          ) : null}
+          {voiceMode ? (
+            <button
+              type="button"
+              onClick={() => {
+                setVoiceMode(false);
+                voiceModeRef.current = false;
+                recognitionRef.current?.stop();
+                if (typeof window !== "undefined" && (window as any).speechSynthesis) {
+                  (window as any).speechSynthesis.cancel();
+                }
+                setIsRecording(false);
+                setIsSpeaking(false);
+              }}
+              className="inline-flex h-11 shrink-0 items-center gap-2 rounded-full bg-red-600 px-4 text-xs font-semibold text-white transition hover:bg-red-700"
+              title="End voice conversation"
+            >
+              <span className={`h-2 w-2 rounded-full ${isSpeaking ? "animate-pulse bg-white" : isRecording ? "animate-pulse bg-yellow-300" : "bg-white/60"}`} />
+              {isSpeaking ? "Speaking…" : isRecording ? "Listening…" : "End voice"}
+            </button>
+          ) : null}
           <textarea
             value={draft}
             onChange={(event) => setDraft(event.target.value)}
-            placeholder="Describe what you want to build…"
+            placeholder={isRecording ? "Listening… speak now" : "Describe what you want to build…"}
             rows={2}
             className={`${lu.textarea} flex-1 resize-none`}
           />
+          {voiceSupported && !voiceMode ? (
+            <button
+              type="button"
+              onClick={toggleVoiceInput}
+              disabled={isLoading}
+              className={`inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-full transition disabled:cursor-not-allowed disabled:opacity-65 ${
+                isRecording
+                  ? "animate-pulse bg-red-600 text-white hover:bg-red-700"
+                  : "border border-[#6e3eb2] bg-white text-[#5b3292] hover:bg-[#f5efff]"
+              }`}
+              aria-label={isRecording ? "Stop voice input" : "Speak instead of typing"}
+              title={isRecording ? "Stop listening" : "Speak instead of typing"}
+            >
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+                <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z" />
+                <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
+                <line x1="12" y1="19" x2="12" y2="23" />
+                <line x1="8" y1="23" x2="16" y2="23" />
+              </svg>
+            </button>
+          ) : null}
           <button
             type="submit"
             disabled={isLoading}
