@@ -77,7 +77,7 @@ export type MillworkBay = {
  * x0/x1 are fractions of the wall width (0..1), left to right.
  */
 export type MillworkZone = {
-  kind: "shelf-tower" | "hanging" | "shoe-cubbies" | "drawers" | "open-shelves" | "base-cabinets" | "built-in-bays";
+  kind: "shelf-tower" | "hanging" | "shoe-cubbies" | "drawers" | "open-shelves" | "base-cabinets" | "built-in-bays" | "floating-shelves";
   x0: number;
   x1: number;
   /** shelf-tower / open-shelves: number of shelf boards. */
@@ -585,6 +585,7 @@ export function extractMillworkZonesFromTranscript(
     "open-shelves": 0.5,
     "base-cabinets": 0.5,
     "built-in-bays": 1,
+    "floating-shelves": 0.5,
   };
   const totalW = ordered.reduce((a, r) => a + defaultW[r.kind], 0) || 1;
   const zones: MillworkZone[] = [];

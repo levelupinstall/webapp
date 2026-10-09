@@ -254,6 +254,43 @@ export async function buildShopDrawingElevation(params: {
     zonesAssumed = true;
   }
 
+  // Floating shelf mode: for media walls, floating shelves, and accent walls.
+  // Draws shelves as horizontal boards on the wall (no case box), with
+  // optional grouping (e.g. shelves flanking a TV) and a base cabinet.
+  const isFloating = /media wall|floating shelves?|accent wall/i.test(
+    `${spec.designCategory ?? ""} ${spec.scopeNotes ?? ""}`,
+  );
+  if (!zones && isFloating && (spec.shelfCount ?? 0) >= 2) {
+    const totalShelves = spec.shelfCount!;
+    const hasBase = /credenza|console|cabinet|sideboard/i.test(
+      `${spec.designCategory ?? ""} ${spec.scopeNotes ?? ""}`,
+    );
+    const isMediaWall = /media wall|tv/i.test(
+      `${spec.designCategory ?? ""} ${spec.scopeNotes ?? ""}`,
+    );
+
+    if (isMediaWall && totalShelves >= 4 && totalShelves % 2 === 0) {
+      // Media wall: split shelves into left/right groups flanking the TV.
+      const perSide = totalShelves / 2;
+      zones = [
+        { kind: "floating-shelves", x0: 0, x1: 0.32, shelves: perSide, assumed: true },
+        { kind: "floating-shelves", x0: 0.68, x1: 1, shelves: perSide, assumed: true },
+      ];
+      if (hasBase) {
+        zones.push({ kind: "base-cabinets", x0: 0, x1: 1, assumed: true });
+      }
+    } else {
+      // Single group of floating shelves centered on the wall.
+      zones = [
+        { kind: "floating-shelves", x0: 0.15, x1: 0.85, shelves: totalShelves, assumed: true },
+      ];
+      if (hasBase) {
+        zones.push({ kind: "base-cabinets", x0: 0.15, x1: 0.85, assumed: true });
+      }
+    }
+    zonesAssumed = true;
+  }
+
   // Legacy shelf path (non-closet, no zones) — unchanged behavior.
   const shelfLike = /shelves?|shelving|bookcase/i.test(spec.designCategory ?? "");
   const shelfCountAssumed = !zones && (spec.shelfCount ?? 0) <= 0 && shelfLike;
@@ -362,6 +399,38 @@ export async function buildShopDrawingElevation(params: {
           parts.push({ tag, hIn, y: yTop + drH / 2, cx: zx0 + zw / 2 });
           dimensions.push({ name: `${tag} center A.F.F.`, expectedIn: r1(hIn), known: !zonesAssumed });
           y = yTop - 4;
+        }
+      } else if (z.kind === "base-cabinets") {
+        // Base cabinet/credenza: low rectangle spanning the zone width.
+        const cabHIn = 24;
+        const cabH = cabHIn * pxPerIn;
+        const yTop = wy1 - cabH;
+        svg.push(
+          `<rect x="${f1(zx0)}" y="${f1(yTop)}" width="${f1(zw)}" height="${f1(cabH)}" fill="${MILL_FILL}" stroke="${MILL_EDGE}" stroke-width="2.5"/>`,
+        );
+        // Door divisions (assume 4 doors)
+        for (let di = 1; di < 4; di++) {
+          const dx = zx0 + (di * zw) / 4;
+          svg.push(`<line x1="${f1(dx)}" y1="${f1(yTop)}" x2="${f1(dx)}" y2="${f1(wy1)}" stroke="${MILL_EDGE}" stroke-width="1.5"/>`);
+        }
+        dimensions.push({ name: "Base cabinet height", expectedIn: cabHIn, known: !zonesAssumed });
+        dimensions.push({ name: "Base cabinet width", expectedIn: r1(zw / pxPerIn), known: !zonesAssumed });
+      } else if (z.kind === "floating-shelves") {
+        // Floating shelves: horizontal boards mounted on the wall, no case.
+        // Drawn as thick lines at their heights within the zone's x-range.
+        const n = Math.max(1, Math.min(10, Math.round(z.shelves ?? 3)));
+        for (let i = 0; i < n; i++) {
+          const hIn = 30 + (i * (72 - 30)) / Math.max(1, n - 1);
+          const y = wy1 - hIn * pxPerIn;
+          if (y < wy0 + 10 || y > wy1 - 10) continue;
+          shN += 1;
+          // Shelf board: thick horizontal line with slight depth indication
+          svg.push(
+            `<rect x="${f1(zx0)}" y="${f1(y - shelfThickPx / 2)}" width="${f1(zw)}" height="${f1(shelfThickPx)}" fill="${MILL_FILL}" stroke="${MILL_EDGE}" stroke-width="2.5"/>`,
+          );
+          parts.push({ tag: `SH-${shN}`, hIn, y, cx: zx0 + zw / 2 });
+          dimensions.push({ name: `SH-${shN} height A.F.F.`, expectedIn: r1(hIn), known: !zonesAssumed });
+          dimensions.push({ name: `SH-${shN} length`, expectedIn: r1(zw / pxPerIn), known: !zonesAssumed });
         }
       } else if (z.kind === "built-in-bays" && z.bays && z.bays.length > 0) {
         // Vision-grounded built-in: vertical bays with per-bay shelf counts
