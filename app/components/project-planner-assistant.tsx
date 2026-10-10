@@ -1083,7 +1083,7 @@ export default function ProjectPlannerAssistant({
 
   return (
     <section
-      className="flex min-h-[70vh] flex-col rounded-3xl border border-[#e8d9ff] bg-white/80 shadow-sm"
+      className="flex h-[85dvh] flex-col rounded-3xl border border-[#e8d9ff] bg-white/80 shadow-sm"
       data-planner-work-category={workCategory ?? ""}
       data-planner-style-preference={stylePreference ?? ""}
     >
