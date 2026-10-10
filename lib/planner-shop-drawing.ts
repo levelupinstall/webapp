@@ -148,7 +148,11 @@ export async function buildShopDrawingElevation(params: {
   let zones: MillworkZone[] | null = spec.zones && spec.zones.length > 0 ? spec.zones : null;
   let zonesAssumed = false;
   const zonesEmpty = !zones || zones.length === 0;
-  if (zonesEmpty && isCloset) {
+  // For closets, the closet-specific layout (from geminiDescribeClosetLayout)
+  // takes precedence over generic vision zones — it's more accurate for
+  // closet section types (double-hang, drawers, etc.).
+  const useClosetLayout = isCloset && spec.closetLayout && spec.closetLayout.length > 0;
+  if (useClosetLayout || (zonesEmpty && isCloset)) {
     // Use vision-derived closet layout when available (e.g. ["DOUBLE-HANG", "DRAWERS", "SINGLE-HANG"])
     // for an accurate section-by-section elevation. Falls back to a generic
     // assumed layout when vision didn't provide one.
