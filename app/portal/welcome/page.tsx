@@ -23,10 +23,10 @@ export default async function PortalWelcomeAfterVerificationPage() {
       <div className="mx-auto w-full max-w-lg">
         <div className="mb-8 flex justify-center">
           <Image
-            src="/level-up-install-logo.jpg"
+            src="/level-up-install-logo.svg"
             alt="Level Up Install"
-            width={480}
-            height={160}
+            width={510}
+            height={150}
             className="h-auto w-full max-w-[280px] object-contain"
             priority
           />

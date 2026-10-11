@@ -1,0 +1,32 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 680 200" role="img" aria-label="Level Up Install logo">
+  <defs>
+    <filter id="laserGlow" x="-60%" y="-60%" width="220%" height="220%">
+      <feGaussianBlur stdDeviation="3.5" result="blur"/>
+      <feMerge>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+
+  <!-- Laser level device (stylized) -->
+  <g>
+    <rect x="18" y="72" width="64" height="72" rx="10" fill="#23232e"/>
+    <rect x="18" y="72" width="64" height="72" rx="10" fill="none" stroke="#3a3a4a" stroke-width="2"/>
+    <rect x="30" y="58" width="40" height="18" rx="5" fill="#2e2e3c"/>
+    <rect x="38" y="88" width="24" height="24" rx="4" fill="#17171f" stroke="#39ff6a" stroke-width="2"/>
+    <circle cx="50" cy="100" r="4" fill="#39ff6a" filter="url(#laserGlow)"/>
+    <rect x="30" y="146" width="40" height="8" rx="3" fill="#17171f"/>
+    <!-- laser cross lines -->
+    <line x1="82" y1="100" x2="660" y2="100" stroke="#39ff6a" stroke-width="3" filter="url(#laserGlow)" opacity="0.95"/>
+    <line x1="50" y1="58" x2="50" y2="8" stroke="#39ff6a" stroke-width="3" filter="url(#laserGlow)" opacity="0.95"/>
+    <circle cx="82" cy="100" r="5" fill="#39ff6a" filter="url(#laserGlow)"/>
+  </g>
+
+  <!-- Wordmark -->
+  <text x="112" y="112" font-family="Georgia, 'Times New Roman', serif" font-weight="700" font-size="58" letter-spacing="2">
+    <tspan fill="#7a4fa3">LEVEL UP </tspan><tspan fill="#23233a">INSTALL</tspan>
+  </text>
+  <!-- Tagline -->
+  <text x="114" y="152" font-family="Georgia, 'Times New Roman', serif" font-size="17" letter-spacing="3.5" fill="#4a2e70">LEVELING UP YOUR SPACE, ONE DETAIL AT A TIME.</text>
+</svg>

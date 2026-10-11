@@ -237,6 +237,7 @@ export default function ProjectPlannerAssistant({
   const [voiceSupported, setVoiceSupported] = useState(false);
   const [voiceMode, setVoiceMode] = useState(false);
   const [isSpeaking, setIsSpeaking] = useState(false);
+  const [voiceMenuOpen, setVoiceMenuOpen] = useState(false);
   const recognitionRef = useRef<any>(null);
   const voiceModeRef = useRef(false);
 
@@ -333,7 +334,18 @@ export default function ProjectPlannerAssistant({
     setIsRecording(true);
   };
 
+  // One entry point for both voice paths: dictation (speech-to-text into the
+  // message box) and the hands-free voice conversation. Chosen from a single
+  // "Voice" button menu so there is exactly one voice control in the UI.
+  const startVoiceChat = () => {
+    setVoiceMode(true);
+    voiceModeRef.current = true;
+    setVoiceMenuOpen(false);
+    setTimeout(() => startListening(), 300);
+  };
+
   const toggleVoiceInput = () => {
+    setVoiceMenuOpen(false);
     if (isRecording) {
       recognitionRef.current?.stop();
       setIsRecording(false);
@@ -1097,7 +1109,7 @@ export default function ProjectPlannerAssistant({
             {PLANNER_ASSISTANT_NAME}
           </p>
           <p className="text-xs text-[#6a4a8f]">
-            Planning consultant • Concept visuals, no prices in chat
+            Planning consultant • Concept visuals first — we&apos;ll talk budget, final pricing comes with your written quote
           </p>
         </div>
       </div>
@@ -1271,26 +1283,6 @@ export default function ProjectPlannerAssistant({
         ) : null}
 
         <div className="flex items-end gap-2">
-          {voiceSupported && !voiceMode ? (
-            <button
-              type="button"
-              onClick={() => {
-                setVoiceMode(true);
-                voiceModeRef.current = true;
-                setTimeout(() => startListening(), 300);
-              }}
-              className="inline-flex h-11 shrink-0 items-center gap-2 rounded-full border border-[#6e3eb2] bg-white px-4 text-xs font-semibold text-[#5b3292] transition hover:bg-[#f5efff]"
-              title="Start a spoken conversation with the planner"
-            >
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-                <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z" />
-                <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
-                <line x1="12" y1="19" x2="12" y2="23" />
-                <line x1="8" y1="23" x2="16" y2="23" />
-              </svg>
-              Voice chat
-            </button>
-          ) : null}
           {voiceMode ? (
             <button
               type="button"
@@ -1319,25 +1311,83 @@ export default function ProjectPlannerAssistant({
             className={`${lu.textarea} flex-1 resize-none`}
           />
           {voiceSupported && !voiceMode ? (
-            <button
-              type="button"
-              onClick={toggleVoiceInput}
-              disabled={isLoading}
-              className={`inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-full transition disabled:cursor-not-allowed disabled:opacity-65 ${
-                isRecording
-                  ? "animate-pulse bg-red-600 text-white hover:bg-red-700"
-                  : "border border-[#6e3eb2] bg-white text-[#5b3292] hover:bg-[#f5efff]"
-              }`}
-              aria-label={isRecording ? "Stop voice input" : "Speak instead of typing"}
-              title={isRecording ? "Stop listening" : "Speak instead of typing"}
-            >
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-                <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z" />
-                <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
-                <line x1="12" y1="19" x2="12" y2="23" />
-                <line x1="8" y1="23" x2="16" y2="23" />
-              </svg>
-            </button>
+            <div className="relative shrink-0">
+              {voiceMenuOpen ? (
+                <>
+                  <button
+                    type="button"
+                    aria-hidden
+                    tabIndex={-1}
+                    onClick={() => setVoiceMenuOpen(false)}
+                    className="fixed inset-0 z-10 cursor-default bg-transparent"
+                  />
+                  <div
+                    role="menu"
+                    className="absolute bottom-full right-0 z-20 mb-2 w-60 overflow-hidden rounded-2xl border border-[#e8d9ff] bg-white shadow-[0_16px_40px_-16px_rgba(91,33,182,0.5)]"
+                  >
+                    <button
+                      type="button"
+                      role="menuitem"
+                      onClick={toggleVoiceInput}
+                      className="flex w-full items-center gap-3 px-4 py-3 text-left text-sm text-[#31184a] transition hover:bg-[#f5efff]"
+                    >
+                      <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[#ede4ff] text-base">
+                        🎙
+                      </span>
+                      <span>
+                        <span className="block font-semibold">Dictate</span>
+                        <span className="block text-xs text-[#6a4a8f]">
+                          Speak, review the text, then send
+                        </span>
+                      </span>
+                    </button>
+                    <button
+                      type="button"
+                      role="menuitem"
+                      onClick={startVoiceChat}
+                      className="flex w-full items-center gap-3 border-t border-[#f0e6ff] px-4 py-3 text-left text-sm text-[#31184a] transition hover:bg-[#f5efff]"
+                    >
+                      <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[#ede4ff] text-base">
+                        💬
+                      </span>
+                      <span>
+                        <span className="block font-semibold">Voice chat</span>
+                        <span className="block text-xs text-[#6a4a8f]">
+                          Hands-free spoken conversation
+                        </span>
+                      </span>
+                    </button>
+                  </div>
+                </>
+              ) : null}
+              <button
+                type="button"
+                onClick={() => {
+                  if (isRecording) {
+                    toggleVoiceInput();
+                  } else {
+                    setVoiceMenuOpen(true);
+                  }
+                }}
+                disabled={isLoading}
+                className={`inline-flex h-11 w-11 items-center justify-center rounded-full transition disabled:cursor-not-allowed disabled:opacity-65 ${
+                  isRecording
+                    ? "animate-pulse bg-red-600 text-white hover:bg-red-700"
+                    : "border border-[#6e3eb2] bg-white text-[#5b3292] hover:bg-[#f5efff]"
+                }`}
+                aria-label={isRecording ? "Stop voice input" : "Voice input"}
+                title={isRecording ? "Stop listening" : "Voice input — dictate or start a voice chat"}
+                aria-expanded={voiceMenuOpen}
+                aria-haspopup="menu"
+              >
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+                  <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z" />
+                  <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
+                  <line x1="12" y1="19" x2="12" y2="23" />
+                  <line x1="8" y1="23" x2="16" y2="23" />
+                </svg>
+              </button>
+            </div>
           ) : null}
           <button
             type="submit"

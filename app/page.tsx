@@ -8,8 +8,15 @@ import ProjectPlannerAssistant from "./components/project-planner-assistant";
 import { PLANNER_ASSISTANT_NAME } from "@/lib/planner-brand";
 import ReviewsGallery from "./components/reviews-gallery";
 import { lu, luSectionTab } from "@/lib/level-up-ui";
+import { SERVICES, getService } from "@/lib/services";
 
-type SectionKey = "overview" | "reviews" | "rates" | "planner" | "account";
+type SectionKey =
+  | "overview"
+  | "reviews"
+  | "rates"
+  | "planner"
+  | "account"
+  | "service";
 type AccountMenuView = "saved-projects" | "proposals" | "invoices" | "profile" | "bookings";
 type AuthUser = {
   id: string;
@@ -22,10 +29,115 @@ function portalWelcomeName(user: AuthUser): string {
   return user.fullName?.trim() || user.email?.trim() || user.username;
 }
 
+function ServiceIcon({ slug }: { slug: string }) {
+  const common = {
+    width: 56,
+    height: 56,
+    viewBox: "0 0 56 56",
+    fill: "none",
+    stroke: "#6e3eb2",
+    strokeWidth: 2.5,
+    strokeLinecap: "round",
+    strokeLinejoin: "round",
+  } as const;
+  switch (slug) {
+    case "custom-builtins":
+      return (
+        <svg {...common}>
+          <rect x="12" y="8" width="32" height="40" rx="2" />
+          <line x1="12" y1="21" x2="44" y2="21" />
+          <line x1="12" y1="34" x2="44" y2="34" />
+          <rect x="16" y="11" width="6" height="7" fill="#6e3eb2" stroke="none" opacity="0.55" />
+          <rect x="25" y="24" width="6" height="7" fill="#6e3eb2" stroke="none" opacity="0.35" />
+          <rect x="34" y="37" width="6" height="8" fill="#6e3eb2" stroke="none" opacity="0.55" />
+        </svg>
+      );
+    case "gallery-walls":
+      return (
+        <svg {...common}>
+          <line x1="6" y1="48" x2="50" y2="48" />
+          <rect x="10" y="14" width="16" height="20" rx="1.5" />
+          <rect x="30" y="10" width="16" height="24" rx="1.5" />
+          <circle cx="18" cy="24" r="3.5" fill="#6e3eb2" stroke="none" opacity="0.5" />
+          <path d="M34 28 l4 -6 3 4 3 -5 2 7 z" fill="#6e3eb2" stroke="none" opacity="0.35" />
+        </svg>
+      );
+    case "floating-shelves":
+      return (
+        <svg {...common}>
+          <line x1="10" y1="14" x2="46" y2="14" strokeWidth="4" />
+          <line x1="14" y1="28" x2="42" y2="28" strokeWidth="4" />
+          <line x1="10" y1="42" x2="46" y2="42" strokeWidth="4" />
+          <line x1="16" y1="14" x2="16" y2="20" opacity="0.5" />
+          <line x1="40" y1="28" x2="40" y2="34" opacity="0.5" />
+          <line x1="16" y1="42" x2="16" y2="48" opacity="0.5" />
+        </svg>
+      );
+    case "flat-pack-assembly":
+      return (
+        <svg {...common}>
+          <path d="M10 20 L28 10 L46 20 L46 44 L10 44 Z" />
+          <path d="M10 20 L28 30 L46 20" />
+          <line x1="28" y1="30" x2="28" y2="44" />
+          <path d="M36 6 l6 2 -2 6 -6 -2 z" fill="#6e3eb2" stroke="none" opacity="0.5" />
+        </svg>
+      );
+    case "cabinets":
+      return (
+        <svg {...common}>
+          <rect x="12" y="10" width="32" height="36" rx="2" />
+          <rect x="12" y="10" width="32" height="10" rx="2" />
+          <line x1="28" y1="20" x2="28" y2="46" />
+          <line x1="24" y1="25" x2="24" y2="31" />
+          <line x1="32" y1="25" x2="32" y2="31" />
+        </svg>
+      );
+    case "trim-moulding":
+      return (
+        <svg {...common}>
+          <path d="M8 44 L8 30 L16 30 L16 22 L28 22 L28 14 L48 14" />
+          <path d="M8 44 L48 44" opacity="0.4" />
+          <circle cx="42" cy="24" r="3" fill="#6e3eb2" stroke="none" opacity="0.5" />
+        </svg>
+      );
+    case "accent-walls":
+      return (
+        <svg {...common}>
+          <line x1="14" y1="10" x2="14" y2="46" />
+          <line x1="22" y1="10" x2="22" y2="46" />
+          <line x1="30" y1="10" x2="30" y2="46" />
+          <line x1="38" y1="10" x2="38" y2="46" />
+          <line x1="46" y1="10" x2="46" y2="46" opacity="0.45" />
+          <rect x="10" y="10" width="4" height="36" fill="#6e3eb2" stroke="none" opacity="0.3" />
+        </svg>
+      );
+    case "doors":
+      return (
+        <svg {...common}>
+          <rect x="16" y="8" width="24" height="40" rx="2" />
+          <rect x="21" y="14" width="14" height="12" rx="1" opacity="0.5" />
+          <rect x="21" y="30" width="14" height="12" rx="1" opacity="0.5" />
+          <circle cx="35" cy="28" r="2.2" fill="#6e3eb2" stroke="none" />
+        </svg>
+      );
+    default:
+      return (
+        <svg {...common}>
+          <path d="M10 26 L28 12 L46 26" />
+          <rect x="14" y="26" width="28" height="18" rx="1.5" />
+          <line x1="24" y1="44" x2="32" y2="44" />
+          <path d="M36 8 l8 8" opacity="0.6" />
+          <path d="M40 8 l4 4 -4 1 z" fill="#6e3eb2" stroke="none" opacity="0.6" />
+        </svg>
+      );
+  }
+}
+
 function HomeContent() {
   const router = useRouter();
   const pathname = usePathname();
   const [activeSection, setActiveSection] = useState<SectionKey>("overview");
+  const [serviceSlug, setServiceSlug] = useState<string | null>(null);
   const [portalMode, setPortalMode] = useState<"login" | "register">("login");
   const [accountView, setAccountView] = useState<AccountMenuView>("saved-projects");
   const [authUser, setAuthUser] = useState<AuthUser | null>(null);
@@ -55,20 +167,33 @@ function HomeContent() {
   const searchParams = useSearchParams();
   const querySection = searchParams.get("section");
   const queryPortalView = searchParams.get("portalView");
+  const queryService = searchParams.get("service");
   const currentSection: SectionKey =
     querySection === "overview" ||
     querySection === "reviews" ||
     querySection === "rates" ||
     querySection === "planner" ||
-    querySection === "account"
+    querySection === "account" ||
+    querySection === "service"
       ? querySection
       : activeSection;
+  const activeService = getService(queryService ?? serviceSlug);
 
   /** Section tabs must update the URL — `currentSection` prefers `?section=` over React state (e.g. after login). */
   function navigateToSection(section: SectionKey) {
     setActiveSection(section);
     const params = new URLSearchParams(searchParams.toString());
     params.set("section", section);
+    params.delete("service");
+    const qs = params.toString();
+    router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
+  }
+
+  function navigateToService(slug: string) {
+    setServiceSlug(slug);
+    const params = new URLSearchParams(searchParams.toString());
+    params.set("section", "service");
+    params.set("service", slug);
     const qs = params.toString();
     router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
   }
@@ -142,11 +267,11 @@ function HomeContent() {
             className="flex w-[30%] min-w-[104px] max-w-[320px] shrink-0 items-center justify-start py-0.5 sm:py-1"
           >
             <Image
-              src="/level-up-install-logo.jpg"
+              src="/level-up-install-logo.svg"
               alt="Level Up Install logo"
-              width={1024}
-              height={576}
-              className="h-auto w-full max-h-[76px] rounded-xl object-contain object-left sm:max-h-[92px] md:max-h-[104px]"
+              width={680}
+              height={200}
+              className="h-auto w-full max-h-[76px] object-contain object-left sm:max-h-[92px] md:max-h-[104px]"
               priority
             />
           </a>
@@ -391,74 +516,36 @@ function HomeContent() {
                 us for most. If it&apos;s on your list, we&apos;ll confirm feasibility and timing when
                 we scope the job.
               </p>
-              <ul className="mt-6 grid gap-3 text-sm leading-relaxed text-[#55337b] sm:grid-cols-2 sm:gap-x-8 sm:text-[15px]">
-                <li className="flex gap-3">
-                  <span className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-[#6e3eb2]" />
-                  <span>
-                    <span className="font-semibold text-[#31184a]">Custom millwork &amp; built-ins —</span>{" "}
-                    Wall units, libraries, mudrooms, and window seats designed around your space and
-                    installed like furniture — scribed, level, and finished clean.
-                  </span>
-                </li>
-                <li className="flex gap-3">
-                  <span className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-[#6e3eb2]" />
-                  <span>
-                    <span className="font-semibold text-[#31184a]">Pictures &amp; wall décor —</span>{" "}
-                    Gallery walls, mirrors, and art hung level and secure on any wall type — plus
-                    curtain rods, hooks, and house numbers.
-                  </span>
-                </li>
-                <li className="flex gap-3">
-                  <span className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-[#6e3eb2]" />
-                  <span>
-                    <span className="font-semibold text-[#31184a]">Shelving —</span> Floating
-                    shelves, bracketed units, and closet systems installed level and anchored to last —
-                    including IKEA assemblies.
-                  </span>
-                </li>
-                <li className="flex gap-3">
-                  <span className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-[#6e3eb2]" />
-                  <span>
-                    <span className="font-semibold text-[#31184a]">IKEA &amp; flat-pack furniture —</span>{" "}
-                    Bookcases, wardrobes, desks, and storage built square, leveled, and wall-anchored
-                    where safety calls for it.
-                  </span>
-                </li>
-                <li className="flex gap-3">
-                  <span className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-[#6e3eb2]" />
-                  <span>
-                    <span className="font-semibold text-[#31184a]">Cabinets —</span> Wall and base
-                    cabinet installs with filler panels, scribes, and hardware dialed in around your
-                    appliances.
-                  </span>
-                </li>
-                <li className="flex gap-3">
-                  <span className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-[#6e3eb2]" />
-                  <span>
-                    <span className="font-semibold text-[#31184a]">Trim &amp; moulding —</span>{" "}
-                    Baseboard, casing, and crown installed tight, with clean miters and returns.
-                  </span>
-                </li>
-                <li className="flex gap-3">
-                  <span className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-[#6e3eb2]" />
-                  <span>
-                    <span className="font-semibold text-[#31184a]">Accent walls —</span>{" "}
-                    Wood slat walls, board-and-batten, and panel moulding — texture and depth for a
-                    feature wall.
-                  </span>
-                </li>
-                <li className="flex gap-3">
-                  <span className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-[#6e3eb2]" />
-                  <span>
-                    <span className="font-semibold text-[#31184a]">Doors —</span> Prehung interior door
-                    installs and slab replacement, with hardware and clearances set right.
-                  </span>
-                </li>
-              </ul>
+              <div className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                {SERVICES.map((service) => (
+                  <button
+                    key={service.slug}
+                    type="button"
+                    onClick={() => navigateToService(service.slug)}
+                    className="group flex flex-col overflow-hidden rounded-2xl border border-[#eddfff] bg-white text-left shadow-[0_8px_28px_-18px_rgba(91,33,182,0.35)] transition hover:-translate-y-0.5 hover:shadow-[0_16px_36px_-18px_rgba(91,33,182,0.5)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#6e3eb2]"
+                  >
+                    <div
+                      className="flex h-28 items-center justify-center bg-gradient-to-br from-[#f7f2ff] via-[#f0e7ff] to-[#e7daff]"
+                      aria-hidden
+                    >
+                      <ServiceIcon slug={service.slug} />
+                    </div>
+                    <div className="flex flex-1 flex-col p-5">
+                      <p className="font-semibold text-[#31184a]">{service.title}</p>
+                      <p className="mt-2 flex-1 text-sm leading-relaxed text-[#55337b]">
+                        {service.short}
+                      </p>
+                      <p className="mt-3 text-sm font-semibold text-[#6e3eb2] group-hover:underline">
+                        Learn more &rarr;
+                      </p>
+                    </div>
+                  </button>
+                ))}
+              </div>
               <p className="mt-6 text-sm text-[#6a4a8f]">
-                Bigger renovations or trades outside carpentry? We&apos;ll flag them after the site
-                visit and help you line up the right partner. Commercial general liability insurance and
-                WSIB coverage on every job — ask if your building needs a certificate.
+                Not sure which service fits your project? Start a free design consult and we&apos;ll
+                point you the right way. Commercial general liability insurance and WSIB coverage on
+                every job — ask if your building needs a certificate.
               </p>
             </div>
 
@@ -472,7 +559,8 @@ function HomeContent() {
               <p className="mt-3 max-w-2xl text-base leading-relaxed text-[#4d2e70]">
                 {PLANNER_ASSISTANT_NAME}, our planning consultant, chats through your space and goals,
                 then generates <span className="font-semibold text-[#31184a]">concept visuals</span> so you
-                can see directions before committing. No pricing or product talk in that chat — just ideas.
+                can see directions before committing. Budget talk is welcome in that chat — final
+                pricing comes with your written quote.
                 When you love a direction, we review your designs and send a{" "}
                 <span className="font-semibold text-[#31184a]">detailed fixed-price proposal for approval</span>.
               </p>
@@ -590,7 +678,7 @@ function HomeContent() {
                   agent anytime, and keep invoices in one place. In the planner,{" "}
                   {PLANNER_ASSISTANT_NAME} focuses on how your project could{" "}
                   <span className="font-semibold text-[#31184a]">look</span>
-                  —no product lists or pricing in that chat. When you&apos;re happy with the direction, Level Up{" "}
+                  —we&apos;ll talk budget there, and final pricing comes with your written quote. When you&apos;re happy with the direction, Level Up{" "}
                   <span className="font-semibold text-[#31184a]">reviews your designs</span> and reaches out with a{" "}
                   <span className="font-semibold text-[#31184a]">detailed proposal for approval</span> before work is lined up.
                 </p>
@@ -687,6 +775,138 @@ function HomeContent() {
                 </li>
               </ol>
             </div>
+          </div>
+        ) : null}
+
+        {currentSection === "service" && activeService ? (
+          <div className={lu.card}>
+            <button
+              type="button"
+              onClick={() => navigateToSection("overview")}
+              className="text-sm font-semibold text-[#4a2381] underline decoration-[#c9a5f1] underline-offset-4 hover:text-[#3f1d70]"
+            >
+              &larr; All services
+            </button>
+            <div className="mt-4 overflow-hidden rounded-3xl border border-[#e6d7ff] bg-gradient-to-br from-[#ffffff] via-[#faf6ff] to-[#f0e8ff]">
+              <div className="flex flex-col items-start gap-6 p-6 sm:p-10 lg:flex-row lg:items-center">
+                <div
+                  className="flex h-32 w-full shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-[#f7f2ff] via-[#f0e7ff] to-[#e7daff] lg:w-56"
+                  aria-hidden
+                >
+                  <ServiceIcon slug={activeService.slug} />
+                </div>
+                <div>
+                  <p className="text-sm font-semibold uppercase tracking-[0.2em] text-[#7a4bb8]">
+                    Service
+                  </p>
+                  <h1 className="mt-2 text-3xl font-bold text-[#230f35] sm:text-4xl">
+                    {activeService.title}
+                  </h1>
+                  <p className="mt-3 max-w-2xl text-base leading-relaxed text-[#4d2e70] sm:text-lg">
+                    {activeService.short}
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            <div className="mt-8 grid gap-6 lg:grid-cols-2">
+              <div className="rounded-2xl border border-[#e8d9ff] bg-[#faf8ff] p-6 sm:p-8">
+                <h2 className="text-xl font-semibold text-[#230f35]">
+                  What&apos;s included
+                </h2>
+                <ul className="mt-4 space-y-3 text-[15px] leading-relaxed text-[#55337b]">
+                  {activeService.included.map((item) => (
+                    <li key={item} className="flex gap-3">
+                      <span className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-[#6e3eb2]" />
+                      <span>{item}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+              <div className="rounded-2xl border border-[#e8d9ff] bg-[#faf8ff] p-6 sm:p-8">
+                <h2 className="text-xl font-semibold text-[#230f35]">
+                  How it works
+                </h2>
+                <ol className="mt-4 space-y-4 text-[15px] leading-relaxed text-[#55337b]">
+                  {activeService.process.map((step, index) => (
+                    <li key={step} className="flex gap-3">
+                      <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-[#6e3eb2] text-sm font-bold text-white">
+                        {index + 1}
+                      </span>
+                      <span className="pt-0.5">{step}</span>
+                    </li>
+                  ))}
+                </ol>
+              </div>
+            </div>
+
+            <div className="mt-8 rounded-2xl border border-[#dcc6fb] bg-gradient-to-br from-[#faf6ff] via-[#f5efff] to-[#ffffff] p-6 sm:p-8">
+              <h2 className="text-xl font-semibold text-[#230f35]">
+                Ready to talk about your {activeService.title.toLowerCase()} project?
+              </h2>
+              <p className="mt-2 max-w-2xl text-[15px] leading-relaxed text-[#4d2e70]">
+                Chat with {PLANNER_ASSISTANT_NAME}, our AI planning consultant, to explore
+                directions for free — we&apos;ll talk budget there, and final pricing comes with
+                your written quote.
+              </p>
+              <div className="mt-5 flex flex-col gap-3 sm:flex-row sm:flex-wrap">
+                <button
+                  type="button"
+                  onClick={() => navigateToSection("planner")}
+                  className="inline-flex items-center justify-center rounded-full bg-[#6e3eb2] px-8 py-4 text-base font-semibold text-white shadow-[0_12px_30px_-10px_rgba(110,62,178,0.9)] transition hover:-translate-y-0.5 hover:bg-[#5b3292]"
+                >
+                  Plan this with {PLANNER_ASSISTANT_NAME}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => navigateToSection("rates")}
+                  className="inline-flex items-center justify-center rounded-full border-2 border-[#6e3eb2] bg-white px-8 py-4 text-base font-semibold text-[#5b3292] transition hover:bg-[#f5efff]"
+                >
+                  See rates
+                </button>
+              </div>
+            </div>
+
+            <div className="mt-8">
+              <p className="text-sm font-semibold uppercase tracking-[0.2em] text-[#7a4bb8]">
+                Other services
+              </p>
+              <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                {SERVICES.filter((s) => s.slug !== activeService.slug)
+                  .slice(0, 4)
+                  .map((s) => (
+                    <button
+                      key={s.slug}
+                      type="button"
+                      onClick={() => navigateToService(s.slug)}
+                      className="rounded-xl border border-[#eddfff] bg-white p-4 text-left transition hover:-translate-y-0.5 hover:shadow-[0_12px_28px_-18px_rgba(91,33,182,0.45)]"
+                    >
+                      <p className="font-semibold text-[#31184a]">{s.title}</p>
+                      <p className="mt-1 text-xs leading-relaxed text-[#6a4a8f]">
+                        {s.short}
+                      </p>
+                    </button>
+                  ))}
+              </div>
+            </div>
+          </div>
+        ) : null}
+
+        {currentSection === "service" && !activeService ? (
+          <div className={lu.card}>
+            <h1 className="text-2xl font-semibold text-[#230f35]">
+              Service not found
+            </h1>
+            <p className="mt-3 text-[#4d2e70]">
+              That service page doesn&apos;t exist. Here&apos;s everything we do:
+            </p>
+            <button
+              type="button"
+              onClick={() => navigateToSection("overview")}
+              className="mt-4 inline-flex rounded-full bg-[#6e3eb2] px-6 py-3 text-sm font-semibold text-white transition hover:bg-[#5b3292]"
+            >
+              View all services
+            </button>
           </div>
         ) : null}
 
