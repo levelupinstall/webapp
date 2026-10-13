@@ -1296,6 +1296,54 @@ export async function geminiDescribeClosetLayout(params: {
 }
 
 /**
+ * 4x consensus closet layout: runs geminiDescribeClosetLayout 4 times in
+ * parallel and returns the majority layout. Vision section reads are
+ * non-deterministic (one pass may collapse a double-hang + shelves closet
+ * into a single SHELVES section); the consensus of 4 is far more reliable.
+ * Ties / all-different: prefer the layout with the most sections (it saw
+ * the most structure), then the most frequent.
+ */
+export async function geminiDescribeClosetLayoutWithConsensus(params: {
+  imageMimeType: string;
+  imageDataBase64: string;
+}): Promise<string[] | null> {
+  const results = await Promise.all([
+    geminiDescribeClosetLayout(params),
+    geminiDescribeClosetLayout(params),
+    geminiDescribeClosetLayout(params),
+    geminiDescribeClosetLayout(params),
+  ]);
+  const valid = results.filter((r): r is string[] => r !== null && r.length > 0);
+  if (valid.length === 0) return null;
+
+  const key = (layout: string[]) => layout.join(",");
+  const votes = new Map<string, { layout: string[]; count: number }>();
+  for (const layout of valid) {
+    const k = key(layout);
+    const entry = votes.get(k);
+    if (entry) entry.count += 1;
+    else votes.set(k, { layout, count: 1 });
+  }
+
+  let best: string[] | null = null;
+  let bestCount = 0;
+  for (const { layout, count } of votes.values()) {
+    if (
+      count > bestCount ||
+      (count === bestCount && best !== null && layout.length > best.length)
+    ) {
+      best = layout;
+      bestCount = count;
+    }
+  }
+  // All four disagreed (bestCount === 1): prefer the most detailed read.
+  if (bestCount === 1) {
+    best = valid.reduce((a, b) => (b.length > a.length ? b : a));
+  }
+  return best;
+}
+
+/**
  * Structured millwork layout extracted from a concept image.
  * Used to ground shop-drawing elevations in what was actually rendered,
  * not just what the chat transcript mentioned.
@@ -1435,6 +1483,38 @@ export async function geminiExtractScanDimensions(params: {
   } catch {
     return null;
   }
+}
+
+/**
+ * 4x consensus millwork structure: runs geminiExtractMillworkStructure 4
+ * times in parallel and returns the extraction whose TOTAL shelf count is
+ * the median of the four reads. A single structure read is the weakest
+ * link in the elevation pipeline (it invented 4 shelves for a 2-shelf
+ * design); the median of 4 discards outlier hallucinations both ways.
+ */
+export async function geminiExtractMillworkStructureWithConsensus(params: {
+  imageMimeType: string;
+  imageDataBase64: string;
+}): Promise<ConceptMillworkStructure | null> {
+  const totalShelves = (s: ConceptMillworkStructure | null): number => {
+    if (!s || !Array.isArray(s.bays)) return 0;
+    return s.bays.reduce(
+      (sum: number, b) => sum + (typeof b.shelves === "number" ? b.shelves : 0),
+      0,
+    );
+  };
+  const results = await Promise.all([
+    geminiExtractMillworkStructure(params),
+    geminiExtractMillworkStructure(params),
+    geminiExtractMillworkStructure(params),
+    geminiExtractMillworkStructure(params),
+  ]);
+  const valid = results.filter((r) => r !== null);
+  if (valid.length === 0) return null;
+  if (valid.length === 1) return valid[0];
+
+  const sorted = [...valid].sort((a, b) => totalShelves(a) - totalShelves(b));
+  return sorted[Math.floor(sorted.length / 2)];
 }
 
 /**

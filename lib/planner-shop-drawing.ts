@@ -97,9 +97,15 @@ export async function buildShopDrawingElevation(params: {
   const project = (params.projectName || "RESIDENTIAL MILLWORK").trim().toUpperCase();
 
   const wallWIn = spec.width ?? 96;
-  const wallHIn = spec.height ?? 96;
+  // Height sanity: the AI sometimes records a millwork or furniture height
+  // (e.g. 42" credenza) as the WALL height, which then clips shelves out of
+  // the drawing. A real wall is at least 84"; anything shorter is treated as
+  // unknown and falls back to a standard 96" wall.
+  const rawHeight = spec.height;
+  const heightSane = rawHeight !== null && rawHeight >= 84;
+  const wallHIn = heightSane ? rawHeight : 96;
   const widthKnown = spec.width !== null;
-  const heightKnown = spec.height !== null;
+  const heightKnown = heightSane;
 
   // Sheet layout: drawing area + tag column + title block column.
   // Zones add a second dimension chain up top — give it headroom.
@@ -144,7 +150,7 @@ export async function buildShopDrawingElevation(params: {
   // Zone-aware rendering: closets and built-ins draw their functional zones
   // (shelf towers, hanging sections with rods, shoe cubbies, drawers).
   // Non-zoned shelf designs use the legacy centered-shelf layout.
-  const isCloset = /closet|wardrobe/i.test(spec.designCategory ?? "");
+  const isCloset = /closet|wardrobe/i.test(`${spec.designCategory ?? ""} ${spec.scopeNotes ?? ""}`) || !!(spec.closetLayout && spec.closetLayout.length > 0);
   let zones: MillworkZone[] | null = spec.zones && spec.zones.length > 0 ? spec.zones : null;
   let zonesAssumed = false;
   const zonesEmpty = !zones || zones.length === 0;

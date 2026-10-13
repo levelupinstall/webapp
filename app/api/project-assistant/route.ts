@@ -10,8 +10,8 @@ import {
   buildGeminiConceptImagePromptText,
   defaultGeminiImageModel,
   geminiCountShelvesWithConsensus,
-  geminiDescribeClosetLayout,
-  geminiExtractMillworkStructure,
+  geminiDescribeClosetLayoutWithConsensus,
+  geminiExtractMillworkStructureWithConsensus,
   geminiExtractPlannerVisualSpec,
   geminiGenerateConceptImage,
   geminiPlannerMultiTurn,
@@ -272,7 +272,7 @@ async function enrichSpecWithConceptStructure(
 ): Promise<PlannerVisualSpec> {
   if (!conceptImage) return spec;
   try {
-    const struct = await geminiExtractMillworkStructure({
+    const struct = await geminiExtractMillworkStructureWithConsensus({
       imageMimeType: conceptImage.mimeType,
       imageDataBase64: conceptImage.dataBase64,
     });
@@ -1807,9 +1807,13 @@ The homeowner likes the design direction — pivot to booking. In one or two war
           }
           // For closets, also get the section layout (double-hang, drawers, etc.)
           // so the elevation shows the actual design, not a generic guess.
-          if (/closet|wardrobe/i.test(conceptRenderSpec.designCategory ?? "")) {
+          // Broad trigger: designCategory wording varies ("Reach-in closet",
+          // "Closet organizer", "Custom storage"), so also check scopeNotes.
+          // Uses the 4x consensus read for reliability.
+          const closetSignal = `${conceptRenderSpec.designCategory ?? ""} ${conceptRenderSpec.scopeNotes ?? ""}`;
+          if (/closet|wardrobe|hanging space|clothes/i.test(closetSignal)) {
             try {
-              const layout = await geminiDescribeClosetLayout({
+              const layout = await geminiDescribeClosetLayoutWithConsensus({
                 imageMimeType: renderedImages[0].mimeType,
                 imageDataBase64: renderedImages[0].dataBase64,
               });
