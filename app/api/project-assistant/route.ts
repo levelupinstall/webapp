@@ -283,6 +283,42 @@ async function enrichSpecWithConceptStructure(
       `[project-assistant] vision-grounded zones: ${zones.length} zone(s), ` +
         `${struct.bays.length} bay(s), base=${struct.baseCabinets.present}`,
     );
+    // Reconciliation for floating-shelf designs: the structure read can
+    // fold PRE-EXISTING room boards (an old wood shelf, a pegboard rail)
+    // into the design and overcount. The dedicated shelf counter is the
+    // authority for simple floating designs — when the structure total
+    // exceeds it by 2+, trust the counter and draw plain floating shelves.
+    const isFloatingDesign =
+      /floating/i.test(spec.designCategory ?? "") ||
+      /floating/i.test(spec.style ?? "");
+    const zoneShelfTotal = zones.reduce(
+      (sum, z) => sum + (typeof z.shelves === "number" ? z.shelves : 0),
+      0,
+    );
+    if (
+      isFloatingDesign &&
+      spec.shelfCount !== null &&
+      spec.shelfCount > 0 &&
+      zoneShelfTotal > spec.shelfCount + 1
+    ) {
+      const baseZones = zones.filter((z) => z.kind === "base-cabinets");
+      console.info(
+        `[project-assistant] floating-shelf reconciliation: structure=${zoneShelfTotal} vs count=${spec.shelfCount} — using count`,
+      );
+      return {
+        ...spec,
+        zones: [
+          {
+            kind: "open-shelves" as const,
+            x0: 0,
+            x1: 1,
+            shelves: spec.shelfCount,
+            assumed: false,
+          },
+          ...baseZones,
+        ],
+      };
+    }
     return { ...spec, zones };
   } catch (e) {
     console.warn("[project-assistant] concept-structure vision failed:", e);
