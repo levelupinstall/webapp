@@ -1533,11 +1533,17 @@ export async function geminiExtractMillworkStructureWithConsensus(params: {
       0,
     );
   };
+  // Stagger the parallel reads slightly: four simultaneous calls plus
+  // their retries can trip per-minute quotas and fail the whole batch.
+  const staggered = async (i: number) => {
+    if (i > 0) await new Promise((r) => setTimeout(r, i * 300));
+    return geminiExtractMillworkStructure(params);
+  };
   const results = await Promise.all([
-    geminiExtractMillworkStructure(params),
-    geminiExtractMillworkStructure(params),
-    geminiExtractMillworkStructure(params),
-    geminiExtractMillworkStructure(params),
+    staggered(0),
+    staggered(1),
+    staggered(2),
+    staggered(3),
   ]);
   const valid = results.filter((r) => r !== null);
   if (valid.length === 0) return null;

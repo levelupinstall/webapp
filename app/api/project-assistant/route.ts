@@ -328,28 +328,42 @@ async function enrichSpecWithConceptStructure(
                 { kind: "open-shelves", x0: 0.55, x1: 1, shelves, assumed: true },
               ];
       }
-    } else if ((spec.shelfCount ?? 0) > 0) {
-      if (out.length === 0) {
-        out = [
-          {
-            kind: "open-shelves",
-            x0: 0,
-            x1: 1,
-            shelves: spec.shelfCount as number,
-            assumed: true,
-          },
-        ];
-      } else if (shelfTotal === 0) {
-        out = [
-          ...out,
-          {
-            kind: "open-shelves",
-            x0: 0,
-            x1: 1,
-            shelves: spec.shelfCount as number,
-            assumed: false,
-          },
-        ];
+    } else {
+      // Non-closet floor: vision failure must never ship an empty band or
+      // a bare legacy guess when the design text mentions shelving. Use
+      // the counted shelves when known; otherwise assume 3 (the common
+      // case for sideboard/hutch uppers), always flagged assumed.
+      const shelvingSignal =
+        /shelf|shelving|hutch|bookcase|open storage/i.test(cabinetSignal);
+      const floorShelves =
+        spec.shelfCount && spec.shelfCount > 0
+          ? spec.shelfCount
+          : shelvingSignal
+            ? 3
+            : 0;
+      if (floorShelves > 0) {
+        if (out.length === 0) {
+          out = [
+            {
+              kind: "open-shelves",
+              x0: 0,
+              x1: 1,
+              shelves: floorShelves,
+              assumed: true,
+            },
+          ];
+        } else if (shelfTotal === 0) {
+          out = [
+            ...out,
+            {
+              kind: "open-shelves",
+              x0: 0,
+              x1: 1,
+              shelves: floorShelves,
+              assumed: true,
+            },
+          ];
+        }
       }
     }
     return withCabinetBackstop(out.length > 0 ? out : null);
@@ -361,10 +375,20 @@ async function enrichSpecWithConceptStructure(
     zones: finalizeZones(null),
   });
   try {
-    const struct = await geminiExtractMillworkStructureWithConsensus({
+    let struct = await geminiExtractMillworkStructureWithConsensus({
       imageMimeType: conceptImage.mimeType,
       imageDataBase64: conceptImage.dataBase64,
     });
+    if (!struct) {
+      // Total read failure (usually quota) — pause and retry once before
+      // accepting the text-only fallback; back-to-back turns otherwise
+      // cascade into legacy drawings.
+      await new Promise((r) => setTimeout(r, 2500));
+      struct = await geminiExtractMillworkStructureWithConsensus({
+        imageMimeType: conceptImage.mimeType,
+        imageDataBase64: conceptImage.dataBase64,
+      });
+    }
     if (!struct) return fallbackSpec();
     const zones = zonesFromConceptStructure(struct);
     if (!zones) return fallbackSpec();
