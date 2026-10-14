@@ -270,7 +270,6 @@ async function enrichSpecWithConceptStructure(
   spec: PlannerVisualSpec,
   conceptImage: { mimeType: string; dataBase64: string } | null,
 ): Promise<PlannerVisualSpec> {
-  if (!conceptImage) return spec;
   // Cabinet backstop signals (used by every exit path below): if the design
   // text clearly includes lower cabinets (sideboard / credenza / hutch) the
   // drawing must never ship without them — a missed vision read otherwise
@@ -286,26 +285,81 @@ async function enrichSpecWithConceptStructure(
           { kind: "base-cabinets" as const, x0: 0, x1: 1, assumed: false },
         ]
       : zs;
-  // When vision fails entirely, synthesize minimal zones from the spec so a
-  // built-in design doesn't degrade to a bare 2-shelf legacy drawing.
-  const fallbackSpec = (): PlannerVisualSpec => {
-    if (!impliesCabinets) return spec;
-    const base = spec.zones && spec.zones.length > 0 ? [...spec.zones] : [];
-    if (
-      (spec.shelfCount ?? 0) > 0 &&
-      !base.some((z) => z.kind === "open-shelves" || z.kind === "shelf-tower")
-    ) {
-      base.push({
-        kind: "open-shelves" as const,
-        x0: 0,
-        x1: 1,
-        shelves: spec.shelfCount ?? 0,
-        assumed: true,
-      });
+  // Synthesis floor: whatever the vision reads produced (including total
+  // failure), the zones that reach the drawing must contain the design's
+  // main elements at the spec's counts. Vision reads intermittently return
+  // empty bays or coarse fallbacks; without this floor those reads ship as
+  // empty walls or wall-wide rods.
+  type Zone = NonNullable<PlannerVisualSpec["zones"]>[number];
+  const finalizeZones = (
+    zs: PlannerVisualSpec["zones"],
+  ): PlannerVisualSpec["zones"] => {
+    let out: Zone[] = zs ? [...zs] : [];
+    const shelfTotal = out
+      .filter(
+        (z) =>
+          z.kind === "open-shelves" ||
+          z.kind === "shelf-tower" ||
+          z.kind === "floating-shelves",
+      )
+      .reduce((s, z) => s + (z.shelves ?? 0), 0);
+    const closetSignal =
+      /closet|wardrobe|hanging space|clothes/i.test(cabinetSignal) ||
+      (spec.closetRodCount !== null && spec.closetRodCount > 0) ||
+      (spec.closetLayout?.length ?? 0) > 0;
+    if (closetSignal) {
+      const coarse =
+        out.length === 0 ||
+        (out.length === 1 && out[0].kind === "hanging") ||
+        (out.length === 1 && out[0].kind === "open-shelves");
+      if (coarse) {
+        const rods = Math.min(Math.max(spec.closetRodCount ?? 2, 1), 3);
+        const shelves = Math.min(Math.max(spec.shelfCount ?? 5, 1), 8);
+        const drawers = Math.min(Math.max(spec.drawerCount ?? 0, 0), 6);
+        out =
+          drawers > 0
+            ? [
+                { kind: "hanging", x0: 0, x1: 0.42, rods, assumed: true },
+                { kind: "drawers", x0: 0.42, x1: 0.68, drawers, assumed: true },
+                { kind: "open-shelves", x0: 0.68, x1: 1, shelves, assumed: true },
+              ]
+            : [
+                { kind: "hanging", x0: 0, x1: 0.55, rods, assumed: true },
+                { kind: "open-shelves", x0: 0.55, x1: 1, shelves, assumed: true },
+              ];
+      }
+    } else if ((spec.shelfCount ?? 0) > 0) {
+      if (out.length === 0) {
+        out = [
+          {
+            kind: "open-shelves",
+            x0: 0,
+            x1: 1,
+            shelves: spec.shelfCount as number,
+            assumed: true,
+          },
+        ];
+      } else if (shelfTotal === 0) {
+        out = [
+          ...out,
+          {
+            kind: "open-shelves",
+            x0: 0,
+            x1: 1,
+            shelves: spec.shelfCount as number,
+            assumed: false,
+          },
+        ];
+      }
     }
-    const z = withCabinetBackstop(base);
-    return z && z.length > 0 ? { ...spec, zones: z } : spec;
+    return withCabinetBackstop(out.length > 0 ? out : null);
   };
+  if (!conceptImage)
+    return { ...spec, zones: finalizeZones(spec.zones) };
+  const fallbackSpec = (): PlannerVisualSpec => ({
+    ...spec,
+    zones: finalizeZones(null),
+  });
   try {
     const struct = await geminiExtractMillworkStructureWithConsensus({
       imageMimeType: conceptImage.mimeType,
@@ -354,7 +408,7 @@ async function enrichSpecWithConceptStructure(
         ],
       };
     }
-    return { ...spec, zones: withCabinetBackstop(zones) ?? zones };
+    return { ...spec, zones: finalizeZones(zones) ?? zones };
   } catch (e) {
     console.warn("[project-assistant] concept-structure vision failed:", e);
     return fallbackSpec();

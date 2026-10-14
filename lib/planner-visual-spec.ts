@@ -1605,9 +1605,18 @@ export function zonesFromConceptStructure(struct: {
   rods: number;
   drawers: number;
   cubbyRows: number;
+  unitX0?: number;
+  unitX1?: number;
 }): MillworkZone[] | null {
   if (!struct.bays.length && !struct.rods && !struct.drawers && !struct.cubbyRows) return null;
   const zones: MillworkZone[] = [];
+  // Bay x-fractions are relative to the millwork unit; remap them into
+  // wall-relative fractions using the unit's extent in the image so a
+  // centered hutch isn't stretched wall-to-wall.
+  const ux0 = typeof struct.unitX0 === "number" ? struct.unitX0 : 0;
+  const ux1 = typeof struct.unitX1 === "number" ? struct.unitX1 : 1;
+  const remapX = (x: number) =>
+    ux1 - ux0 >= 0.2 ? ux0 + x * (ux1 - ux0) : x;
 
   // Build zones from bays with their correct positions.
   // Each bay becomes its own zone(s) at its x0/x1 position.
@@ -1615,13 +1624,15 @@ export function zonesFromConceptStructure(struct: {
     const bayRods = b.rods ?? 0;
     const bayDrawers = b.drawers ?? 0;
     const bayShelves = b.shelves ?? 0;
+    const bx0 = remapX(b.x0);
+    const bx1 = remapX(b.x1);
 
     if (bayRods > 0) {
       // Hanging section at this bay's position
       zones.push({
         kind: "hanging",
-        x0: b.x0,
-        x1: b.x1,
+        x0: bx0,
+        x1: bx1,
         rods: bayRods,
         ...(b.rodYs && b.rodYs.length > 0 ? { rodYs: b.rodYs } : {}),
         assumed: false,
@@ -1631,8 +1642,8 @@ export function zonesFromConceptStructure(struct: {
       // Drawer bank at this bay's position
       zones.push({
         kind: "drawers",
-        x0: b.x0,
-        x1: b.x1,
+        x0: bx0,
+        x1: bx1,
         drawers: bayDrawers,
         assumed: false,
       });
@@ -1641,8 +1652,8 @@ export function zonesFromConceptStructure(struct: {
       // Shelves at this bay's position
       zones.push({
         kind: "open-shelves",
-        x0: b.x0,
-        x1: b.x1,
+        x0: bx0,
+        x1: bx1,
         shelves: bayShelves,
         ...(b.shelfYs && b.shelfYs.length > 0 ? { shelfYs: b.shelfYs } : {}),
         assumed: false,
@@ -1653,8 +1664,8 @@ export function zonesFromConceptStructure(struct: {
     if (bayRods === 0 && bayDrawers === 0 && bayShelves === 0) {
       zones.push({
         kind: "open-shelves",
-        x0: b.x0,
-        x1: b.x1,
+        x0: bx0,
+        x1: bx1,
         shelves: 0,
         assumed: false,
       });
@@ -1664,21 +1675,21 @@ export function zonesFromConceptStructure(struct: {
   // Legacy fallback: global counts without positions (span full width)
   if (struct.bays.length === 0) {
     if (struct.rods > 0) {
-      zones.push({ kind: "hanging", x0: 0, x1: 1, rods: struct.rods, assumed: false });
+      zones.push({ kind: "hanging", x0: remapX(0), x1: remapX(1), rods: struct.rods, assumed: false });
     }
     if (struct.drawers > 0) {
-      zones.push({ kind: "drawers", x0: 0, x1: 1, drawers: struct.drawers, assumed: false });
+      zones.push({ kind: "drawers", x0: remapX(0), x1: remapX(1), drawers: struct.drawers, assumed: false });
     }
   }
   if (struct.cubbyRows > 0) {
-    zones.push({ kind: "shoe-cubbies", x0: 0, x1: 1, rows: struct.cubbyRows, assumed: false });
+    zones.push({ kind: "shoe-cubbies", x0: remapX(0), x1: remapX(1), rows: struct.cubbyRows, assumed: false });
   }
   // Base cabinets span the width below (if present)
   if (struct.baseCabinets.present) {
     zones.push({
       kind: "base-cabinets",
-      x0: 0,
-      x1: 1,
+      x0: remapX(0),
+      x1: remapX(1),
       assumed: false,
     });
   }

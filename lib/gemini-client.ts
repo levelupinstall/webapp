@@ -1361,6 +1361,11 @@ export type ConceptMillworkStructure = {
   drawers: number;
   /** Shoe cubby rows visible. */
   cubbyRows: number;
+  /** Where the millwork unit itself starts/ends across the IMAGE width
+   * (0-1), e.g. a centered hutch might be 0.19-0.81. Lets the drawing place
+   * the unit inside the wall instead of stretching it wall-to-wall. */
+  unitX0: number;
+  unitX1: number;
 };
 
 /**
@@ -1380,8 +1385,9 @@ export async function geminiExtractMillworkStructure(params: {
       "You inspect an AI-generated interior concept image showing proposed finish-carpentry millwork (built-in shelving, bookcases, closet systems, floating shelves). " +
       "Analyze ONLY the proposed millwork (ignore the original room, furniture, and decor). " +
       "Reply with exactly one JSON object and nothing else, using this schema: " +
-      '{"bays":[{"x0":0,"x1":0.33,"shelves":0,"rods":2,"drawers":0,"shelfYs":[],"rodYs":[0.72,0.48]},{"x0":0.33,"x1":0.66,"shelves":4,"rods":0,"drawers":3,"shelfYs":[0.85,0.68,0.51,0.34],"rodYs":[]},{"x0":0.66,"x1":1,"shelves":0,"rods":1,"drawers":0,"shelfYs":[],"rodYs":[0.72]}],"baseCabinets":{"present":false,"doors":0,"drawers":0},"rods":0,"drawers":0,"cubbyRows":2}. ' +
+      '{"bays":[{"x0":0,"x1":0.33,"shelves":0,"rods":2,"drawers":0,"shelfYs":[],"rodYs":[0.72,0.48]},{"x0":0.33,"x1":0.66,"shelves":4,"rods":0,"drawers":3,"shelfYs":[0.85,0.68,0.51,0.34],"rodYs":[]},{"x0":0.66,"x1":1,"shelves":0,"rods":1,"drawers":0,"shelfYs":[],"rodYs":[0.72]}],"baseCabinets":{"present":false,"doors":0,"drawers":0},"rods":0,"drawers":0,"cubbyRows":2,"unitX0":0,"unitX1":1}. ' +
       "Rules: bays are vertical divisions of the millwork left to right; x0/x1 are fractions of the total millwork width (0 to 1); " +
+      "unitX0/unitX1 are where the millwork unit itself starts and ends across the IMAGE width (0=left edge of image, 1=right edge) — if the unit spans the whole wall opening, use 0 and 1; if it is a centered piece of furniture with visible wall on both sides, report e.g. 0.2 and 0.8; " +
       "shelves counts horizontal shelf boards per bay; " +
       "rods counts hanging rods per bay (0 if none — e.g. a double-hang section has rods:2, single-hang has rods:1); " +
       "drawers counts drawer fronts per bay (0 if none); " +
@@ -1447,6 +1453,14 @@ export async function geminiExtractMillworkStructure(params: {
       rods: Math.max(0, Math.min(10, Math.round(Number(parsed.rods) || 0))),
       drawers: Math.max(0, Math.min(20, Math.round(Number(parsed.drawers) || 0))),
       cubbyRows: Math.max(0, Math.min(10, Math.round(Number(parsed.cubbyRows) || 0))),
+      unitX0: (() => {
+        const v = Number(parsed.unitX0);
+        return Number.isFinite(v) ? Math.max(0, Math.min(0.6, v)) : 0;
+      })(),
+      unitX1: (() => {
+        const v = Number(parsed.unitX1);
+        return Number.isFinite(v) ? Math.max(0.4, Math.min(1, v)) : 1;
+      })(),
     };
   } catch {
     return null;
