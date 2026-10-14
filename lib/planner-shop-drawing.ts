@@ -166,11 +166,18 @@ export async function buildShopDrawingElevation(params: {
         (z.rodYs && z.rodYs.length > 0) || (z.shelfYs && z.shelfYs.length > 0),
     );
   const zonesHaveHanging = !!zones && zones.some((z) => z.kind === "hanging");
+  // Rich structure zones (multiple zones / multiple kinds) describe the
+  // design better than a coarse closetLayout — a 1-section layout read
+  // ("DOUBLE-HANG") must never override a multi-zone structure.
+  const zoneKinds = new Set((zones ?? []).map((z) => z.kind));
+  const zonesAreRich =
+    !!zones && zones.length >= 2 && (zoneKinds.size >= 2 || zonesHaveHeights);
   const useClosetLayout =
     isCloset &&
     spec.closetLayout &&
     spec.closetLayout.length > 0 &&
-    !(zonesHaveHeights && zonesHaveHanging);
+    !(zonesHaveHeights && zonesHaveHanging) &&
+    !zonesAreRich;
   if (useClosetLayout || (zonesEmpty && isCloset)) {
     // Use vision-derived closet layout when available (e.g. ["DOUBLE-HANG", "DRAWERS", "SINGLE-HANG"])
     // for an accurate section-by-section elevation. Falls back to a generic
