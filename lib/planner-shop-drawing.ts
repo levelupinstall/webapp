@@ -166,12 +166,20 @@ export async function buildShopDrawingElevation(params: {
         (z.rodYs && z.rodYs.length > 0) || (z.shelfYs && z.shelfYs.length > 0),
     );
   const zonesHaveHanging = !!zones && zones.some((z) => z.kind === "hanging");
-  // Rich structure zones (multiple zones / multiple kinds) describe the
-  // design better than a coarse closetLayout — a 1-section layout read
-  // ("DOUBLE-HANG") must never override a multi-zone structure.
-  const zoneKinds = new Set((zones ?? []).map((z) => z.kind));
+  // Rich structure zones describe the design better than a coarse
+  // closetLayout — a 1-section layout read ("DOUBLE-HANG") must never
+  // override a multi-zone structure. BUT a multi-section layout (3+
+  // sections incl. drawers) beats a structure read that merged sections
+  // into fewer bands — unless the zones carry grounded heights.
+  const zoneBands = new Set(
+    (zones ?? [])
+      .filter((z) => z.kind !== "base-cabinets")
+      .map((z) => z.x0.toFixed(2)),
+  ).size;
   const zonesAreRich =
-    !!zones && zones.length >= 2 && (zoneKinds.size >= 2 || zonesHaveHeights);
+    !!zones &&
+    zones.length >= 2 &&
+    (zonesHaveHeights || zoneBands >= (spec.closetLayout?.length ?? 0));
   const useClosetLayout =
     isCloset &&
     spec.closetLayout &&
