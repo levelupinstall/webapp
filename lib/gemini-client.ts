@@ -219,7 +219,7 @@ export async function geminiGenerateContent(params: {
   }
 
   const payload = JSON.stringify(body);
-  const maxAttempts = params.retryTransientErrors ? 5 : 1;
+  const maxAttempts = params.retryTransientErrors ? 3 : 1;
 
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
     if (attempt > 0 && params.retryTransientErrors) {
@@ -1216,12 +1216,21 @@ export async function geminiCountShelvesWithConsensus(params: {
   imageMimeType: string;
   imageDataBase64: string;
 }): Promise<number | null> {
-  const results = await Promise.all([
-    geminiCountShelvesInImage(params),
-    geminiCountShelvesInImage(params),
-    geminiCountShelvesInImage(params),
-    geminiCountShelvesInImage(params),
-  ]);
+  // Sequential with early exit: two agreeing reads settle it. Bursts of
+  // parallel calls (each with its own retries) throttle the API and turn
+  // a busy minute into total read failure — sequential costs a few
+  // seconds and succeeds far more often under load.
+  const results: (number | null)[] = [];
+  const seen = new Map<number, number>();
+  for (let i = 0; i < 4; i++) {
+    const r = await geminiCountShelvesInImage(params);
+    results.push(r);
+    if (r !== null) {
+      const c = (seen.get(r) ?? 0) + 1;
+      seen.set(r, c);
+      if (c >= 2) break;
+    }
+  }
   const valid = results.filter((n): n is number => n !== null);
   if (valid.length === 0) return null;
 
@@ -1312,16 +1321,20 @@ export async function geminiDescribeClosetLayoutWithConsensus(
   },
   probe?: (reads: (string[] | null)[]) => void,
 ): Promise<string[] | null> {
-  const staggered = async (i: number) => {
-    if (i > 0) await new Promise((r) => setTimeout(r, i * 300));
-    return geminiDescribeClosetLayout(params);
-  };
-  const results = await Promise.all([
-    staggered(0),
-    staggered(1),
-    staggered(2),
-    staggered(3),
-  ]);
+  // Sequential with early exit (see shelf counter): two agreeing reads
+  // settle it; parallel bursts throttle the API into total failure.
+  const results: (string[] | null)[] = [];
+  const seenL = new Map<string, number>();
+  for (let i = 0; i < 4; i++) {
+    const r = await geminiDescribeClosetLayout(params);
+    results.push(r);
+    if (r !== null && r.length > 0) {
+      const k = r.join(",");
+      const c = (seenL.get(k) ?? 0) + 1;
+      seenL.set(k, c);
+      if (c >= 2) break;
+    }
+  }
   probe?.(results);
   const valid = results.filter((r): r is string[] => r !== null && r.length > 0);
   if (valid.length === 0) return null;
@@ -1397,7 +1410,7 @@ export async function geminiExtractMillworkStructure(params: {
       "Analyze ONLY the proposed millwork (ignore the original room, furniture, and decor). " +
       "Reply with exactly one JSON object and nothing else, using this schema: " +
       '{"bays":[{"x0":0,"x1":0.33,"shelves":0,"rods":2,"drawers":0,"shelfYs":[],"rodYs":[0.72,0.48]},{"x0":0.33,"x1":0.66,"shelves":4,"rods":0,"drawers":3,"shelfYs":[0.85,0.68,0.51,0.34],"rodYs":[]},{"x0":0.66,"x1":1,"shelves":0,"rods":1,"drawers":0,"shelfYs":[],"rodYs":[0.72]}],"baseCabinets":{"present":false,"doors":0,"drawers":0},"rods":0,"drawers":0,"cubbyRows":2,"unitX0":0,"unitX1":1}. ' +
-      "Rules: bays are vertical divisions of the millwork left to right; x0/x1 are fractions of the total millwork width (0 to 1); " +
+      "Rules: bays are vertical divisions of the millwork reported STRICTLY left to right as seen in the image — x0=0 is the millwork's LEFT edge in the picture, x1=1 its RIGHT edge; do not mirror the layout; x0/x1 are fractions of the total millwork width (0 to 1); " +
       "unitX0/unitX1 are where the millwork unit itself starts and ends across the IMAGE width (0=left edge of image, 1=right edge) — if the unit spans the whole wall opening, use 0 and 1; if it is a centered piece of furniture with visible wall on both sides, report e.g. 0.2 and 0.8; " +
       "shelves counts horizontal shelf boards per bay; " +
       "rods counts hanging rods per bay (0 if none — e.g. a double-hang section has rods:2, single-hang has rods:1); " +
