@@ -511,10 +511,15 @@ export default function ProjectPlannerAssistant({
     const userMessage =
       text || "I'm sharing a photo of the space — please take a look.";
 
-    const lastAssistantBeforeSend = [...messages]
+    // The refinement baseline must be the last assistant message that
+    // actually carried a concept image — not merely the last assistant
+    // message. A no-render confirmation turn in between must not break the
+    // edit chain: the revision after it should still EDIT the last concept,
+    // not redesign from scratch.
+    const lastConceptBeforeSend = [...messages]
       .reverse()
-      .find((m) => m.role === "assistant");
-    const priorTurnHadConceptImage = Boolean(lastAssistantBeforeSend?.images?.length);
+      .find((m) => m.role === "assistant" && (m.images?.length ?? 0) > 0);
+    const priorTurnHadConceptImage = Boolean(lastConceptBeforeSend);
 
     const payloadMessages: { role: "user" | "assistant"; content: string }[] = [
       ...messages.map((m) => ({
@@ -560,8 +565,8 @@ export default function ProjectPlannerAssistant({
         formData.append("images", image);
       }
 
-      if (priorTurnHadConceptImage && lastAssistantBeforeSend?.images?.[0]) {
-        const ref = lastAssistantBeforeSend.images[0];
+      if (priorTurnHadConceptImage && lastConceptBeforeSend?.images?.[0]) {
+        const ref = lastConceptBeforeSend.images[0];
         const refinementFile = await conceptDataUrlToRefinementFile(
           ref.dataUrl,
           "refinement-baseline.png",
