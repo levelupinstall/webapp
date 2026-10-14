@@ -1546,21 +1546,59 @@ export async function geminiExtractMillworkStructureWithConsensus(params: {
   const sorted = [...valid].sort((a, b) => totalShelves(a) - totalShelves(b));
   const median = sorted[Math.floor(sorted.length / 2)];
 
+  // Heights/extent graft: the median read often has the right COUNTS but
+  // omits the grounded positions (shelfYs/rodYs/unit extent) that another
+  // read of the same image did return. Graft them bay-by-bay so a single
+  // read's omission doesn't drop the drawing back to default heights.
+  const grafted: ConceptMillworkStructure = {
+    ...median,
+    bays: median.bays.map((b, i) => {
+      const out = { ...b };
+      if (!out.shelfYs?.length || !out.rodYs?.length) {
+        for (const donor of valid) {
+          const db = donor.bays?.[i];
+          if (!db) continue;
+          if (!out.shelfYs?.length && db.shelfYs?.length && (db.shelves ?? 0) === (out.shelves ?? 0)) {
+            out.shelfYs = db.shelfYs;
+          }
+          if (!out.rodYs?.length && db.rodYs?.length && (db.rods ?? 0) === (out.rods ?? 0)) {
+            out.rodYs = db.rodYs;
+          }
+          if (out.shelfYs?.length && out.rodYs?.length) break;
+        }
+      }
+      return out;
+    }),
+  };
+  const narrowExtents = valid.filter(
+    (r) => (r.unitX1 ?? 1) - (r.unitX0 ?? 0) < 0.98,
+  );
+  if (
+    narrowExtents.length >= 2 &&
+    (grafted.unitX1 ?? 1) - (grafted.unitX0 ?? 0) >= 0.98
+  ) {
+    const avg = (vals: number[]) =>
+      vals.reduce((a, b) => a + b, 0) / vals.length;
+    grafted.unitX0 = avg(narrowExtents.map((r) => r.unitX0 ?? 0));
+    grafted.unitX1 = avg(narrowExtents.map((r) => r.unitX1 ?? 1));
+  }
+  const medianG = grafted;
+
   // Base cabinets get their own MAJORITY vote: a single missed read drops
   // the whole credenza/sideboard from the drawing even when the bays are
   // right (seen on media-wall and dining runs). If at least half the reads
   // saw base cabinets, keep them — preferring the median read's own value.
   const withBase = valid.filter((r) => r.baseCabinets?.present);
-  if (withBase.length * 2 >= valid.length && !median.baseCabinets?.present) {
+  if (withBase.length * 2 >= valid.length && !medianG.baseCabinets?.present) {
     const donor =
       withBase.find((r) => r.baseCabinets.doors > 0) ?? withBase[0];
-    return { ...median, baseCabinets: donor.baseCabinets };
+    return { ...medianG, baseCabinets: donor.baseCabinets };
   }
-  if (withBase.length === 0 && median.baseCabinets?.present) {
+  if (withBase.length === 0 && medianG.baseCabinets?.present) {
     // No read corroborated the cabinets — the median likely invented them.
-    return { ...median, baseCabinets: { present: false, doors: 0, drawers: 0 } };
+    return { ...medianG, baseCabinets: { present: false, doors: 0, drawers: 0 } };
   }
-  return median;
+  return medianG;
 }
 
 /**
