@@ -270,6 +270,7 @@ async function enrichSpecWithConceptStructure(
   spec: PlannerVisualSpec,
   conceptImage: { mimeType: string; dataBase64: string } | null,
   wallLabel?: string,
+  probe?: (d: Record<string, unknown>) => void,
 ): Promise<PlannerVisualSpec> {
   // Cabinet backstop signals (used by every exit path below): if the design
   // text clearly includes lower cabinets (sideboard / credenza / hutch) the
@@ -389,6 +390,23 @@ async function enrichSpecWithConceptStructure(
         imageDataBase64: conceptImage.dataBase64,
       });
     }
+    probe?.({
+      structNull: !struct,
+      bayCount: struct?.bays?.length ?? null,
+      bays: (struct?.bays ?? []).map((b) => ({
+        x0: b.x0,
+        x1: b.x1,
+        s: b.shelves,
+        r: b.rods ?? 0,
+        d: b.drawers ?? 0,
+        ys: (b.shelfYs ?? []).length,
+        rys: (b.rodYs ?? []).length,
+      })),
+      globalRods: struct?.rods ?? null,
+      globalDrawers: struct?.drawers ?? null,
+      basePresent: struct?.baseCabinets?.present ?? null,
+      unitX: struct ? [struct.unitX0 ?? null, struct.unitX1 ?? null] : null,
+    });
     if (!struct) return fallbackSpec();
     const zones = zonesFromConceptStructure(struct);
     if (!zones) return fallbackSpec();
@@ -888,6 +906,10 @@ export async function POST(request: Request) {
     // can verify grounding without production log access.
     const qcProbe = request.headers.get("x-planner-qc") === "1";
     let qcElevationDebug: Record<string, unknown> | null = null;
+    const mergeQc = (partial: Record<string, unknown>) => {
+      if (!qcProbe) return;
+      qcElevationDebug = { ...(qcElevationDebug ?? {}), ...partial };
+    };
     const recordQcElevation = (spec: PlannerVisualSpec) => {
       if (!qcProbe) return;
       qcElevationDebug = {
@@ -1900,6 +1922,7 @@ The homeowner likes the design direction — pivot to booking. In one or two war
                 ? { mimeType: conceptImg.mimeType, dataBase64: conceptImg.data as string }
                 : null,
               label,
+              (d) => mergeQc({ enrich: d }),
             );
             recordQcElevation(enrichedSpec);
             const elevation = await buildShopDrawingElevation({
@@ -1983,6 +2006,7 @@ The homeowner likes the design direction — pivot to booking. In one or two war
               imageMimeType: renderedImages[0].mimeType,
               imageDataBase64: renderedImages[0].dataBase64,
             });
+            mergeQc({ countedShelves: counted });
             if (counted !== null && counted > 0) {
               conceptRenderSpec = { ...conceptRenderSpec, shelfCount: counted };
             }
@@ -2020,6 +2044,7 @@ The homeowner likes the design direction — pivot to booking. In one or two war
             ? { mimeType: firstConcept.mimeType, dataBase64: firstConcept.dataBase64 }
             : null,
           singleLabel,
+          (d) => mergeQc({ enrich: d }),
         );
         recordQcElevation(enrichedSpec);
         const elevation = await buildShopDrawingElevation({
