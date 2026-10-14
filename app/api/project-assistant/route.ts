@@ -276,8 +276,7 @@ async function enrichSpecWithConceptStructure(
   // deletes the entire lower half of the design.
   const cabinetSignal = `${spec.designCategory ?? ""} ${spec.scopeNotes ?? ""}`;
   const impliesCabinets =
-    /sideboard|credenza|cabinet|hutch|buffet/i.test(cabinetSignal) &&
-    !/floating/i.test(cabinetSignal);
+    /sideboard|credenza|cabinet|hutch|buffet/i.test(cabinetSignal);
   const withCabinetBackstop = (zs: PlannerVisualSpec["zones"]) =>
     impliesCabinets && zs && !zs.some((z) => z.kind === "base-cabinets")
       ? [
@@ -377,6 +376,10 @@ async function enrichSpecWithConceptStructure(
     // into the design and overcount. The dedicated shelf counter is the
     // authority for simple floating designs — when the structure total
     // exceeds it by 2+, trust the counter and draw plain floating shelves.
+    // NEVER reconcile a real built-in: if the structure read found base
+    // cabinets or multiple bays, the bays are the design (a hutch whose
+    // style text mentions floating shelves was being flattened to 2
+    // shelves by this rule — Oct 14 dining turn 1).
     const isFloatingDesign =
       /floating/i.test(spec.designCategory ?? "") ||
       /floating/i.test(spec.style ?? "");
@@ -386,6 +389,8 @@ async function enrichSpecWithConceptStructure(
     );
     if (
       isFloatingDesign &&
+      !struct.baseCabinets.present &&
+      struct.bays.length <= 1 &&
       spec.shelfCount !== null &&
       spec.shelfCount > 0 &&
       zoneShelfTotal > spec.shelfCount + 1
