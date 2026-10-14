@@ -1176,6 +1176,7 @@ export async function geminiCountShelvesInImage(params: {
   if (!isGeminiConfigured()) return null;
   const res = await geminiGenerateContent({
     model: defaultGeminiTextModel(),
+    retryTransientErrors: true,
     systemInstruction:
       "You inspect an AI-generated interior concept image. Count ONLY the horizontal shelf boards that are part of the proposed finish-carpentry built-in/shelving (ignore countertops, mantels, windowsills, and background furniture). Count methodically: scan left to right, top to bottom, and count each distinct horizontal board. Reply with exactly one integer and nothing else.",
     contents: [
@@ -1264,6 +1265,7 @@ export async function geminiDescribeClosetLayout(params: {
   if (!isGeminiConfigured()) return null;
   const res = await geminiGenerateContent({
     model: defaultGeminiTextModel(),
+    retryTransientErrors: true,
     systemInstruction:
       "You inspect an AI-generated closet design image. Reading left to right, identify each vertical section of the closet. For each section reply with ONE of: DOUBLE-HANG (two clothing rods, shirts/jackets top and bottom), SINGLE-HANG (one rod, longer clothes), SHELVES (stacked shelves), DRAWERS (drawer bank), SHOES (shoe shelves/cubbies). Reply with ONLY a comma-separated list, e.g.: DOUBLE-HANG, DRAWERS, SINGLE-HANG",
     contents: [
@@ -1381,6 +1383,7 @@ export async function geminiExtractMillworkStructure(params: {
   if (!isGeminiConfigured()) return null;
   const res = await geminiGenerateContent({
     model: defaultGeminiTextModel(),
+    retryTransientErrors: true,
     systemInstruction:
       "You inspect an AI-generated interior concept image showing proposed finish-carpentry millwork (built-in shelving, bookcases, closet systems, floating shelves). " +
       "Analyze ONLY the proposed millwork (ignore the original room, furniture, and decor). " +

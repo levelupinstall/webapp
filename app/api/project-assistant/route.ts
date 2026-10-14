@@ -269,12 +269,13 @@ function plannerEnvFlagEnabled(name: string): boolean {
 async function enrichSpecWithConceptStructure(
   spec: PlannerVisualSpec,
   conceptImage: { mimeType: string; dataBase64: string } | null,
+  wallLabel?: string,
 ): Promise<PlannerVisualSpec> {
   // Cabinet backstop signals (used by every exit path below): if the design
   // text clearly includes lower cabinets (sideboard / credenza / hutch) the
   // drawing must never ship without them — a missed vision read otherwise
   // deletes the entire lower half of the design.
-  const cabinetSignal = `${spec.designCategory ?? ""} ${spec.scopeNotes ?? ""}`;
+  const cabinetSignal = `${spec.designCategory ?? ""} ${spec.scopeNotes ?? ""} ${wallLabel ?? ""}`;
   const impliesCabinets =
     /sideboard|credenza|cabinet|hutch|buffet/i.test(cabinetSignal);
   const withCabinetBackstop = (zs: PlannerVisualSpec["zones"]) =>
@@ -1847,6 +1848,7 @@ The homeowner likes the design direction — pivot to booking. In one or two war
               conceptImg
                 ? { mimeType: conceptImg.mimeType, dataBase64: conceptImg.data as string }
                 : null,
+              label,
             );
             const elevation = await buildShopDrawingElevation({
               wallLabel: label,
@@ -1965,6 +1967,7 @@ The homeowner likes the design direction — pivot to booking. In one or two war
           firstConcept
             ? { mimeType: firstConcept.mimeType, dataBase64: firstConcept.dataBase64 }
             : null,
+          singleLabel,
         );
         const elevation = await buildShopDrawingElevation({
           wallLabel: singleLabel,
