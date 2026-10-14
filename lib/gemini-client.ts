@@ -1514,7 +1514,23 @@ export async function geminiExtractMillworkStructureWithConsensus(params: {
   if (valid.length === 1) return valid[0];
 
   const sorted = [...valid].sort((a, b) => totalShelves(a) - totalShelves(b));
-  return sorted[Math.floor(sorted.length / 2)];
+  const median = sorted[Math.floor(sorted.length / 2)];
+
+  // Base cabinets get their own MAJORITY vote: a single missed read drops
+  // the whole credenza/sideboard from the drawing even when the bays are
+  // right (seen on media-wall and dining runs). If at least half the reads
+  // saw base cabinets, keep them — preferring the median read's own value.
+  const withBase = valid.filter((r) => r.baseCabinets?.present);
+  if (withBase.length * 2 >= valid.length && !median.baseCabinets?.present) {
+    const donor =
+      withBase.find((r) => r.baseCabinets.doors > 0) ?? withBase[0];
+    return { ...median, baseCabinets: donor.baseCabinets };
+  }
+  if (withBase.length === 0 && median.baseCabinets?.present) {
+    // No read corroborated the cabinets — the median likely invented them.
+    return { ...median, baseCabinets: { present: false, doors: 0, drawers: 0 } };
+  }
+  return median;
 }
 
 /**
