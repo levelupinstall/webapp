@@ -1694,6 +1694,14 @@ The homeowner likes the design direction — pivot to booking. In one or two war
       // original messy photo).
       const isRefinementWithBaseline =
         conceptImageVisualMode === "refinement-delta" && refinementWithBaseline;
+      mergeQc({
+        render: {
+          mode: conceptImageVisualMode,
+          withBaseline: isRefinementWithBaseline,
+          baseParts: refinementBaseParts.length,
+          priorRender: hasAnyPriorRender,
+        },
+      });
       const conceptReferencePartsForRender = isRefinementWithBaseline
         ? [...refinementBaseParts]
         : schematicReferencePart
