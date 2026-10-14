@@ -883,6 +883,33 @@ export async function POST(request: Request) {
       plannerEnvFlagEnabled("PLANNER_DEBUG_DIAGNOSTICS") ||
       process.env.NODE_ENV === "development";
 
+    // QC probe (header-gated): when a request carries x-planner-qc, the
+    // elevation blocks record the exact spec they drew from so test runs
+    // can verify grounding without production log access.
+    const qcProbe = request.headers.get("x-planner-qc") === "1";
+    let qcElevationDebug: Record<string, unknown> | null = null;
+    const recordQcElevation = (spec: PlannerVisualSpec) => {
+      if (!qcProbe) return;
+      qcElevationDebug = {
+        designCategory: spec.designCategory ?? null,
+        shelfCount: spec.shelfCount ?? null,
+        drawerCount: spec.drawerCount ?? null,
+        closetRodCount: spec.closetRodCount ?? null,
+        closetLayout: spec.closetLayout ?? null,
+        zones: (spec.zones ?? []).map((z) => ({
+          kind: z.kind,
+          x0: z.x0,
+          x1: z.x1,
+          shelves: z.shelves ?? null,
+          rods: z.rods ?? null,
+          drawers: z.drawers ?? null,
+          shelfYs: z.shelfYs ?? null,
+          rodYs: z.rodYs ?? null,
+          assumed: z.assumed ?? null,
+        })),
+      };
+    };
+
     const clientPhase = parseClientPhase(String(formData.get("phase") ?? ""));
 
     const priorTurnHadConceptImage =
@@ -1874,6 +1901,7 @@ The homeowner likes the design direction — pivot to booking. In one or two war
                 : null,
               label,
             );
+            recordQcElevation(enrichedSpec);
             const elevation = await buildShopDrawingElevation({
               wallLabel: label,
               spec: enrichedSpec,
@@ -1993,6 +2021,7 @@ The homeowner likes the design direction — pivot to booking. In one or two war
             : null,
           singleLabel,
         );
+        recordQcElevation(enrichedSpec);
         const elevation = await buildShopDrawingElevation({
           wallLabel: singleLabel,
           spec: enrichedSpec,
@@ -2228,6 +2257,7 @@ The homeowner likes the design direction — pivot to booking. In one or two war
         hasCallWindow: intakeHasCallWindow,
       }),
       ...(responseImages.length ? { images: responseImages } : {}),
+      ...(qcElevationDebug ? { qcElevation: qcElevationDebug } : {}),
       ...(hasAnyPriorRender &&
       responseImages.length === 0 &&
       allowConceptImage
