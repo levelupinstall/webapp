@@ -1305,10 +1305,13 @@ export async function geminiDescribeClosetLayout(params: {
  * Ties / all-different: prefer the layout with the most sections (it saw
  * the most structure), then the most frequent.
  */
-export async function geminiDescribeClosetLayoutWithConsensus(params: {
-  imageMimeType: string;
-  imageDataBase64: string;
-}): Promise<string[] | null> {
+export async function geminiDescribeClosetLayoutWithConsensus(
+  params: {
+    imageMimeType: string;
+    imageDataBase64: string;
+  },
+  probe?: (reads: (string[] | null)[]) => void,
+): Promise<string[] | null> {
   const staggered = async (i: number) => {
     if (i > 0) await new Promise((r) => setTimeout(r, i * 300));
     return geminiDescribeClosetLayout(params);
@@ -1319,6 +1322,7 @@ export async function geminiDescribeClosetLayoutWithConsensus(params: {
     staggered(2),
     staggered(3),
   ]);
+  probe?.(results);
   const valid = results.filter((r): r is string[] => r !== null && r.length > 0);
   if (valid.length === 0) return null;
 

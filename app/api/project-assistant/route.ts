@@ -913,6 +913,7 @@ export async function POST(request: Request) {
     const recordQcElevation = (spec: PlannerVisualSpec) => {
       if (!qcProbe) return;
       qcElevationDebug = {
+        ...(qcElevationDebug ?? {}),
         designCategory: spec.designCategory ?? null,
         shelfCount: spec.shelfCount ?? null,
         drawerCount: spec.drawerCount ?? null,
@@ -2021,10 +2022,13 @@ The homeowner likes the design direction — pivot to booking. In one or two war
           const closetSignal = `${conceptRenderSpec.designCategory ?? ""} ${conceptRenderSpec.scopeNotes ?? ""}`;
           if (/closet|wardrobe|hanging space|clothes/i.test(closetSignal)) {
             try {
-              const layout = await geminiDescribeClosetLayoutWithConsensus({
-                imageMimeType: renderedImages[0].mimeType,
-                imageDataBase64: renderedImages[0].dataBase64,
-              });
+              const layout = await geminiDescribeClosetLayoutWithConsensus(
+                {
+                  imageMimeType: renderedImages[0].mimeType,
+                  imageDataBase64: renderedImages[0].dataBase64,
+                },
+                (reads) => mergeQc({ layoutReads: reads }),
+              );
               if (layout && layout.length > 0) {
                 conceptRenderSpec = { ...conceptRenderSpec, closetLayout: layout };
               }
