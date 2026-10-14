@@ -1267,13 +1267,13 @@ export async function geminiDescribeClosetLayout(params: {
     model: defaultGeminiTextModel(),
     retryTransientErrors: true,
     systemInstruction:
-      "You inspect an AI-generated closet design image. Reading left to right, identify each vertical section of the closet. For each section reply with ONE of: DOUBLE-HANG (two clothing rods, shirts/jackets top and bottom), SINGLE-HANG (one rod, longer clothes), SHELVES (stacked shelves), DRAWERS (drawer bank), SHOES (shoe shelves/cubbies). Reply with ONLY a comma-separated list, e.g.: DOUBLE-HANG, DRAWERS, SINGLE-HANG",
+      "You inspect an AI-generated closet design image. Segment the closet into vertical sections by its DIVIDERS: find every full-height vertical panel/gable (thin white uprights running from the top shelf down to the floor) — each pair of dividers bounds ONE section, even when hanging clothes hide what is inside it. Judge each section by its contents: count each horizontal ROW OF HANGERS as one rod even when the rod itself is hidden behind clothes. Labels: DOUBLE-HANG (two hanger rows — short clothes top and bottom), SINGLE-HANG (one hanger row — longer clothes), SHELVES (stacked open shelves only), DRAWERS (a bank of drawer fronts only), SHOES (low shoe shelves/cubbies only), SHELVES+DRAWERS (a tower: open shelves in the upper part with drawer fronts below them in the SAME section). A hanging section with a few low shoe shelves under the clothes is still DOUBLE-HANG or SINGLE-HANG. Ignore the closet's own bifold/sliding doors at the sides. Typical closets have 3 sections. Reply with ONLY a comma-separated list, e.g.: DOUBLE-HANG, SHELVES+DRAWERS, SINGLE-HANG",
     contents: [
       {
         role: "user",
         parts: [
           {
-            text: "List the closet sections left to right as a comma-separated list using only: DOUBLE-HANG, SINGLE-HANG, SHELVES, DRAWERS, SHOES",
+            text: "First find the vertical divider panels, then list the closet sections left to right as a comma-separated list using only: DOUBLE-HANG, SINGLE-HANG, SHELVES, DRAWERS, SHOES, SHELVES+DRAWERS",
           },
           {
             inline_data: {
@@ -1288,11 +1288,11 @@ export async function geminiDescribeClosetLayout(params: {
   });
   if (!res.ok) return null;
   const { text } = extractParts(res.json);
-  const valid = ["DOUBLE-HANG", "SINGLE-HANG", "SHELVES", "DRAWERS", "SHOES"];
+  const valid = ["DOUBLE-HANG", "SINGLE-HANG", "SHELVES", "DRAWERS", "SHOES", "SHELVES+DRAWERS"];
   const sections = text
     .toUpperCase()
     .split(",")
-    .map((s) => s.trim())
+    .map((s) => s.trim().replace(/\s+/g, ""))
     .filter((s) => valid.includes(s));
   return sections.length > 0 ? sections : null;
 }
@@ -1309,11 +1309,15 @@ export async function geminiDescribeClosetLayoutWithConsensus(params: {
   imageMimeType: string;
   imageDataBase64: string;
 }): Promise<string[] | null> {
+  const staggered = async (i: number) => {
+    if (i > 0) await new Promise((r) => setTimeout(r, i * 300));
+    return geminiDescribeClosetLayout(params);
+  };
   const results = await Promise.all([
-    geminiDescribeClosetLayout(params),
-    geminiDescribeClosetLayout(params),
-    geminiDescribeClosetLayout(params),
-    geminiDescribeClosetLayout(params),
+    staggered(0),
+    staggered(1),
+    staggered(2),
+    staggered(3),
   ]);
   const valid = results.filter((r): r is string[] => r !== null && r.length > 0);
   if (valid.length === 0) return null;
@@ -1399,7 +1403,11 @@ export async function geminiExtractMillworkStructure(params: {
       "baseCabinets.present is true when there are lower cabinets with door/drawer fronts below open shelving; " +
       "count door and drawer fronts separately. " +
       "For simple floating shelves with no vertical divisions, return a single bay spanning 0 to 1. " +
-      "For closets: each section (double-hang, single-hang, drawer tower, shoe section) is a separate bay with its rods/drawers/shelves counts. " +
+      "For closets: FIRST find the bays by the full-height vertical divider panels (thin uprights running from the top shelf to the floor) — each pair of dividers bounds one bay, even when hanging clothes hide its contents. " +
+      "Each horizontal ROW OF HANGERS is one rod, even when the rod itself is hidden behind the clothes (two rows of hangers = rods:2, one row = rods:1). " +
+      "A tower bay commonly stacks open shelves in its upper part AND drawer fronts in its lower part — report BOTH counts in that single bay (e.g. shelves:3, drawers:3). " +
+      "Low shoe shelves beneath a hanging section belong to that hanging bay as shelves. " +
+      "Ignore the closet's own bifold or sliding doors at the sides — the millwork is the system inside the opening. " +
       "If no millwork is visible, return empty bays and all zeros.",
     contents: [
       {

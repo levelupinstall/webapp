@@ -193,22 +193,28 @@ export async function buildShopDrawingElevation(params: {
     if (spec.closetLayout && spec.closetLayout.length > 0) {
       const layout = spec.closetLayout;
       const n = layout.length;
-      zones = layout.map((section, i) => {
+      zones = layout.flatMap((section, i): MillworkZone[] => {
         const x0 = i / n;
         const x1 = (i + 1) / n;
         switch (section) {
           case "DOUBLE-HANG":
-            return { kind: "hanging", x0, x1, rods: 2, assumed: false };
+            return [{ kind: "hanging", x0, x1, rods: 2, assumed: false }];
           case "SINGLE-HANG":
-            return { kind: "hanging", x0, x1, rods: 1, assumed: false };
+            return [{ kind: "hanging", x0, x1, rods: 1, assumed: false }];
           case "SHELVES":
-            return { kind: "shelf-tower", x0, x1, shelves: 5, assumed: false };
+            return [{ kind: "shelf-tower", x0, x1, shelves: 5, assumed: false }];
           case "DRAWERS":
-            return { kind: "drawers", x0, x1, drawers: 3, assumed: false };
+            return [{ kind: "drawers", x0, x1, drawers: 3, assumed: false }];
           case "SHOES":
-            return { kind: "shoe-cubbies", x0, x1, rows: 2, assumed: false };
+            return [{ kind: "shoe-cubbies", x0, x1, rows: 2, assumed: false }];
+          case "SHELVES+DRAWERS":
+            // Tower: open shelves above a drawer bank in the same band.
+            return [
+              { kind: "shelf-tower", x0, x1, shelves: 3, assumed: false },
+              { kind: "drawers", x0, x1, drawers: 3, assumed: false },
+            ];
           default:
-            return { kind: "shelf-tower", x0, x1, shelves: 4, assumed: true };
+            return [{ kind: "shelf-tower", x0, x1, shelves: 4, assumed: true }];
         }
       });
       // Add a top shelf spanning full width (typical closet) if not already covered
