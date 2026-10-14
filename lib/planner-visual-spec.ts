@@ -82,8 +82,15 @@ export type MillworkZone = {
   x1: number;
   /** shelf-tower / open-shelves: number of shelf boards. */
   shelves?: number;
+  /** Vision-grounded shelf heights as fractions of wall height from the
+   * floor (0-1), one per shelf board. When present, the renderer places
+   * shelves at these real heights instead of evenly spaced defaults. */
+  shelfYs?: number[];
   /** hanging: number of rods (1 = single/long hang, 2 = double hang). */
   rods?: number;
+  /** Vision-grounded rod heights as fractions of wall height from the
+   * floor (0-1), one per rod. */
+  rodYs?: number[];
   /** shoe-cubbies: rows of cubbies. */
   rows?: number;
   /** drawers: number of drawer fronts. */
@@ -1593,7 +1600,7 @@ export function buildImageRenderDirective(
  * planner-visual-spec import cycle.
  */
 export function zonesFromConceptStructure(struct: {
-  bays: { x0: number; x1: number; shelves: number; rods?: number; drawers?: number }[];
+  bays: { x0: number; x1: number; shelves: number; rods?: number; drawers?: number; shelfYs?: number[]; rodYs?: number[] }[];
   baseCabinets: { present: boolean; doors: number; drawers: number };
   rods: number;
   drawers: number;
@@ -1616,6 +1623,7 @@ export function zonesFromConceptStructure(struct: {
         x0: b.x0,
         x1: b.x1,
         rods: bayRods,
+        ...(b.rodYs && b.rodYs.length > 0 ? { rodYs: b.rodYs } : {}),
         assumed: false,
       });
     }
@@ -1636,6 +1644,7 @@ export function zonesFromConceptStructure(struct: {
         x0: b.x0,
         x1: b.x1,
         shelves: bayShelves,
+        ...(b.shelfYs && b.shelfYs.length > 0 ? { shelfYs: b.shelfYs } : {}),
         assumed: false,
       });
     }

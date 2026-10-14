@@ -1349,8 +1349,10 @@ export async function geminiDescribeClosetLayoutWithConsensus(params: {
  * not just what the chat transcript mentioned.
  */
 export type ConceptMillworkStructure = {
-  /** Vertical bays (left to right), x0/x1 as fractions of the millwork width. */
-  bays: { x0: number; x1: number; shelves: number; rods?: number; drawers?: number }[];
+  /** Vertical bays (left to right), x0/x1 as fractions of the millwork width.
+   * shelfYs / rodYs: heights of each shelf board / rod as fractions of the
+   * wall height measured FROM THE FLOOR (0 = floor, 1 = top of wall). */
+  bays: { x0: number; x1: number; shelves: number; rods?: number; drawers?: number; shelfYs?: number[]; rodYs?: number[] }[];
   /** Base cabinets below the open shelving (doors/drawer fronts). */
   baseCabinets: { present: boolean; doors: number; drawers: number };
   /** Hanging rods visible (legacy global count, prefer per-bay rods). */
@@ -1378,11 +1380,13 @@ export async function geminiExtractMillworkStructure(params: {
       "You inspect an AI-generated interior concept image showing proposed finish-carpentry millwork (built-in shelving, bookcases, closet systems, floating shelves). " +
       "Analyze ONLY the proposed millwork (ignore the original room, furniture, and decor). " +
       "Reply with exactly one JSON object and nothing else, using this schema: " +
-      '{"bays":[{"x0":0,"x1":0.33,"shelves":0,"rods":2,"drawers":0},{"x0":0.33,"x1":0.66,"shelves":4,"rods":0,"drawers":3},{"x0":0.66,"x1":1,"shelves":0,"rods":1,"drawers":0}],"baseCabinets":{"present":false,"doors":0,"drawers":0},"rods":0,"drawers":0,"cubbyRows":2}. ' +
+      '{"bays":[{"x0":0,"x1":0.33,"shelves":0,"rods":2,"drawers":0,"shelfYs":[],"rodYs":[0.72,0.48]},{"x0":0.33,"x1":0.66,"shelves":4,"rods":0,"drawers":3,"shelfYs":[0.85,0.68,0.51,0.34],"rodYs":[]},{"x0":0.66,"x1":1,"shelves":0,"rods":1,"drawers":0,"shelfYs":[],"rodYs":[0.72]}],"baseCabinets":{"present":false,"doors":0,"drawers":0},"rods":0,"drawers":0,"cubbyRows":2}. ' +
       "Rules: bays are vertical divisions of the millwork left to right; x0/x1 are fractions of the total millwork width (0 to 1); " +
       "shelves counts horizontal shelf boards per bay; " +
       "rods counts hanging rods per bay (0 if none — e.g. a double-hang section has rods:2, single-hang has rods:1); " +
       "drawers counts drawer fronts per bay (0 if none); " +
+      "shelfYs lists the HEIGHT of each shelf board in that bay as a fraction of the wall height measured FROM THE FLOOR (0=floor, 1=top of wall) — e.g. a shelf halfway up the wall is 0.5; estimate carefully from the image, one value per shelf, matching the shelves count; " +
+      "rodYs does the same for each hanging rod in the bay (one value per rod, matching the rods count); " +
       "baseCabinets.present is true when there are lower cabinets with door/drawer fronts below open shelving; " +
       "count door and drawer fronts separately. " +
       "For simple floating shelves with no vertical divisions, return a single bay spanning 0 to 1. " +
@@ -1404,7 +1408,7 @@ export async function geminiExtractMillworkStructure(params: {
         ],
       },
     ],
-    generationConfig: { maxOutputTokens: 512, temperature: 0.1 },
+    generationConfig: { maxOutputTokens: 1024, temperature: 0.1 },
   });
   if (!res.ok) return null;
   const { text } = extractParts(res.json);
@@ -1412,14 +1416,23 @@ export async function geminiExtractMillworkStructure(params: {
   if (!m) return null;
   try {
     const parsed = JSON.parse(m[0]);
+    const cleanYs = (v: unknown, max: number): number[] =>
+      Array.isArray(v)
+        ? v
+            .map((n) => Number(n))
+            .filter((n) => Number.isFinite(n) && n > 0.03 && n < 0.99)
+            .slice(0, max)
+        : [];
     const bays = Array.isArray(parsed.bays)
       ? parsed.bays
-          .map((b: { x0?: number; x1?: number; shelves?: number; rods?: number; drawers?: number }) => ({
+          .map((b: { x0?: number; x1?: number; shelves?: number; rods?: number; drawers?: number; shelfYs?: unknown; rodYs?: unknown }) => ({
             x0: Math.max(0, Math.min(1, Number(b.x0) || 0)),
             x1: Math.max(0, Math.min(1, Number(b.x1) || 1)),
             shelves: Math.max(0, Math.min(20, Math.round(Number(b.shelves) || 0))),
             rods: Math.max(0, Math.min(4, Math.round(Number(b.rods) || 0))),
             drawers: Math.max(0, Math.min(10, Math.round(Number(b.drawers) || 0))),
+            shelfYs: cleanYs(b.shelfYs, 20),
+            rodYs: cleanYs(b.rodYs, 4),
           }))
           .filter((b: { x0: number; x1: number }) => b.x1 > b.x0)
       : [];

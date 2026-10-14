@@ -271,14 +271,49 @@ async function enrichSpecWithConceptStructure(
   conceptImage: { mimeType: string; dataBase64: string } | null,
 ): Promise<PlannerVisualSpec> {
   if (!conceptImage) return spec;
+  // Cabinet backstop signals (used by every exit path below): if the design
+  // text clearly includes lower cabinets (sideboard / credenza / hutch) the
+  // drawing must never ship without them — a missed vision read otherwise
+  // deletes the entire lower half of the design.
+  const cabinetSignal = `${spec.designCategory ?? ""} ${spec.scopeNotes ?? ""}`;
+  const impliesCabinets =
+    /sideboard|credenza|cabinet|hutch|buffet/i.test(cabinetSignal) &&
+    !/floating/i.test(cabinetSignal);
+  const withCabinetBackstop = (zs: PlannerVisualSpec["zones"]) =>
+    impliesCabinets && zs && !zs.some((z) => z.kind === "base-cabinets")
+      ? [
+          ...zs,
+          { kind: "base-cabinets" as const, x0: 0, x1: 1, assumed: false },
+        ]
+      : zs;
+  // When vision fails entirely, synthesize minimal zones from the spec so a
+  // built-in design doesn't degrade to a bare 2-shelf legacy drawing.
+  const fallbackSpec = (): PlannerVisualSpec => {
+    if (!impliesCabinets) return spec;
+    const base = spec.zones && spec.zones.length > 0 ? [...spec.zones] : [];
+    if (
+      (spec.shelfCount ?? 0) > 0 &&
+      !base.some((z) => z.kind === "open-shelves" || z.kind === "shelf-tower")
+    ) {
+      base.push({
+        kind: "open-shelves" as const,
+        x0: 0,
+        x1: 1,
+        shelves: spec.shelfCount ?? 0,
+        assumed: true,
+      });
+    }
+    const z = withCabinetBackstop(base);
+    return z && z.length > 0 ? { ...spec, zones: z } : spec;
+  };
   try {
     const struct = await geminiExtractMillworkStructureWithConsensus({
       imageMimeType: conceptImage.mimeType,
       imageDataBase64: conceptImage.dataBase64,
     });
-    if (!struct) return spec;
+    if (!struct) return fallbackSpec();
     const zones = zonesFromConceptStructure(struct);
-    if (!zones) return spec;
+    if (!zones) return fallbackSpec();
     console.info(
       `[project-assistant] vision-grounded zones: ${zones.length} zone(s), ` +
         `${struct.bays.length} bay(s), base=${struct.baseCabinets.present}`,
@@ -319,10 +354,10 @@ async function enrichSpecWithConceptStructure(
         ],
       };
     }
-    return { ...spec, zones };
+    return { ...spec, zones: withCabinetBackstop(zones) ?? zones };
   } catch (e) {
     console.warn("[project-assistant] concept-structure vision failed:", e);
-    return spec;
+    return fallbackSpec();
   }
 }
 

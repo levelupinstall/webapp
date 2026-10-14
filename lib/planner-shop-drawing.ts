@@ -156,8 +156,21 @@ export async function buildShopDrawingElevation(params: {
   const zonesEmpty = !zones || zones.length === 0;
   // For closets, the closet-specific layout (from geminiDescribeClosetLayout)
   // takes precedence over generic vision zones — it's more accurate for
-  // closet section types (double-hang, drawers, etc.).
-  const useClosetLayout = isCloset && spec.closetLayout && spec.closetLayout.length > 0;
+  // closet section types (double-hang, drawers, etc.). EXCEPTION: when the
+  // structure-vision zones carry grounded rod/shelf HEIGHTS (rodYs/shelfYs),
+  // they describe the same sections WITH vertical positions, so prefer them.
+  const zonesHaveHeights =
+    !!zones &&
+    zones.some(
+      (z) =>
+        (z.rodYs && z.rodYs.length > 0) || (z.shelfYs && z.shelfYs.length > 0),
+    );
+  const zonesHaveHanging = !!zones && zones.some((z) => z.kind === "hanging");
+  const useClosetLayout =
+    isCloset &&
+    spec.closetLayout &&
+    spec.closetLayout.length > 0 &&
+    !(zonesHaveHeights && zonesHaveHanging);
   if (useClosetLayout || (zonesEmpty && isCloset)) {
     // Use vision-derived closet layout when available (e.g. ["DOUBLE-HANG", "DRAWERS", "SINGLE-HANG"])
     // for an accurate section-by-section elevation. Falls back to a generic
@@ -376,9 +389,18 @@ export async function buildShopDrawingElevation(params: {
       if (zw < 20) continue;
       if (z.kind === "shelf-tower" || z.kind === "open-shelves") {
         const n = Math.max(1, Math.min(10, Math.round(z.shelves ?? 4)));
+        // Vision-grounded heights (fractions of wall height from floor)
+        // win over the evenly spaced defaults when available.
+        const groundedYs =
+          z.shelfYs && z.shelfYs.length > 0
+            ? [...z.shelfYs].sort((a, b) => a - b).map((f) => f * wallHIn)
+            : null;
         for (let i = 0; i < n; i++) {
           // Bottom-up: first shelf lowest.
-          const hIn = 24 + (i * (78 - 24)) / Math.max(1, n - 1);
+          const hIn =
+            groundedYs && groundedYs[i] !== undefined
+              ? groundedYs[i]
+              : 24 + (i * (78 - 24)) / Math.max(1, n - 1);
           const y = wy1 - hIn * pxPerIn;
           if (y < contentTopY || y > shoeTopY - 6) continue;
           shN += 1;
@@ -387,17 +409,34 @@ export async function buildShopDrawingElevation(params: {
         }
       } else if (z.kind === "hanging") {
         const nRods = Math.max(1, Math.min(3, Math.round(z.rods ?? 2)));
-        const rodHeights = nRods === 1 ? [66] : nRods === 2 ? [64, 32] : [80, 52, 30];
-        for (const hIn of rodHeights.slice(0, nRods)) {
+        // Vision-grounded rod heights win over fixed defaults (the fixed
+        // 64"/32" double-hang put the lower rod far below where the concept
+        // image shows it).
+        const rodHeights =
+          z.rodYs && z.rodYs.length > 0
+            ? [...z.rodYs]
+                .sort((a, b) => b - a)
+                .slice(0, nRods)
+                .map((f) => f * wallHIn)
+            : nRods === 1
+              ? [66]
+              : nRods === 2
+                ? [64, 32]
+                : [80, 52, 30];
+        for (const hIn of rodHeights) {
           const y = wy1 - hIn * pxPerIn;
           if (y < contentTopY || y > shoeTopY - 10) continue;
           drawRod(zx0, zw, y, hIn);
         }
         // Top shelf above the rods.
-        const topY = wy1 - 80 * pxPerIn;
+        const topShelfIn =
+          z.rodYs && z.rodYs.length > 0
+            ? Math.min(wallHIn - 8, Math.max(...z.rodYs) * wallHIn + 10)
+            : 80;
+        const topY = wy1 - topShelfIn * pxPerIn;
         if (topY > contentTopY && nRods <= 2) {
           shN += 1;
-          drawShelf(zx0, zw, topY, `SH-${shN}`, 80);
+          drawShelf(zx0, zw, topY, `SH-${shN}`, topShelfIn);
         }
       } else if (z.kind === "drawers") {
         const nD = Math.max(1, Math.min(6, Math.round(z.drawers ?? 3)));
@@ -436,8 +475,15 @@ export async function buildShopDrawingElevation(params: {
         // Floating shelves: horizontal boards mounted on the wall, no case.
         // Drawn as thick lines at their heights within the zone's x-range.
         const n = Math.max(1, Math.min(10, Math.round(z.shelves ?? 3)));
+        const groundedYs =
+          z.shelfYs && z.shelfYs.length > 0
+            ? [...z.shelfYs].sort((a, b) => a - b).map((f) => f * wallHIn)
+            : null;
         for (let i = 0; i < n; i++) {
-          const hIn = 30 + (i * (72 - 30)) / Math.max(1, n - 1);
+          const hIn =
+            groundedYs && groundedYs[i] !== undefined
+              ? groundedYs[i]
+              : 30 + (i * (72 - 30)) / Math.max(1, n - 1);
           const y = wy1 - hIn * pxPerIn;
           if (y < wy0 + 10 || y > wy1 - 10) continue;
           shN += 1;
