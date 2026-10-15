@@ -10,6 +10,7 @@ import {
   buildGeminiConceptImagePromptText,
   defaultGeminiImageModel,
   geminiCountShelvesWithConsensus,
+  drainVisionErrors,
   geminiDescribeClosetLayoutWithConsensus,
   geminiExtractMillworkStructureWithConsensus,
   geminiExtractPlannerVisualSpec,
@@ -2294,7 +2295,16 @@ The homeowner likes the design direction — pivot to booking. In one or two war
         hasCallWindow: intakeHasCallWindow,
       }),
       ...(responseImages.length ? { images: responseImages } : {}),
-      ...(qcElevationDebug ? { qcElevation: qcElevationDebug } : {}),
+      ...(qcElevationDebug
+        ? {
+            qcElevation: {
+              ...qcElevationDebug,
+              ...(qcProbe
+                ? { visionErrors: drainVisionErrors() }
+                : {}),
+            },
+          }
+        : {}),
       ...(hasAnyPriorRender &&
       responseImages.length === 0 &&
       allowConceptImage

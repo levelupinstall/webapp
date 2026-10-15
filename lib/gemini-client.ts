@@ -1169,6 +1169,21 @@ export async function geminiGenerateConceptImage(params: {
  * observed count, or null when the model can't answer / the call fails —
  * a null never blocks delivery on its own.
  */
+/**
+ * QC diagnostics: recent grounding-vision failures (HTTP status + body
+ * snippet, or parse failures with the model's raw text). The planner route
+ * drains this into the header-gated qcElevation probe so a test run shows
+ * WHY a read returned null instead of the failure being swallowed.
+ */
+const visionErrorLog: Array<{ fn: string; status: number; body: string }> = [];
+export function recordVisionError(fn: string, status: number, body: string): void {
+  visionErrorLog.push({ fn, status, body: body.slice(0, 240) });
+  if (visionErrorLog.length > 16) visionErrorLog.splice(0, visionErrorLog.length - 16);
+}
+export function drainVisionErrors(): Array<{ fn: string; status: number; body: string }> {
+  return visionErrorLog.splice(0, visionErrorLog.length);
+}
+
 export async function geminiCountShelvesInImage(params: {
   imageMimeType: string;
   imageDataBase64: string;
@@ -1197,10 +1212,10 @@ export async function geminiCountShelvesInImage(params: {
     ],
     generationConfig: { maxOutputTokens: 16, temperature: 0.1 },
   });
-  if (!res.ok) return null;
+  if (!res.ok) { recordVisionError("count", res.status, res.body); return null; }
   const { text } = extractParts(res.json);
   const m = text.trim().match(/(\d{1,2})/);
-  if (!m) return null;
+  if (!m) { recordVisionError("count-parse", 0, text); return null; }
   const n = parseInt(m[1], 10);
   return Number.isFinite(n) ? n : null;
 }
@@ -1295,7 +1310,7 @@ export async function geminiDescribeClosetLayout(params: {
     ],
     generationConfig: { maxOutputTokens: 64, temperature: 0.1 },
   });
-  if (!res.ok) return null;
+  if (!res.ok) { recordVisionError("layout", res.status, res.body); return null; }
   const { text } = extractParts(res.json);
   const valid = ["DOUBLE-HANG", "SINGLE-HANG", "SHELVES", "DRAWERS", "SHOES", "SHELVES+DRAWERS"];
   const sections = text
@@ -1303,6 +1318,7 @@ export async function geminiDescribeClosetLayout(params: {
     .split(",")
     .map((s) => s.trim().replace(/\s+/g, ""))
     .filter((s) => valid.includes(s));
+  if (sections.length === 0) recordVisionError("layout-parse", 0, text);
   return sections.length > 0 ? sections : null;
 }
 
@@ -1444,10 +1460,10 @@ export async function geminiExtractMillworkStructure(params: {
     ],
     generationConfig: { maxOutputTokens: 1024, temperature: 0.1 },
   });
-  if (!res.ok) return null;
+  if (!res.ok) { recordVisionError("structure", res.status, res.body); return null; }
   const { text } = extractParts(res.json);
   const m = text.match(/\{[\s\S]*\}/);
-  if (!m) return null;
+  if (!m) { recordVisionError("structure-parse", 0, text); return null; }
   try {
     const parsed = JSON.parse(m[0]);
     const cleanYs = (v: unknown, max: number): number[] =>
@@ -1529,7 +1545,7 @@ export async function geminiExtractScanDimensions(params: {
     ],
     generationConfig: { maxOutputTokens: 512, temperature: 0.1 },
   });
-  if (!res.ok) return null;
+  if (!res.ok) { recordVisionError("dimensions", res.status, res.body); return null; }
   const { text } = extractParts(res.json);
   const m = text.match(/\{[\s\S]*\}/);
   if (!m) return null;
