@@ -2282,6 +2282,14 @@ The homeowner likes the design direction — pivot to booking. In one or two war
       }
     }
 
+    const qcVisionErrors = qcProbe ? drainVisionErrors() : null;
+    const qcElevationOut = qcElevationDebug
+      ? Object.assign(
+          {},
+          qcElevationDebug,
+          qcVisionErrors ? { visionErrors: qcVisionErrors } : {},
+        )
+      : null;
     const responseBody: Record<string, unknown> = {
       reply: cleanReply,
       phase,
@@ -2295,16 +2303,7 @@ The homeowner likes the design direction — pivot to booking. In one or two war
         hasCallWindow: intakeHasCallWindow,
       }),
       ...(responseImages.length ? { images: responseImages } : {}),
-      ...(qcElevationDebug
-        ? {
-            qcElevation: {
-              ...qcElevationDebug,
-              ...(qcProbe
-                ? { visionErrors: drainVisionErrors() }
-                : {}),
-            },
-          }
-        : {}),
+      ...(qcElevationOut ? { qcElevation: qcElevationOut } : {}),
       ...(hasAnyPriorRender &&
       responseImages.length === 0 &&
       allowConceptImage
