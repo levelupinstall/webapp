@@ -1210,7 +1210,7 @@ export async function geminiCountShelvesInImage(params: {
         ],
       },
     ],
-    generationConfig: { maxOutputTokens: 16, temperature: 0.1 },
+    generationConfig: { maxOutputTokens: 512, temperature: 0.1 },
   });
   if (!res.ok) { recordVisionError("count", res.status, res.body); return null; }
   const { text } = extractParts(res.json);
@@ -1308,7 +1308,7 @@ export async function geminiDescribeClosetLayout(params: {
         ],
       },
     ],
-    generationConfig: { maxOutputTokens: 64, temperature: 0.1 },
+    generationConfig: { maxOutputTokens: 1024, temperature: 0.1 },
   });
   if (!res.ok) { recordVisionError("layout", res.status, res.body); return null; }
   const { text } = extractParts(res.json);
@@ -1458,7 +1458,7 @@ export async function geminiExtractMillworkStructure(params: {
         ],
       },
     ],
-    generationConfig: { maxOutputTokens: 1024, temperature: 0.1 },
+    generationConfig: { maxOutputTokens: 4096, temperature: 0.1 },
   });
   if (!res.ok) { recordVisionError("structure", res.status, res.body); return null; }
   const { text } = extractParts(res.json);
@@ -1543,7 +1543,7 @@ export async function geminiExtractScanDimensions(params: {
         ],
       },
     ],
-    generationConfig: { maxOutputTokens: 512, temperature: 0.1 },
+    generationConfig: { maxOutputTokens: 2048, temperature: 0.1 },
   });
   if (!res.ok) { recordVisionError("dimensions", res.status, res.body); return null; }
   const { text } = extractParts(res.json);
