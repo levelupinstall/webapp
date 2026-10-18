@@ -433,6 +433,25 @@ export async function buildShopDrawingElevation(params: {
         gableTopAt.set(bx, Math.max(gableTopAt.get(bx) ?? 0, t));
       }
     }
+    // Sections of one unit share a top line: cluster near-equal gable
+    // tops (within 12") to their group max so the case reads as one unit.
+    const topsSorted = [...new Set(gableTopAt.values())].sort((a, b) => a - b);
+    const clusterMax = new Map<number, number>();
+    let topGroup: number[] = [];
+    const flushTopGroup = () => {
+      if (topGroup.length) {
+        const m = Math.max(...topGroup);
+        for (const t of topGroup) clusterMax.set(t, m);
+        topGroup = [];
+      }
+    };
+    for (const t of topsSorted) {
+      if (topGroup.length && t - topGroup[topGroup.length - 1] > 12) flushTopGroup();
+      topGroup.push(t);
+    }
+    flushTopGroup();
+    for (const [gx, t] of gableTopAt) gableTopAt.set(gx, clusterMax.get(t) ?? t);
+
     let gbN = 0;
     const gableWpx = Math.max(7, 0.75 * pxPerIn);
     const gableXs: number[] = [];
@@ -640,13 +659,18 @@ export async function buildShopDrawingElevation(params: {
       }
     }
     // Part tags with leaders in the tag column (collision-avoided:
-    // nudged down when two parts are close vertically).
+    // nudged down when two parts are close vertically; spacing tightens
+    // when there are many parts so the column never runs off the sheet).
     const tagParts = parts.slice().sort((a, b) => a.y - b.y);
+    const tagSpacing =
+      tagParts.length > 1
+        ? Math.max(30, Math.min(44, (1170 - tagParts[0].y) / (tagParts.length - 1)))
+        : 44;
     let lastTagY = -100;
     for (const p of tagParts) {
       const tx = wx1 + tagColW / 2;
       let ty = p.y;
-      if (ty < lastTagY + 44) ty = lastTagY + 44;
+      if (ty < lastTagY + tagSpacing) ty = lastTagY + tagSpacing;
       lastTagY = ty;
       svg.push(
         `<line x1="${f1(p.cx)}" y1="${f1(p.y)}" x2="${f1(tx - 34)}" y2="${f1(ty)}" stroke="${DIM}" stroke-width="1.25"/>`,
