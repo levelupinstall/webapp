@@ -1428,7 +1428,7 @@ export async function geminiExtractMillworkStructure(params: {
       "You inspect an AI-generated interior concept image showing proposed finish-carpentry millwork (built-in shelving, bookcases, closet systems, floating shelves). " +
       "Analyze ONLY the proposed millwork (ignore the original room, furniture, and decor). " +
       "Reply with exactly one JSON object and nothing else, using this schema: " +
-      '{"bays":[{"x0":0,"x1":0.33,"shelves":0,"rods":2,"drawers":0,"shelfYs":[],"rodYs":[0.72,0.48],"topFrac":0.9},{"x0":0.33,"x1":0.66,"shelves":4,"rods":0,"drawers":3,"shelfYs":[0.85,0.68,0.51,0.34],"rodYs":[],"topFrac":0.9},{"x0":0.66,"x1":1,"shelves":0,"rods":1,"drawers":0,"shelfYs":[],"rodYs":[0.72],"topFrac":0.9}],"baseCabinets":{"present":false,"doors":0,"drawers":0,"counterTopFrac":0},"rods":0,"drawers":0,"cubbyRows":2,"unitX0":0,"unitX1":1}. ' +
+      '{"bays":[{"x0":0,"x1":0.33,"shelves":0,"rods":2,"drawers":0,"shelfYs":[],"rodYs":[0.72,0.48],"topFrac":0.9},{"x0":0.33,"x1":0.66,"shelves":4,"rods":0,"drawers":3,"shelfYs":[0.85,0.68,0.51,0.34],"rodYs":[],"topFrac":0.9},{"x0":0.66,"x1":1,"shelves":0,"rods":1,"drawers":0,"shelfYs":[],"rodYs":[0.72],"topFrac":0.9}],"baseCabinets":{"present":false,"doors":0,"drawers":0,"counterTopFrac":0},"rods":0,"drawers":0,"cubbyRows":0,"unitX0":0,"unitX1":1}. ' +
       "Rules: bays are vertical divisions of the millwork reported STRICTLY left to right as seen in the image — x0=0 is the millwork's LEFT edge in the picture, x1=1 its RIGHT edge; do not mirror the layout; x0/x1 are fractions of the total millwork width (0 to 1); " +
       "unitX0/unitX1 are where the millwork unit itself starts and ends across the IMAGE width (0=left edge of image, 1=right edge) — if the unit spans the whole wall opening, use 0 and 1; if it is a centered piece of furniture with visible wall on both sides, report e.g. 0.2 and 0.8; " +
       "shelves counts horizontal shelf boards per bay; " +
@@ -1440,6 +1440,7 @@ export async function geminiExtractMillworkStructure(params: {
       "count door and drawer fronts separately; " +
       "baseCabinets.counterTopFrac is the height of the TOP of those base cabinets (the countertop surface) as a fraction of the wall height from the floor (0 if there are no base cabinets); " +
       "each bay's topFrac is the height of the TOP of that bay's case or uprights as a fraction of the wall height from the floor — bays of one unit usually share the same topFrac; for floating shelves with no case, topFrac is just above the highest shelf; " +
+      "cubbyRows counts the rows of a dedicated shoe-cubby band (a grid of small shoe compartments running along the bottom of the unit) — an ordinary closet floor, one or two low shelves inside a single bay, and the unit's base/plinth are NOT shoe cubbies; report 0 unless you clearly see that shoe band; " +
       "For simple floating shelves with no vertical divisions, return a single bay spanning 0 to 1. " +
       "For closets: FIRST find the bays by the full-height vertical divider panels (thin uprights running from the top shelf to the floor) — each pair of dividers bounds one bay, even when hanging clothes hide its contents. " +
       "Each horizontal ROW OF HANGERS is one rod, even when the rod itself is hidden behind the clothes (two rows of hangers = rods:2, one row = rods:1). " +
@@ -1650,6 +1651,20 @@ export async function geminiExtractMillworkStructureWithConsensus(params: {
     grafted.unitX1 = avg(narrowExtents.map((r) => r.unitX1 ?? 1));
   }
   const medianG = grafted;
+
+  // Shoe cubbies get a MAJORITY vote too: the prompt's example once
+  // anchored reads into reporting a shoe band on plain closets, and a
+  // phantom band shoves every section up 22" in the drawing. Cubbies
+  // survive only when at least half the reads saw them.
+  const cubbyVotes = valid
+    .map((r) => r.cubbyRows ?? 0)
+    .filter((v) => v > 0)
+    .sort((a, b) => a - b);
+  if (cubbyVotes.length * 2 >= valid.length && cubbyVotes.length > 0) {
+    medianG.cubbyRows = cubbyVotes[Math.floor(cubbyVotes.length / 2)];
+  } else {
+    medianG.cubbyRows = 0;
+  }
 
   // Base cabinets get their own MAJORITY vote: a single missed read drops
   // the whole credenza/sideboard from the drawing even when the bays are
