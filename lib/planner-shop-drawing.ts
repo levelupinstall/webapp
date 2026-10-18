@@ -664,7 +664,7 @@ export async function buildShopDrawingElevation(params: {
     const tagParts = parts.slice().sort((a, b) => a.y - b.y);
     const tagSpacing =
       tagParts.length > 1
-        ? Math.max(30, Math.min(44, (1170 - tagParts[0].y) / (tagParts.length - 1)))
+        ? Math.max(30, Math.min(44, (H - 40 - tagParts[0].y) / (tagParts.length - 1)))
         : 44;
     let lastTagY = -100;
     for (const p of tagParts) {
