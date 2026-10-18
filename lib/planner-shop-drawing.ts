@@ -387,7 +387,71 @@ export async function buildShopDrawingElevation(params: {
       dimensions.push({ name: "Shoe cubby bank height", expectedIn: shoeHIn, known: !zonesAssumed });
     }
 
-    // Vertical dividers between side-by-side zones.
+    // Gables: the vertical case panels at the edges of each cased band
+    // (closet sections, hutch bays, towers) — drawn as real panels with
+    // material thickness and GB-n tags, not bare divider lines. Floating
+    // shelves have no case, so their boundaries stay plain lines.
+    const CASED_KINDS = new Set([
+      "hanging",
+      "shelf-tower",
+      "open-shelves",
+      "drawers",
+      "built-in-bays",
+      "base-cabinets",
+    ]);
+    const bandTopFor = (z: MillworkZone): number => {
+      if (z.kind === "hanging") {
+        return z.rodYs && z.rodYs.length > 0
+          ? Math.min(wallHIn - 4, Math.max(...z.rodYs) * wallHIn + 12)
+          : 82;
+      }
+      if (z.kind === "shelf-tower" || z.kind === "open-shelves") {
+        if (z.shelfYs && z.shelfYs.length > 0) {
+          const ys = [...z.shelfYs].sort((a, b) => a - b).map((f) => f * wallHIn);
+          const spacing = ys.length > 1 ? ys[ys.length - 1] - ys[ys.length - 2] : 10;
+          return Math.min(wallHIn - 4, ys[ys.length - 1] + spacing + 2);
+        }
+        return 84;
+      }
+      if (z.kind === "drawers") return Math.min(6, Math.round(z.drawers ?? 3)) * 9 + 6;
+      if (z.kind === "base-cabinets") return 24;
+      return wallHIn - 8; // built-in-bays run near full height
+    };
+    const bandTopIn = new Map<string, number>();
+    const bandEdges = new Map<string, [number, number]>();
+    for (const z of zones) {
+      if (!CASED_KINDS.has(z.kind)) continue;
+      const key = `${z.x0.toFixed(3)}|${z.x1.toFixed(3)}`;
+      bandEdges.set(key, [z.x0, z.x1]);
+      bandTopIn.set(key, Math.max(bandTopIn.get(key) ?? 0, bandTopFor(z)));
+    }
+    // Boundary x -> tallest gable top among the cased bands touching it.
+    const gableTopAt = new Map<number, number>();
+    for (const [key, [bx0, bx1]] of bandEdges) {
+      const t = bandTopIn.get(key)!;
+      for (const bx of [bx0, bx1]) {
+        gableTopAt.set(bx, Math.max(gableTopAt.get(bx) ?? 0, t));
+      }
+    }
+    let gbN = 0;
+    const gableWpx = Math.max(7, 0.75 * pxPerIn);
+    const gableXs: number[] = [];
+    for (const gx of [...gableTopAt.keys()].sort((a, b) => a - b)) {
+      const topIn = gableTopAt.get(gx)!;
+      const cxPx = wx0 + gx * wallPxW;
+      const topY = wy1 - topIn * pxPerIn;
+      if (shoeTopY - topY < 12) continue;
+      gbN += 1;
+      const tag = `GB-${gbN}`;
+      svg.push(
+        `<rect x="${f1(cxPx - gableWpx / 2)}" y="${f1(topY)}" width="${f1(gableWpx)}" height="${f1(shoeTopY - topY)}" fill="${MILL_FILL}" stroke="${MILL_EDGE}" stroke-width="2.5"/>`,
+      );
+      parts.push({ tag, hIn: topIn, y: topY, cx: cxPx });
+      dimensions.push({ name: `${tag} height`, expectedIn: r1(topIn), known: !zonesAssumed });
+      gableXs.push(gx);
+    }
+
+    // Non-cased boundaries keep the plain divider line.
     const dividers = new Set<number>();
     for (const z of zones) {
       if (z.kind === "shoe-cubbies") continue;
@@ -396,6 +460,7 @@ export async function buildShopDrawingElevation(params: {
     }
     for (const dx of dividers) {
       if (dx <= 0.001 || dx >= 0.999) continue;
+      if (gableXs.some((g) => Math.abs(g - dx) < 0.002)) continue;
       const px = wx0 + dx * wallPxW;
       svg.push(
         `<line x1="${f1(px)}" y1="${f1(wy0)}" x2="${f1(px)}" y2="${f1(shoeTopY)}" stroke="${MILL_EDGE}" stroke-width="2.5"/>`,
@@ -526,10 +591,11 @@ export async function buildShopDrawingElevation(params: {
           const bx1 = zx0 + bay.x1 * zw;
           const bw = bx1 - bx0;
           if (bw < 16) continue;
-          // Bay vertical dividers.
+          // Bay gables: real panels with thickness, like the band gables.
+          const bayTopY = wy1 - (wallHIn - 8) * pxPerIn;
           svg.push(
-            `<line x1="${f1(bx0)}" y1="${f1(wy0)}" x2="${f1(bx0)}" y2="${f1(shoeTopY)}" stroke="${MILL_EDGE}" stroke-width="2.5"/>`,
-            `<line x1="${f1(bx1)}" y1="${f1(wy0)}" x2="${f1(bx1)}" y2="${f1(shoeTopY)}" stroke="${MILL_EDGE}" stroke-width="2.5"/>`,
+            `<rect x="${f1(bx0 - gableWpx / 2)}" y="${f1(bayTopY)}" width="${f1(gableWpx)}" height="${f1(shoeTopY - bayTopY)}" fill="${MILL_FILL}" stroke="${MILL_EDGE}" stroke-width="2.5"/>`,
+            `<rect x="${f1(bx1 - gableWpx / 2)}" y="${f1(bayTopY)}" width="${f1(gableWpx)}" height="${f1(shoeTopY - bayTopY)}" fill="${MILL_FILL}" stroke="${MILL_EDGE}" stroke-width="2.5"/>`,
           );
           // Base cabinet below (if any): box with door/drawer front lines.
           let shelfTopY = shoeTopY;

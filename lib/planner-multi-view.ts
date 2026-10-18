@@ -78,6 +78,11 @@ export async function buildSideElevation(params: {
   const caseX = x0;
   svg.push(`<rect x="${f1(caseX)}" y="${f1(y0)}" width="${f1(drawW)}" height="${f1(drawH)}" fill="${MILL_FILL}" stroke="${MILL_EDGE}" stroke-width="3"/>`);
 
+  // Front gable: the case's front-edge panel in profile (¾" material).
+  const gableWPx = Math.max(4, 0.75 * pxPerIn);
+  svg.push(`<rect x="${f1(caseX + drawW - gableWPx)}" y="${f1(y0)}" width="${f1(gableWPx)}" height="${f1(drawH)}" fill="${MILL_FILL}" stroke="${MILL_EDGE}" stroke-width="2.5"/>`);
+  svg.push(`<text x="${f1(caseX + drawW + 10)}" y="${f1(y0 + drawH - 8)}" font-family="sans-serif" font-size="10" fill="${DIM}">GABLE</text>`);
+
   // Shelves (horizontal lines in side view)
   const shelfGap = drawH / (shelfCount + 1);
   for (let i = 1; i <= shelfCount; i++) {
