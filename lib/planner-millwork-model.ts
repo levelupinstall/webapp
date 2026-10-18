@@ -307,6 +307,21 @@ export function buildMillworkModel(
     };
   });
 
+  // Empty sections (a TV opening or blank bay the read segmented but
+  // found nothing in) are NOT casework: no gables, no case top, and they
+  // must not lift the unit's overall top.
+  for (const s of sections) {
+    const hasContent = s.shelvesIn.length > 0 || s.rodsIn.length > 0 || s.drawers !== null;
+    if (!hasContent) s.cased = false;
+  }
+  const contentTops = sections
+    .filter((s) => s.shelvesIn.length > 0 || s.rodsIn.length > 0 || s.drawers !== null)
+    .map((s) => s.topIn);
+  for (const s of sections) {
+    const hasContent = s.shelvesIn.length > 0 || s.rodsIn.length > 0 || s.drawers !== null;
+    if (!hasContent && contentTops.length > 0) s.topIn = Math.max(...contentTops);
+  }
+
   // ---- Gables: boundaries of cased sections, tops clustered per unit ----
   const boundaryTop = new Map<number, number>();
   for (const s of sections) {
@@ -346,7 +361,7 @@ export function buildMillworkModel(
   ];
   const unitX0In = allX.length ? Math.min(...allX) : 0;
   const unitX1In = allX.length ? Math.max(...allX) : wallWIn;
-  const unitTopIn = sections.length ? Math.max(...sections.map((s) => s.topIn)) : 84;
+  const unitTopIn = contentTops.length ? Math.max(...contentTops) : 84;
 
   return {
     wallWIn,
