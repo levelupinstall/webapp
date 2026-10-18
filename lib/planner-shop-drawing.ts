@@ -889,10 +889,13 @@ export async function buildShopDrawingElevation(params: {
   );
   rows.forEach(([k, v], i) => {
     const ry = tbY + 64 + i * rowH;
+    // Shrink long values (e.g. long design-category names) so they never
+    // overflow the title box.
+    const vSize = v.length > 46 ? 10.5 : v.length > 38 ? 11.5 : 13;
     svg.push(
       `<line x1="${tbX}" y1="${ry}" x2="${tbX + tbW}" y2="${ry}" stroke="${INK}" stroke-width="1"/>`,
       `<text x="${tbX + 12}" y="${ry + 18}" font-family="DejaVu Sans" font-size="11" fill="${DIM}" letter-spacing="1">${k}</text>`,
-      `<text x="${tbX + 12}" y="${ry + 36}" font-family="DejaVu Sans" font-size="13" font-weight="bold" fill="${INK}">${v}</text>`,
+      `<text x="${tbX + 12}" y="${ry + 36}" font-family="DejaVu Sans" font-size="${vSize}" font-weight="bold" fill="${INK}">${v}</text>`,
     );
   });
 
