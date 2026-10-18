@@ -12,6 +12,7 @@
 
 import type { PlannerVisualSpec, MillworkZone } from "@/lib/planner-visual-spec";
 import { ensurePlannerFonts, svgFontStyle } from "./planner-svg-font";
+import { buildMillworkModel, type MillworkModel } from "./planner-millwork-model";
 
 export type ShopDrawingDimension = {
   name: string;
@@ -23,6 +24,9 @@ export type ShopDrawingResult = {
   mimeType: "image/png";
   dataBase64: string;
   dimensions: ShopDrawingDimension[];
+  /** The parametric model this elevation was drawn from (zones path only);
+   * the side/plan/isometric views render from the same model. */
+  model?: MillworkModel | null;
 };
 
 const W = 1600;
@@ -151,6 +155,7 @@ export async function buildShopDrawingElevation(params: {
   // (shelf towers, hanging sections with rods, shoe cubbies, drawers).
   // Non-zoned shelf designs use the legacy centered-shelf layout.
   const isCloset = /closet|wardrobe/i.test(`${spec.designCategory ?? ""} ${spec.scopeNotes ?? ""}`) || !!(spec.closetLayout && spec.closetLayout.length > 0);
+  let builtModel: MillworkModel | null = null;
   let zones: MillworkZone[] | null = spec.zones && spec.zones.length > 0 ? spec.zones : null;
   let zonesAssumed = false;
   const zonesEmpty = !zones || zones.length === 0;
@@ -387,274 +392,127 @@ export async function buildShopDrawingElevation(params: {
       dimensions.push({ name: "Shoe cubby bank height", expectedIn: shoeHIn, known: !zonesAssumed });
     }
 
-    // Gables: the vertical case panels at the edges of each cased band
-    // (closet sections, hutch bays, towers) — drawn as real panels with
-    // material thickness and GB-n tags, not bare divider lines. Floating
-    // shelves have no case, so their boundaries stay plain lines.
-    const CASED_KINDS = new Set([
-      "hanging",
-      "shelf-tower",
-      "open-shelves",
-      "drawers",
-      "built-in-bays",
-      "base-cabinets",
-    ]);
-    const bandTopFor = (z: MillworkZone): number => {
-      if (z.kind === "hanging") {
-        return z.rodYs && z.rodYs.length > 0
-          ? Math.min(wallHIn - 4, Math.max(...z.rodYs) * wallHIn + 12)
-          : 82;
-      }
-      if (z.kind === "shelf-tower" || z.kind === "open-shelves") {
-        if (z.shelfYs && z.shelfYs.length > 0) {
-          const ys = [...z.shelfYs].sort((a, b) => a - b).map((f) => f * wallHIn);
-          const spacing = ys.length > 1 ? ys[ys.length - 1] - ys[ys.length - 2] : 10;
-          return Math.min(wallHIn - 4, ys[ys.length - 1] + spacing + 2);
+    // ---- Parametric model: all views render from this one structure ----
+    const model = buildMillworkModel({ ...spec, zones }, wallWIn, wallHIn);
+    builtModel = model;
+
+    if (model) {
+      const yOf = (inAFF: number) => wy1 - inAFF * pxPerIn;
+      const xOf = (inX: number) => wx0 + inX * pxPerIn;
+
+      // Base cabinet runs: box + counted fronts (drawer pulls, door knobs).
+      for (const run of model.baseRuns) {
+        const rx0 = xOf(run.x0In);
+        const rx1 = xOf(run.x1In);
+        const rTop = yOf(run.heightIn);
+        svg.push(
+          `<rect x="${f1(rx0)}" y="${f1(rTop)}" width="${f1(rx1 - rx0)}" height="${f1(wy1 - rTop)}" fill="${MILL_FILL}" stroke="${MILL_EDGE}" stroke-width="2.5"/>`,
+        );
+        for (const fr of run.fronts) {
+          const fx0 = xOf(fr.x0In);
+          const fx1 = xOf(fr.x1In);
+          const fy0 = yOf(fr.y1In);
+          const fy1 = yOf(fr.y0In);
+          svg.push(
+            `<rect x="${f1(fx0 + 1.5)}" y="${f1(fy0 + 1.5)}" width="${f1(Math.max(0, fx1 - fx0 - 3))}" height="${f1(Math.max(0, fy1 - fy0 - 3))}" fill="none" stroke="${MILL_EDGE}" stroke-width="1.25"/>`,
+          );
+          if (fr.kind === "drawer") {
+            const cy = (fy0 + fy1) / 2;
+            svg.push(
+              `<line x1="${f1((fx0 + fx1) / 2 - 11)}" y1="${f1(cy)}" x2="${f1((fx0 + fx1) / 2 + 11)}" y2="${f1(cy)}" stroke="${MILL_EDGE}" stroke-width="2.5"/>`,
+            );
+          } else {
+            svg.push(
+              `<circle cx="${f1(fx1 - 9)}" cy="${f1((fy0 + fy1) / 2)}" r="2.6" fill="${MILL_EDGE}"/>`,
+            );
+          }
         }
-        return 84;
+        dimensions.push({ name: "Base cabinet height", expectedIn: r1(run.heightIn), known: !run.assumed });
+        dimensions.push({ name: "Base cabinet width", expectedIn: r1(run.x1In - run.x0In), known: !run.assumed });
       }
-      if (z.kind === "drawers") return Math.min(6, Math.round(z.drawers ?? 3)) * 9 + 6;
-      if (z.kind === "base-cabinets") return 24;
-      return wallHIn - 8; // built-in-bays run near full height
-    };
-    const bandTopIn = new Map<string, number>();
-    const bandEdges = new Map<string, [number, number]>();
-    for (const z of zones) {
-      if (!CASED_KINDS.has(z.kind)) continue;
-      const key = `${z.x0.toFixed(3)}|${z.x1.toFixed(3)}`;
-      bandEdges.set(key, [z.x0, z.x1]);
-      bandTopIn.set(key, Math.max(bandTopIn.get(key) ?? 0, bandTopFor(z)));
-    }
-    // Boundary x -> tallest gable top among the cased bands touching it.
-    const gableTopAt = new Map<number, number>();
-    for (const [key, [bx0, bx1]] of bandEdges) {
-      const t = bandTopIn.get(key)!;
-      for (const bx of [bx0, bx1]) {
-        gableTopAt.set(bx, Math.max(gableTopAt.get(bx) ?? 0, t));
+
+      // Gables: real panels with material thickness + GB-n tags.
+      let gbN = 0;
+      const gableWpx = Math.max(7, 0.75 * pxPerIn);
+      for (const g of model.gables) {
+        const cxPx = xOf(g.xIn);
+        const topY = yOf(g.topIn);
+        const botY = yOf(g.bottomIn);
+        if (botY - topY < 12) continue;
+        gbN += 1;
+        const tag = `GB-${gbN}`;
+        svg.push(
+          `<rect x="${f1(cxPx - gableWpx / 2)}" y="${f1(topY)}" width="${f1(gableWpx)}" height="${f1(botY - topY)}" fill="${MILL_FILL}" stroke="${MILL_EDGE}" stroke-width="2.5"/>`,
+        );
+        parts.push({ tag, hIn: g.topIn, y: topY, cx: cxPx });
+        dimensions.push({ name: `${tag} height`, expectedIn: r1(g.topIn - g.bottomIn), known: !zonesAssumed });
       }
-    }
-    // Sections of one unit share a top line: cluster near-equal gable
-    // tops (within 12") to their group max so the case reads as one unit.
-    const topsSorted = [...new Set(gableTopAt.values())].sort((a, b) => a - b);
-    const clusterMax = new Map<number, number>();
-    let topGroup: number[] = [];
-    const flushTopGroup = () => {
-      if (topGroup.length) {
-        const m = Math.max(...topGroup);
-        for (const t of topGroup) clusterMax.set(t, m);
-        topGroup = [];
+
+      // Non-cased (floating) section edges stay plain divider lines.
+      const floatEdges = new Set<number>();
+      for (const s of model.sections) {
+        if (s.cased) continue;
+        floatEdges.add(s.x0In);
+        floatEdges.add(s.x1In);
       }
-    };
-    for (const t of topsSorted) {
-      if (topGroup.length && t - topGroup[topGroup.length - 1] > 12) flushTopGroup();
-      topGroup.push(t);
-    }
-    flushTopGroup();
-    for (const [gx, t] of gableTopAt) gableTopAt.set(gx, clusterMax.get(t) ?? t);
+      for (const ex of floatEdges) {
+        if (ex <= 0.01 || ex >= wallWIn - 0.01) continue;
+        if (model.gables.some((g) => Math.abs(g.xIn - ex) < 0.1)) continue;
+        const px = xOf(ex);
+        svg.push(
+          `<line x1="${f1(px)}" y1="${f1(wy0)}" x2="${f1(px)}" y2="${f1(shoeTopY)}" stroke="${MILL_EDGE}" stroke-width="2.5"/>`,
+        );
+      }
 
-    let gbN = 0;
-    const gableWpx = Math.max(7, 0.75 * pxPerIn);
-    const gableXs: number[] = [];
-    for (const gx of [...gableTopAt.keys()].sort((a, b) => a - b)) {
-      const topIn = gableTopAt.get(gx)!;
-      const cxPx = wx0 + gx * wallPxW;
-      const topY = wy1 - topIn * pxPerIn;
-      if (shoeTopY - topY < 12) continue;
-      gbN += 1;
-      const tag = `GB-${gbN}`;
-      svg.push(
-        `<rect x="${f1(cxPx - gableWpx / 2)}" y="${f1(topY)}" width="${f1(gableWpx)}" height="${f1(shoeTopY - topY)}" fill="${MILL_FILL}" stroke="${MILL_EDGE}" stroke-width="2.5"/>`,
-      );
-      parts.push({ tag, hIn: topIn, y: topY, cx: cxPx });
-      dimensions.push({ name: `${tag} height`, expectedIn: r1(topIn), known: !zonesAssumed });
-      gableXs.push(gx);
-    }
-
-    // Non-cased boundaries keep the plain divider line.
-    const dividers = new Set<number>();
-    for (const z of zones) {
-      if (z.kind === "shoe-cubbies") continue;
-      dividers.add(z.x0);
-      dividers.add(z.x1);
-    }
-    for (const dx of dividers) {
-      if (dx <= 0.001 || dx >= 0.999) continue;
-      if (gableXs.some((g) => Math.abs(g - dx) < 0.002)) continue;
-      const px = wx0 + dx * wallPxW;
-      svg.push(
-        `<line x1="${f1(px)}" y1="${f1(wy0)}" x2="${f1(px)}" y2="${f1(shoeTopY)}" stroke="${MILL_EDGE}" stroke-width="2.5"/>`,
-      );
-    }
-
-    for (const z of zones) {
-      if (z.kind === "shoe-cubbies") continue;
-      const zx0 = wx0 + z.x0 * wallPxW + 4;
-      const zx1 = wx0 + z.x1 * wallPxW - 4;
-      const zw = zx1 - zx0;
-      if (zw < 20) continue;
-      if (z.kind === "shelf-tower" || z.kind === "open-shelves") {
-        const n = Math.max(1, Math.min(10, Math.round(z.shelves ?? 4)));
-        // Vision-grounded heights (fractions of wall height from floor)
-        // win over the evenly spaced defaults when available.
-        const groundedYs =
-          z.shelfYs && z.shelfYs.length > 0
-            ? [...z.shelfYs].sort((a, b) => a - b).map((f) => f * wallHIn)
-            : null;
-        for (let i = 0; i < n; i++) {
-          // Bottom-up: first shelf lowest.
-          const hIn =
-            groundedYs && groundedYs[i] !== undefined
-              ? groundedYs[i]
-              : 24 + (i * (78 - 24)) / Math.max(1, n - 1);
-          const y = wy1 - hIn * pxPerIn;
+      // Sections: drawer stacks, rods, shelves — all from the model.
+      for (const s of model.sections) {
+        const sx0 = xOf(s.x0In) + 4;
+        const sx1 = xOf(s.x1In) - 4;
+        const sw = sx1 - sx0;
+        if (sw < 16) continue;
+        if (s.drawers) {
+          const drH = s.drawers.eachIn * pxPerIn;
+          let yBot = shoeTopY;
+          for (let i = 0; i < s.drawers.count; i++) {
+            const yTop = yBot - drH;
+            if (yTop < contentTopY) break;
+            drN += 1;
+            const tag = `DR-${drN}`;
+            svg.push(
+              `<rect x="${f1(sx0)}" y="${f1(yTop)}" width="${f1(sw)}" height="${f1(drH)}" fill="${MILL_FILL}" stroke="${MILL_EDGE}" stroke-width="2.5"/>`,
+              `<line x1="${f1(sx0 + sw / 2 - 14)}" y1="${f1(yTop + drH / 2)}" x2="${f1(sx0 + sw / 2 + 14)}" y2="${f1(yTop + drH / 2)}" stroke="${MILL_EDGE}" stroke-width="3"/>`,
+            );
+            const hIn = (wy1 - (yTop + drH / 2)) / pxPerIn;
+            parts.push({ tag, hIn, y: yTop + drH / 2, cx: sx0 + sw / 2 });
+            dimensions.push({ name: `${tag} center A.F.F.`, expectedIn: r1(hIn), known: !zonesAssumed });
+            yBot = yTop - 4;
+          }
+        }
+        for (const hIn of s.rodsIn) {
+          const y = yOf(hIn);
+          if (y < contentTopY || y > shoeTopY - 10) continue;
+          drawRod(sx0, sw, y, hIn);
+        }
+        // Top shelf above the rods when the reads didn't ground one there.
+        if (
+          s.rodsIn.length > 0 &&
+          s.rodsIn.length <= 2 &&
+          s.cased &&
+          !s.shelvesIn.some((y) => y > s.rodsIn[0])
+        ) {
+          const topShelfIn = s.topIn - 3;
+          const y = yOf(topShelfIn);
+          if (y > contentTopY) {
+            shN += 1;
+            drawShelf(sx0, sw, y, `SH-${shN}`, topShelfIn);
+          }
+        }
+        for (const hIn of s.shelvesIn) {
+          const y = yOf(hIn);
           if (y < contentTopY || y > shoeTopY - 6) continue;
           shN += 1;
-          drawShelf(zx0, zw, y, `SH-${shN}`, hIn);
-          dimensions.push({ name: `SH-${shN} length`, expectedIn: r1(zw / pxPerIn), known: !zonesAssumed });
-        }
-      } else if (z.kind === "hanging") {
-        const nRods = Math.max(1, Math.min(3, Math.round(z.rods ?? 2)));
-        // Vision-grounded rod heights win over fixed defaults (the fixed
-        // 64"/32" double-hang put the lower rod far below where the concept
-        // image shows it).
-        const rodHeights =
-          z.rodYs && z.rodYs.length > 0
-            ? [...z.rodYs]
-                .sort((a, b) => b - a)
-                .slice(0, nRods)
-                .map((f) => f * wallHIn)
-            : nRods === 1
-              ? [66]
-              : nRods === 2
-                ? [64, 32]
-                : [80, 52, 30];
-        for (const hIn of rodHeights) {
-          const y = wy1 - hIn * pxPerIn;
-          if (y < contentTopY || y > shoeTopY - 10) continue;
-          drawRod(zx0, zw, y, hIn);
-        }
-        // Top shelf above the rods.
-        const topShelfIn =
-          z.rodYs && z.rodYs.length > 0
-            ? Math.min(wallHIn - 8, Math.max(...z.rodYs) * wallHIn + 10)
-            : 80;
-        const topY = wy1 - topShelfIn * pxPerIn;
-        if (topY > contentTopY && nRods <= 2) {
-          shN += 1;
-          drawShelf(zx0, zw, topY, `SH-${shN}`, topShelfIn);
-        }
-      } else if (z.kind === "drawers") {
-        const nD = Math.max(1, Math.min(6, Math.round(z.drawers ?? 3)));
-        const drH = 9 * pxPerIn;
-        let y = shoeTopY - 6;
-        for (let i = 0; i < nD; i++) {
-          const yTop = y - drH;
-          if (yTop < contentTopY) break;
-          drN += 1;
-          const tag = `DR-${drN}`;
-          svg.push(
-            `<rect x="${f1(zx0)}" y="${f1(yTop)}" width="${f1(zw)}" height="${f1(drH)}" fill="${MILL_FILL}" stroke="${MILL_EDGE}" stroke-width="2.5"/>`,
-            `<line x1="${f1(zx0 + zw / 2 - 14)}" y1="${f1(yTop + drH / 2)}" x2="${f1(zx0 + zw / 2 + 14)}" y2="${f1(yTop + drH / 2)}" stroke="${MILL_EDGE}" stroke-width="3"/>`,
-          );
-          const hIn = (wy1 - (yTop + drH / 2)) / pxPerIn;
-          parts.push({ tag, hIn, y: yTop + drH / 2, cx: zx0 + zw / 2 });
-          dimensions.push({ name: `${tag} center A.F.F.`, expectedIn: r1(hIn), known: !zonesAssumed });
-          y = yTop - 4;
-        }
-      } else if (z.kind === "base-cabinets") {
-        // Base cabinet/credenza: low rectangle spanning the zone width.
-        const cabHIn = 24;
-        const cabH = cabHIn * pxPerIn;
-        const yTop = wy1 - cabH;
-        svg.push(
-          `<rect x="${f1(zx0)}" y="${f1(yTop)}" width="${f1(zw)}" height="${f1(cabH)}" fill="${MILL_FILL}" stroke="${MILL_EDGE}" stroke-width="2.5"/>`,
-        );
-        // Door divisions (assume 4 doors)
-        for (let di = 1; di < 4; di++) {
-          const dx = zx0 + (di * zw) / 4;
-          svg.push(`<line x1="${f1(dx)}" y1="${f1(yTop)}" x2="${f1(dx)}" y2="${f1(wy1)}" stroke="${MILL_EDGE}" stroke-width="1.5"/>`);
-        }
-        dimensions.push({ name: "Base cabinet height", expectedIn: cabHIn, known: !zonesAssumed });
-        dimensions.push({ name: "Base cabinet width", expectedIn: r1(zw / pxPerIn), known: !zonesAssumed });
-      } else if (z.kind === "floating-shelves") {
-        // Floating shelves: horizontal boards mounted on the wall, no case.
-        // Drawn as thick lines at their heights within the zone's x-range.
-        const n = Math.max(1, Math.min(10, Math.round(z.shelves ?? 3)));
-        const groundedYs =
-          z.shelfYs && z.shelfYs.length > 0
-            ? [...z.shelfYs].sort((a, b) => a - b).map((f) => f * wallHIn)
-            : null;
-        for (let i = 0; i < n; i++) {
-          const hIn =
-            groundedYs && groundedYs[i] !== undefined
-              ? groundedYs[i]
-              : 30 + (i * (72 - 30)) / Math.max(1, n - 1);
-          const y = wy1 - hIn * pxPerIn;
-          if (y < wy0 + 10 || y > wy1 - 10) continue;
-          shN += 1;
-          // Shelf board: thick horizontal line with slight depth indication
-          svg.push(
-            `<rect x="${f1(zx0)}" y="${f1(y - shelfThickPx / 2)}" width="${f1(zw)}" height="${f1(shelfThickPx)}" fill="${MILL_FILL}" stroke="${MILL_EDGE}" stroke-width="2.5"/>`,
-          );
-          parts.push({ tag: `SH-${shN}`, hIn, y, cx: zx0 + zw / 2 });
-          dimensions.push({ name: `SH-${shN} height A.F.F.`, expectedIn: r1(hIn), known: !zonesAssumed });
-          dimensions.push({ name: `SH-${shN} length`, expectedIn: r1(zw / pxPerIn), known: !zonesAssumed });
-        }
-      } else if (z.kind === "built-in-bays" && z.bays && z.bays.length > 0) {
-        // Vision-grounded built-in: vertical bays with per-bay shelf counts
-        // and optional base cabinets. This is what makes the elevation match
-        // the concept image instead of drawing a generic empty box.
-        const bays = z.bays;
-        for (const bay of bays) {
-          const bx0 = zx0 + bay.x0 * zw;
-          const bx1 = zx0 + bay.x1 * zw;
-          const bw = bx1 - bx0;
-          if (bw < 16) continue;
-          // Bay gables: real panels with thickness, like the band gables.
-          const bayTopY = wy1 - (wallHIn - 8) * pxPerIn;
-          svg.push(
-            `<rect x="${f1(bx0 - gableWpx / 2)}" y="${f1(bayTopY)}" width="${f1(gableWpx)}" height="${f1(shoeTopY - bayTopY)}" fill="${MILL_FILL}" stroke="${MILL_EDGE}" stroke-width="2.5"/>`,
-            `<rect x="${f1(bx1 - gableWpx / 2)}" y="${f1(bayTopY)}" width="${f1(gableWpx)}" height="${f1(shoeTopY - bayTopY)}" fill="${MILL_FILL}" stroke="${MILL_EDGE}" stroke-width="2.5"/>`,
-          );
-          // Base cabinet below (if any): box with door/drawer front lines.
-          let shelfTopY = shoeTopY;
-          const bc = bay.baseCabinet;
-          if (bc && (bc.doors > 0 || bc.drawers > 0)) {
-            const cabHIn = 30;
-            const cabTopY = shoeTopY - cabHIn * pxPerIn;
-            const fronts = Math.max(1, bc.doors + bc.drawers);
-            const fw = bw / fronts;
-            svg.push(
-              `<rect x="${f1(bx0)}" y="${f1(cabTopY)}" width="${f1(bw)}" height="${f1(shoeTopY - cabTopY)}" fill="${MILL_FILL}" stroke="${MILL_EDGE}" stroke-width="2.5"/>`,
-            );
-            for (let fi = 1; fi < fronts; fi++) {
-              const fx = bx0 + fi * fw;
-              svg.push(`<line x1="${f1(fx)}" y1="${f1(cabTopY)}" x2="${f1(fx)}" y2="${f1(shoeTopY)}" stroke="${MILL_EDGE}" stroke-width="1.5"/>`);
-            }
-            // Drawer fronts get a pull line; doors are plain.
-            for (let fi = 0; fi < fronts; fi++) {
-              if (fi < bc.drawers) {
-                const fx0 = bx0 + fi * fw;
-                svg.push(`<line x1="${f1(fx0 + fw / 2 - 12)}" y1="${f1(cabTopY + 14)}" x2="${f1(fx0 + fw / 2 + 12)}" y2="${f1(cabTopY + 14)}" stroke="${MILL_EDGE}" stroke-width="2.5"/>`);
-              }
-            }
-            shelfTopY = cabTopY;
-            dimensions.push({ name: "Base cabinet height", expectedIn: cabHIn, known: !zonesAssumed });
-          }
-          // Shelves within the bay, bottom-up above the base cabinet.
-          const n = Math.max(0, Math.min(10, Math.round(bay.shelves)));
-          if (n > 0) {
-            const topIn = (wy1 - contentTopY) / pxPerIn - 6;
-            const botIn = (wy1 - shelfTopY) / pxPerIn + 4;
-            for (let i = 0; i < n; i++) {
-              const hIn = n === 1 ? (topIn + botIn) / 2 : botIn + (i * (topIn - botIn)) / (n - 1);
-              const y = wy1 - hIn * pxPerIn;
-              if (y < contentTopY || y > shelfTopY - 4) continue;
-              shN += 1;
-              drawShelf(bx0 + 3, bw - 6, y, `SH-${shN}`, hIn);
-              dimensions.push({ name: `SH-${shN} length`, expectedIn: r1((bw - 6) / pxPerIn), known: !zonesAssumed });
-            }
-          }
+          drawShelf(sx0, sw, y, `SH-${shN}`, hIn);
+          dimensions.push({ name: `SH-${shN} length`, expectedIn: r1(sw / pxPerIn), known: !zonesAssumed });
         }
       }
     }
@@ -929,7 +787,7 @@ export async function buildShopDrawingElevation(params: {
     return null;
   }
 
-  return { mimeType: "image/png", dataBase64: png.toString("base64"), dimensions };
+  return { mimeType: "image/png", dataBase64: png.toString("base64"), dimensions, model: builtModel };
 }
 
 function r1(n: number): number {

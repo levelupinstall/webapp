@@ -91,6 +91,16 @@ export type MillworkZone = {
   /** Vision-grounded rod heights as fractions of wall height from the
    * floor (0-1), one per rod. */
   rodYs?: number[];
+  /** Vision-grounded height of the TOP of this band's case as a fraction
+   * of wall height from the floor (0-1). */
+  topFrac?: number;
+  /** base-cabinets: door fronts counted in the concept image. */
+  baseDoors?: number;
+  /** base-cabinets: drawer fronts counted in the concept image. */
+  baseDrawers?: number;
+  /** base-cabinets: countertop height as a fraction of wall height from
+   * the floor (0-1), vision-grounded. */
+  counterTopFrac?: number;
   /** shoe-cubbies: rows of cubbies. */
   rows?: number;
   /** drawers: number of drawer fronts. */
@@ -1600,8 +1610,8 @@ export function buildImageRenderDirective(
  * planner-visual-spec import cycle.
  */
 export function zonesFromConceptStructure(struct: {
-  bays: { x0: number; x1: number; shelves: number; rods?: number; drawers?: number; shelfYs?: number[]; rodYs?: number[] }[];
-  baseCabinets: { present: boolean; doors: number; drawers: number };
+  bays: { x0: number; x1: number; shelves: number; rods?: number; drawers?: number; shelfYs?: number[]; rodYs?: number[]; topFrac?: number }[];
+  baseCabinets: { present: boolean; doors: number; drawers: number; counterTopFrac?: number };
   rods: number;
   drawers: number;
   cubbyRows: number;
@@ -1635,6 +1645,7 @@ export function zonesFromConceptStructure(struct: {
         x1: bx1,
         rods: bayRods,
         ...(b.rodYs && b.rodYs.length > 0 ? { rodYs: b.rodYs } : {}),
+        ...(b.topFrac !== undefined ? { topFrac: b.topFrac } : {}),
         assumed: false,
       });
     }
@@ -1656,6 +1667,7 @@ export function zonesFromConceptStructure(struct: {
         x1: bx1,
         shelves: bayShelves,
         ...(b.shelfYs && b.shelfYs.length > 0 ? { shelfYs: b.shelfYs } : {}),
+        ...(b.topFrac !== undefined ? { topFrac: b.topFrac } : {}),
         assumed: false,
       });
     }
@@ -1690,6 +1702,11 @@ export function zonesFromConceptStructure(struct: {
       kind: "base-cabinets",
       x0: remapX(0),
       x1: remapX(1),
+      baseDoors: struct.baseCabinets.doors,
+      baseDrawers: struct.baseCabinets.drawers,
+      ...(struct.baseCabinets.counterTopFrac !== undefined
+        ? { counterTopFrac: struct.baseCabinets.counterTopFrac }
+        : {}),
       assumed: false,
     });
   }

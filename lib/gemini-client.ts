@@ -1390,10 +1390,13 @@ export async function geminiDescribeClosetLayoutWithConsensus(
 export type ConceptMillworkStructure = {
   /** Vertical bays (left to right), x0/x1 as fractions of the millwork width.
    * shelfYs / rodYs: heights of each shelf board / rod as fractions of the
-   * wall height measured FROM THE FLOOR (0 = floor, 1 = top of wall). */
-  bays: { x0: number; x1: number; shelves: number; rods?: number; drawers?: number; shelfYs?: number[]; rodYs?: number[] }[];
-  /** Base cabinets below the open shelving (doors/drawer fronts). */
-  baseCabinets: { present: boolean; doors: number; drawers: number };
+   * wall height measured FROM THE FLOOR (0 = floor, 1 = top of wall).
+   * topFrac: height of the TOP of this bay's case, same scale. */
+  bays: { x0: number; x1: number; shelves: number; rods?: number; drawers?: number; shelfYs?: number[]; rodYs?: number[]; topFrac?: number }[];
+  /** Base cabinets below the open shelving (doors/drawer fronts).
+   * counterTopFrac: height of the countertop as a fraction of wall height
+   * from the floor (0 if not visible / no base cabinets). */
+  baseCabinets: { present: boolean; doors: number; drawers: number; counterTopFrac?: number };
   /** Hanging rods visible (legacy global count, prefer per-bay rods). */
   rods: number;
   /** Freestanding drawer bank fronts visible (legacy global count). */
@@ -1425,7 +1428,7 @@ export async function geminiExtractMillworkStructure(params: {
       "You inspect an AI-generated interior concept image showing proposed finish-carpentry millwork (built-in shelving, bookcases, closet systems, floating shelves). " +
       "Analyze ONLY the proposed millwork (ignore the original room, furniture, and decor). " +
       "Reply with exactly one JSON object and nothing else, using this schema: " +
-      '{"bays":[{"x0":0,"x1":0.33,"shelves":0,"rods":2,"drawers":0,"shelfYs":[],"rodYs":[0.72,0.48]},{"x0":0.33,"x1":0.66,"shelves":4,"rods":0,"drawers":3,"shelfYs":[0.85,0.68,0.51,0.34],"rodYs":[]},{"x0":0.66,"x1":1,"shelves":0,"rods":1,"drawers":0,"shelfYs":[],"rodYs":[0.72]}],"baseCabinets":{"present":false,"doors":0,"drawers":0},"rods":0,"drawers":0,"cubbyRows":2,"unitX0":0,"unitX1":1}. ' +
+      '{"bays":[{"x0":0,"x1":0.33,"shelves":0,"rods":2,"drawers":0,"shelfYs":[],"rodYs":[0.72,0.48],"topFrac":0.9},{"x0":0.33,"x1":0.66,"shelves":4,"rods":0,"drawers":3,"shelfYs":[0.85,0.68,0.51,0.34],"rodYs":[],"topFrac":0.9},{"x0":0.66,"x1":1,"shelves":0,"rods":1,"drawers":0,"shelfYs":[],"rodYs":[0.72],"topFrac":0.9}],"baseCabinets":{"present":false,"doors":0,"drawers":0,"counterTopFrac":0},"rods":0,"drawers":0,"cubbyRows":2,"unitX0":0,"unitX1":1}. ' +
       "Rules: bays are vertical divisions of the millwork reported STRICTLY left to right as seen in the image — x0=0 is the millwork's LEFT edge in the picture, x1=1 its RIGHT edge; do not mirror the layout; x0/x1 are fractions of the total millwork width (0 to 1); " +
       "unitX0/unitX1 are where the millwork unit itself starts and ends across the IMAGE width (0=left edge of image, 1=right edge) — if the unit spans the whole wall opening, use 0 and 1; if it is a centered piece of furniture with visible wall on both sides, report e.g. 0.2 and 0.8; " +
       "shelves counts horizontal shelf boards per bay; " +
@@ -1434,7 +1437,9 @@ export async function geminiExtractMillworkStructure(params: {
       "shelfYs lists the HEIGHT of each shelf board in that bay as a fraction of the wall height measured FROM THE FLOOR (0=floor, 1=top of wall) — e.g. a shelf halfway up the wall is 0.5; estimate carefully from the image, one value per shelf, matching the shelves count; " +
       "rodYs does the same for each hanging rod in the bay (one value per rod, matching the rods count); " +
       "baseCabinets.present is true when there are lower cabinets with door/drawer fronts below open shelving; " +
-      "count door and drawer fronts separately. " +
+      "count door and drawer fronts separately; " +
+      "baseCabinets.counterTopFrac is the height of the TOP of those base cabinets (the countertop surface) as a fraction of the wall height from the floor (0 if there are no base cabinets); " +
+      "each bay's topFrac is the height of the TOP of that bay's case or uprights as a fraction of the wall height from the floor — bays of one unit usually share the same topFrac; for floating shelves with no case, topFrac is just above the highest shelf; " +
       "For simple floating shelves with no vertical divisions, return a single bay spanning 0 to 1. " +
       "For closets: FIRST find the bays by the full-height vertical divider panels (thin uprights running from the top shelf to the floor) — each pair of dividers bounds one bay, even when hanging clothes hide its contents. " +
       "Each horizontal ROW OF HANGERS is one rod, even when the rod itself is hidden behind the clothes (two rows of hangers = rods:2, one row = rods:1). " +
@@ -1473,9 +1478,13 @@ export async function geminiExtractMillworkStructure(params: {
             .filter((n) => Number.isFinite(n) && n > 0.03 && n < 0.99)
             .slice(0, max)
         : [];
+    const cleanFrac = (v: unknown): number | undefined => {
+      const n = Number(v);
+      return Number.isFinite(n) && n > 0.03 && n < 0.99 ? n : undefined;
+    };
     const bays = Array.isArray(parsed.bays)
       ? parsed.bays
-          .map((b: { x0?: number; x1?: number; shelves?: number; rods?: number; drawers?: number; shelfYs?: unknown; rodYs?: unknown }) => ({
+          .map((b: { x0?: number; x1?: number; shelves?: number; rods?: number; drawers?: number; shelfYs?: unknown; rodYs?: unknown; topFrac?: unknown }) => ({
             x0: Math.max(0, Math.min(1, Number(b.x0) || 0)),
             x1: Math.max(0, Math.min(1, Number(b.x1) || 1)),
             shelves: Math.max(0, Math.min(20, Math.round(Number(b.shelves) || 0))),
@@ -1483,6 +1492,7 @@ export async function geminiExtractMillworkStructure(params: {
             drawers: Math.max(0, Math.min(10, Math.round(Number(b.drawers) || 0))),
             shelfYs: cleanYs(b.shelfYs, 20),
             rodYs: cleanYs(b.rodYs, 4),
+            topFrac: cleanFrac(b.topFrac),
           }))
           .filter((b: { x0: number; x1: number }) => b.x1 > b.x0)
       : [];
@@ -1493,6 +1503,7 @@ export async function geminiExtractMillworkStructure(params: {
         present: !!bc.present,
         doors: Math.max(0, Math.min(20, Math.round(Number(bc.doors) || 0))),
         drawers: Math.max(0, Math.min(20, Math.round(Number(bc.drawers) || 0))),
+        counterTopFrac: cleanFrac(bc.counterTopFrac),
       },
       rods: Math.max(0, Math.min(10, Math.round(Number(parsed.rods) || 0))),
       drawers: Math.max(0, Math.min(20, Math.round(Number(parsed.drawers) || 0))),
@@ -1601,6 +1612,15 @@ export async function geminiExtractMillworkStructureWithConsensus(params: {
     ...median,
     bays: median.bays.map((b, i) => {
       const out = { ...b };
+      if (out.topFrac === undefined) {
+        for (const donor of valid) {
+          const db = donor.bays?.[i];
+          if (db?.topFrac !== undefined) {
+            out.topFrac = db.topFrac;
+            break;
+          }
+        }
+      }
       if (!out.shelfYs?.length || !out.rodYs?.length) {
         for (const donor of valid) {
           const db = donor.bays?.[i];
@@ -1636,14 +1656,32 @@ export async function geminiExtractMillworkStructureWithConsensus(params: {
   // right (seen on media-wall and dining runs). If at least half the reads
   // saw base cabinets, keep them — preferring the median read's own value.
   const withBase = valid.filter((r) => r.baseCabinets?.present);
+  // Counter height: average the reads that saw base cabinets and reported
+  // a counter height — a single read's guess is noisy, the mean is stable.
+  const counterFracs = withBase
+    .map((r) => r.baseCabinets.counterTopFrac)
+    .filter((v): v is number => typeof v === "number");
+  const avgCounter =
+    counterFracs.length > 0
+      ? counterFracs.reduce((a, b) => a + b, 0) / counterFracs.length
+      : undefined;
   if (withBase.length * 2 >= valid.length && !medianG.baseCabinets?.present) {
     const donor =
       withBase.find((r) => r.baseCabinets.doors > 0) ?? withBase[0];
-    return { ...medianG, baseCabinets: donor.baseCabinets };
+    return {
+      ...medianG,
+      baseCabinets: { ...donor.baseCabinets, counterTopFrac: avgCounter ?? donor.baseCabinets.counterTopFrac },
+    };
   }
   if (withBase.length === 0 && medianG.baseCabinets?.present) {
     // No read corroborated the cabinets — the median likely invented them.
     return { ...medianG, baseCabinets: { present: false, doors: 0, drawers: 0 } };
+  }
+  if (medianG.baseCabinets?.present && avgCounter !== undefined) {
+    return {
+      ...medianG,
+      baseCabinets: { ...medianG.baseCabinets, counterTopFrac: avgCounter },
+    };
   }
   return medianG;
 }

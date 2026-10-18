@@ -2078,7 +2078,7 @@ The homeowner likes the design direction — pivot to booking. In one or two war
           });
           // Multi-view set: side, plan, isometric alongside the front elevation.
           try {
-            const side = await buildSideElevation({ wallLabel: singleLabel, spec: enrichedSpec });
+            const side = await buildSideElevation({ wallLabel: singleLabel, spec: enrichedSpec, model: elevation.model });
             if (side) {
               responseImages.push({
                 mimeType: side.mimeType,
@@ -2087,7 +2087,7 @@ The homeowner likes the design direction — pivot to booking. In one or two war
                 dimensions: side.dimensions.map((d) => ({ ...d, wallLabel: singleLabel })),
               });
             }
-            const plan = await buildPlanView({ wallLabel: singleLabel, spec: enrichedSpec });
+            const plan = await buildPlanView({ wallLabel: singleLabel, spec: enrichedSpec, model: elevation.model });
             if (plan) {
               responseImages.push({
                 mimeType: plan.mimeType,
@@ -2096,7 +2096,7 @@ The homeowner likes the design direction — pivot to booking. In one or two war
                 dimensions: plan.dimensions.map((d) => ({ ...d, wallLabel: singleLabel })),
               });
             }
-            const iso = await buildIsometricView({ wallLabel: singleLabel, spec: enrichedSpec });
+            const iso = await buildIsometricView({ wallLabel: singleLabel, spec: enrichedSpec, model: elevation.model });
             if (iso) {
               responseImages.push({
                 mimeType: iso.mimeType,
